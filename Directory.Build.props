@@ -52,7 +52,7 @@
          Raise this when a milestone starts, not when it ships. It only sets a floor: once
          v0.6.0 is tagged MinVer reads the tag and this line stops mattering, until the next
          minor. -->
-    <MinVerMinimumMajorMinor>0.14</MinVerMinimumMajorMinor>
+    <MinVerMinimumMajorMinor>0.15</MinVerMinimumMajorMinor>
     <MinVerDefaultPreReleaseIdentifiers>main.0</MinVerDefaultPreReleaseIdentifiers>
     <AssemblyVersion>0.0.0.0</AssemblyVersion>
     <RepositoryUrl>https://github.com/TrueRelevance/hephaisto</RepositoryUrl>
