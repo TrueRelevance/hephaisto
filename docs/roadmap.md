@@ -19,33 +19,41 @@ Its companions:
 
 ## Where it stands
 
-`v0.13.0` is in release candidates since 2026-10-02. **What v0.12.0 left open**: the three
-items that release carried over and one production found the same day, all four built and green
-on the dev cluster. See [v0.13.0](#v0130--what-v0120-left-open). It is not released until a
-candidate has run on the production install.
+`v0.14.0` shipped on 2026-10-12. **A GitHub issue is work Hephaisto can be handed**: an issue
+assigned to its account is planned by the Job that plans an incident's code fix, the plan is
+posted and answered on the issue, and the pull request that follows closes it. Nothing of it is
+on unless `github.enabled` is set. See
+[v0.14.0](#v0140--a-github-issue-is-work-hephaisto-can-be-handed).
 
-**It grew on 2026-10-06, by the owner's choice of what to do before the full release.** The
-fifth candidate adds the rest of the Teams buttons ([#124](backlog.md#124)), one registration
-per metric ([#15](backlog.md#15)), and a fix for the one thing production found that day: every
-code fix it had started died looking for Cait's pinned commit ([#117](backlog.md#117)). The
-sixth carries the last thing chosen with them: the coder's agent and its driver run in separate
-containers ([#116](backlog.md#116)), so the container the model runs in is handed no GitHub and
-no NuGet token. It changes the pod of every code-fix and every investigation Job, and needs the
-coder image of the same version.
+**It is the first full release since v0.12.0, and it releases v0.13.0 with it.**
+[v0.13.0](#v0130--what-v0120-left-open) - what v0.12.0 left open, and what the owner chose on
+2026-10-06 to do before a release - went out as six release candidates between 2026-10-02 and
+2026-10-06 and never as a release of its own. v0.14.0 was built on top of it, in eight more
+between 2026-10-07 and 2026-10-09.
 
-`v0.14.0` is built and in release candidates since 2026-10-07. **A GitHub issue is work
-Hephaisto can be handed**: an issue assigned to its account is planned by the Job that plans an
-incident's code fix, the plan is posted and answered on the issue, and the draft pull request
-that follows closes it. All six stages are built and nothing is on unless `github.enabled` is
-set. The twelve scenarios against a GitHub stand-in are green on the dev cluster at this state;
-the four against github.com were green on this same state, the last time minutes before the
-first candidate was tagged. See [v0.14.0](#v0140--a-github-issue-is-work-hephaisto-can-be-handed). It stacks on
-v0.13.0, which is itself not released yet; neither is until a candidate has run on the
-production install.
+**What it rests on is a candidate that ran in production.** The tag is `v0.14.0-rc8` with the
+changelog dated: nothing outside `CHANGELOG.md` and this file differs, and that candidate's CI
+and release runs were green. The production install took the candidates as they were cut, from
+2026-10-08, and ran the eighth from 2026-10-10 until the release. With the eighth's commit the
+issues suite against the GitHub stand-in held 19 scenarios on the dev cluster and the live tier
+against github.com 6; in each, one scenario was red in the full run for reading the plan
+comment's earlier wording and passed alone once corrected. The cluster gates of the incident
+side (`run.sh --nightly --full --mode Auto`, `investigate-local.sh --strict`,
+`codefix-local.sh`) were **not** run again for the tag.
 
-Everything released is written up in [`roadmap-archive.md`](roadmap-archive.md): each milestone
-from v0.1.0 to v0.12.0 as it was planned and as it turned out, the release-by-release record
-that used to stand here, and the menu of later ideas, which are issues now.
+**What is released without being settled.** Which credential the Jobs run on
+([#118](https://github.com/TrueRelevance/hephaisto/issues/118)) is still the owner's decision.
+What v0.13.0 says no test holds - a Teams button in a real tenant, an approval that runs from a
+card - is as that section left it.
+
+**What comes next has no milestone yet.** What is wanted and what is broken are
+[issues](https://github.com/TrueRelevance/hephaisto/issues); a change from here on belongs to the
+next version.
+
+Everything released up to v0.12.0 is written up in [`roadmap-archive.md`](roadmap-archive.md):
+each milestone from v0.1.0 to v0.12.0 as it was planned and as it turned out, the
+release-by-release record that used to stand here, and the menu of later ideas, which are issues
+now. The two milestones this release closes stay below, where the frozen backlog links to them.
 
 ---
 
@@ -53,6 +61,10 @@ that used to stand here, and the menu of later ideas, which are issues now.
 
 v0.12.0 was released to draw a line, with three of its five items open. This is those three,
 and a fourth that production found on the day of the release.
+
+**Status (2026-10-12): released by `v0.14.0`.** It had six candidates and no release of its own;
+the "State" column below is as the last of them left it. What this section says no test holds,
+and the credential decision under "not in v0.13.0", are open as written.
 
 ### What ships
 
@@ -142,6 +154,19 @@ links to it in the frozen backlog working. Until now the only way in was an aler
 account becomes a work item, and the Jobs that plan and implement a code fix for an incident do
 the same for it: a plan, an approval, a draft pull request that closes the issue. The milestone
 is [#243](https://github.com/TrueRelevance/hephaisto/issues/243).
+
+**Status (2026-10-12): released as `v0.14.0`.** The six stages below were the first candidate.
+The seven that followed carry the repository's move to the organisation and what the first issue
+handed to it in production asked for, and this section's text is older than they are in three
+places. **Replanning from a comment**
+([#252](https://github.com/TrueRelevance/hephaisto/issues/252)), listed below as not in it, is in
+it: a planner's questions are shown on the issue and an approver's `/replan` plans again with
+the answers. A plan is also answered with a reaction
+([#298](https://github.com/TrueRelevance/hephaisto/issues/298)), and a pull request can be opened
+ready for review, where "draft" is said below
+([#297](https://github.com/TrueRelevance/hephaisto/issues/297)). And "Done when" counts the
+scenarios of the first candidate: at the release the stand-in suite has 19 (G01 to G19) and the
+live tier 6 (L01 to L06). The [changelog](../CHANGELOG.md) has each.
 
 What was decided, each by the owner:
 

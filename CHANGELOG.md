@@ -11,7 +11,7 @@ the links to it below are to that record.
 Versions are set by the git tag through MinVer; the chart version and the app version are always
 the same number.
 
-## v0.14.0 — unreleased
+## v0.14.0 — 2026-10-12
 
 **A second way in.** Until now the only thing Hephaisto could be handed was an alert. This
 release is about handing it a GitHub issue ([#243](https://github.com/TrueRelevance/hephaisto/issues/243)):
@@ -20,6 +20,11 @@ the draft pull request that follows closes it. It is off unless `github.enabled`
 install that leaves it off changes in three small ways, listed under *Upgrading*. How to turn it
 on - the account, the two tokens, the values - is one page:
 [GitHub issues as work](https://docs.hephaisto.dev/operate/github-issues).
+
+The first full release since v0.12.0: v0.13.0 below went out as release candidates only and is
+released by this tag, so an upgrade from v0.12.0 takes both sections, migrations included.
+Everything outside this file and `docs/roadmap.md` is as it is in `v0.14.0-rc8`, the candidate
+the production install ran from 2026-10-10 until the release.
 
 ### New
 - **An issue assigned to Hephaisto's account is taken as work** ([#245](https://github.com/TrueRelevance/hephaisto/issues/245)).
@@ -476,7 +481,7 @@ on - the account, the two tokens, the values - is one page:
   above `Info`. A route written for incidents that is scoped that way stays silent for issues,
   on purpose.
 
-## v0.13.0 — unreleased
+## v0.13.0 — candidates only (`v0.13.0-rc1` to `-rc4` 2026-10-02, `-rc5` and `-rc6` 2026-10-06), released in v0.14.0
 
 **What v0.12.0 left open.** The three items that release carried over, and one production found
 the same day.
