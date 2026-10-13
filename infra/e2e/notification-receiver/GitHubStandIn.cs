@@ -78,7 +78,7 @@ namespace NotificationReceiver;
 //   GET    /github/control/comments       every comment, with its issue, its author, its edits and its reactions
 //   GET    /github/control/state          the bot, the failure mode, every issue and pull request
 //   DELETE /github/control                forget everything but the counters
-public static class GitHubStandIn
+public static partial class GitHubStandIn
 {
     private const int Kept = 2000;
     private const string Prefix = "/github/api";
@@ -446,6 +446,9 @@ public static class GitHubStandIn
         });
 
         // GitHub's 404 rather than an empty one, for a call this stand-in does not serve.
+        // The project board of the planner (v0.15.0): GitHubStandIn.Project.cs.
+        var seedBoard = MapProject(app, api, gate, issues, bot);
+
         api.MapFallback(() => Problem(404, "Not Found"));
 
         var control = app.MapGroup("/github/control");
@@ -752,6 +755,9 @@ public static class GitHubStandIn
                 requests.Clear();
                 failMode = "off";
                 failLeft = 0;
+
+                // The board is not a scenario's doing: it is there again after everything went.
+                seedBoard();
             }
 
             Console.WriteLine("GITHUB forgot everything");

@@ -3,6 +3,7 @@
 @inject IncidentQueries Queries
 @inject IServiceScopeFactory Scopes
 @inject IIncidentNotifier Notifier
+@inject Hephaisto.Agent.Planner.PlannerService Planner
 @implements IDisposable
 
 <nav class="hp-nav">
@@ -36,6 +37,18 @@
                badge of its own - a plan that waits for an answer is counted beside "code fixes",
                whichever kind of attempt it is. *@
             <NavLink href="workitems" data-testid="nav-workitems">work items</NavLink>
+        </li>
+        <li>
+            @* The planner (v0.15.0). The badge is what is planned for today and still open, from
+               the board as it was last read - the navigation asks GitHub nothing, so it shows
+               nothing until somebody has opened the page. *@
+            <NavLink href="planner" data-testid="nav-planner">
+                planner
+                @if (PlannerBadge > 0)
+                {
+                    <span class="hp-nav-badge" data-testid="nav-planner-badge" title="@PlannerBadge planned for today and still open">@PlannerBadge</span>
+                }
+            </NavLink>
         </li>
         <li>
             <NavLink href="search">search</NavLink>
@@ -82,6 +95,8 @@
         _viewer.SignedInAs is { Length: > 0 } name ? name[..1].ToUpperInvariant() : "?";
 
     private int CodeFixBadge => _codeFixes is { } c ? c.Running + c.AwaitingApproval : 0;
+
+    private int PlannerBadge => Planner.Kept?.Entries.Count(e => e.Day == Hephaisto.Core.Planning.PlannerDay.Today) ?? 0;
 
     /// <summary>
     /// Slow on purpose. The mode and the watchdog change on the order of minutes; polling

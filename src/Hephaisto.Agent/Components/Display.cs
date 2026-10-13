@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Hephaisto.Core.CodeFix;
 using Hephaisto.Core.Domain;
+using Hephaisto.Core.Planning;
 using Hephaisto.Agent.Observability;
 
 namespace Hephaisto.Agent.Components;
@@ -208,6 +209,118 @@ public static class Display
         WorkItemState.Cancelled => "cancelled",
         _ => "unknown",
     };
+
+    /// <summary>
+    /// Why the planner (v0.15.0) puts an item in front of a person. Every reason is "a person
+    /// decides", so they share the colour of a plan that waits; the glyph and the word tell them
+    /// apart. An item nothing is wrong with is quiet.
+    /// </summary>
+    public static string PlannerReasonGlyph(PlannerReason reason) => reason switch
+    {
+        PlannerReason.MergedStillOpen => "!",
+        PlannerReason.SubIssuesDone => "+",
+        PlannerReason.PullRequestQuiet => "~",
+        PlannerReason.FieldEmpty => "?",
+        PlannerReason.None => ".",
+        _ => "?",
+    };
+
+    public static string PlannerReasonClass(PlannerReason reason) => reason switch
+    {
+        PlannerReason.None => "st-closed",
+        _ => "st-awaiting",
+    };
+
+    public static string PlannerReasonWord(PlannerReason reason) => reason switch
+    {
+        PlannerReason.MergedStillOpen => "merged, still open",
+        PlannerReason.SubIssuesDone => "every sub-issue done",
+        PlannerReason.PullRequestQuiet => "pull request quiet",
+        PlannerReason.FieldEmpty => "a required field is empty",
+        PlannerReason.None => "open",
+        _ => "unknown",
+    };
+
+    /// <summary>The day's decision, in the words of the two labels that hold it.</summary>
+    public static string PlannerDayWord(PlannerDay day) => day switch
+    {
+        PlannerDay.Today => "today",
+        PlannerDay.NotToday => "not today",
+        PlannerDay.Undecided => "not decided yet",
+        _ => "unknown",
+    };
+
+    public static string PlannerDayGlyph(PlannerDay day) => day switch
+    {
+        PlannerDay.Today => "*",
+        PlannerDay.NotToday => "-",
+        PlannerDay.Undecided => ".",
+        _ => "?",
+    };
+
+    /// <summary>
+    /// A priority by where it stands among its field's options, because a board names them as it
+    /// likes: the first is the one that cannot wait, the second matters, the rest are quiet.
+    /// </summary>
+    public static string PlannerPriorityClass(int rank) => rank switch
+    {
+        0 => "sev-critical",
+        1 => "sev-warning",
+        _ => "sev-info",
+    };
+
+    public static string PullStateGlyph(BoardPullState state) => state switch
+    {
+        BoardPullState.Merged => "+",
+        BoardPullState.Open => "~",
+        BoardPullState.Closed => "x",
+        _ => "?",
+    };
+
+    public static string PullStateClass(BoardPullState state) => state switch
+    {
+        BoardPullState.Merged => "st-resolved",
+        BoardPullState.Open => "st-investigating",
+        BoardPullState.Closed => "st-closed",
+        _ => "st-detected",
+    };
+
+    public static string PullStateWord(BoardPullState state) => state switch
+    {
+        BoardPullState.Merged => "merged",
+        BoardPullState.Open => "open",
+        BoardPullState.Closed => "closed",
+        _ => "unknown",
+    };
+
+    /// <summary><c>owner/repo#12</c> from an issue's address; the address itself when it is not one.</summary>
+    public static string ShortIssue(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length == 4 && parts[2] == "issues" && int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+            {
+                return $"{parts[0]}/{parts[1]}#{number.ToString(CultureInfo.InvariantCulture)}";
+            }
+        }
+
+        return url;
+    }
+
+    /// <summary>How long ago, in the one unit a person would say: today, yesterday, N days ago.</summary>
+    public static string Ago(DateTimeOffset at, DateTimeOffset now)
+    {
+        var days = (int)Math.Floor((now.UtcDateTime.Date - at.UtcDateTime.Date).TotalDays);
+
+        return days switch
+        {
+            <= 0 => "today",
+            1 => "yesterday",
+            _ => $"{days.ToString(CultureInfo.InvariantCulture)} days ago",
+        };
+    }
 
     /// <summary>
     /// The code-fix mode as the nav's agent-mode badge colours it: Off is quiet, Plan only reads

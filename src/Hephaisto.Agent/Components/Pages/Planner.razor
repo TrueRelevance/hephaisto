@@ -1,0 +1,906 @@
+@page "/planner"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Hephaisto.Agent.Planner
+@using Hephaisto.Core.Planning
+@inject PlannerService Service
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@inject IAuthorizationService Authorization
+@implements IDisposable
+@preservewhitespace true
+
+@*
+    The planner (v0.15.0): the open issues of one GitHub project. Three views of the same board -
+    one item at a time to plan the day, the day's plan, and everything that is open under its
+    top-level issue.
+
+    The board is read when the page opens and when somebody presses "refresh" - never on a timer:
+    a read is a request to GitHub, and the order must not change under a person who is walking
+    it. A click changes what is shown the way GitHub was told to.
+
+    An issue's title, a field's value and a login are somebody else's text and are rendered as
+    text. An address is a link only when it is an absolute http(s) address.
+*@
+
+<PageTitle>hephaisto — planner</PageTitle>
+
+<h1>planner <span class="hp-count" data-testid="planner-count">@HeadCount</span></h1>
+
+@if (_snapshot.State == PlannerState.Off)
+{
+    @* The configuration working, not the feature broken - said the way the work-items page says it. *@
+    <p class="hp-empty" data-testid="planner-off">
+        The planner is off: <span class="mono">github.planner.enabled</span> is not set. With it on, this page walks
+        through the open issues of one GitHub project, one at a time, and whoever holds the approver role can set its
+        fields, plan it for today, assign it or close it from here.
+    </p>
+}
+else
+{
+    <div class="hp-filters">
+        <span class="hp-seg" data-testid="planner-views">
+            <button type="button" class="@Seg(ViewPlan)" aria-pressed="@Pressed(ViewName == ViewPlan)" data-testid="planner-view-plan"
+                    @onclick="() => Go(ViewPlan)">plan the day</button>
+            <button type="button" class="@Seg(ViewToday)" aria-pressed="@Pressed(ViewName == ViewToday)" data-testid="planner-view-today"
+                    @onclick="() => Go(ViewToday)">today @ForToday.Count</button>
+            <button type="button" class="@Seg(ViewAll)" aria-pressed="@Pressed(ViewName == ViewAll)" data-testid="planner-view-all"
+                    @onclick="() => Go(ViewAll)">all open @_snapshot.Entries.Count</button>
+        </span>
+
+        @if (ViewName == ViewPlan)
+        {
+            <label>
+                walk through
+                <select value="@_walk" @onchange="OnWalkChanged" data-testid="planner-walk">
+                    <option value="@WalkAll">every open item</option>
+                    <option value="@WalkTop">needs a decision, then the top priorities</option>
+                    <option value="@WalkDecision">needs a decision only</option>
+                </select>
+            </label>
+        }
+        else if (ViewName == ViewAll && _snapshot.Board is { } filterBoard)
+        {
+            @foreach (var field in filterBoard.Fields)
+            {
+                <label>
+                    @field.Name
+                    <select value="@Filter(field.Name)" @onchange="e => OnFilterChanged(field.Name, e)" data-testid="planner-filter" data-field="@field.Name">
+                        <option value="">any</option>
+                        @foreach (var option in field.Options)
+                        {
+                            <option value="@option.Name">@option.Name</option>
+                        }
+                        <option value="@FilterEmpty">empty</option>
+                    </select>
+                </label>
+            }
+        }
+
+        @if (_snapshot.Board is { } named)
+        {
+            <span class="hp-muted" data-testid="planner-board">
+                board
+                @if (Display.HttpUrl(named.Url) is { } boardUrl)
+                {
+                    <a href="@boardUrl" target="_blank" rel="noopener">@named.Title</a>
+                }
+                else
+                {
+                    @named.Title
+                }
+            </span>
+        }
+
+        <span class="hp-filter-status">
+            <ActorField Viewer="_viewer" @bind-Name="_actor" TestId="planner-actor" />
+
+            @if (_loading)
+            {
+                <span class="hp-muted">reading the board…</span>
+            }
+            else if (_snapshot.ReadAt is { } readAt)
+            {
+                <span class="hp-muted" data-testid="planner-status">
+                    @_snapshot.Entries.Count open &middot; @ForToday.Count for today &middot; @PutAway.Count put away &middot; read @Display.TimeOnly(readAt)
+                </span>
+            }
+
+            @if (_snapshot.Problem is { } problem && _snapshot.State == PlannerState.Read)
+            {
+                <span class="hp-error" title="@problem" data-testid="planner-problem"><span class="glyph">!!</span> the board could not be read: @Display.Truncate(problem, 120)</span>
+            }
+
+            <button type="button" data-testid="planner-refresh" disabled="@(_loading || _busy)" @onclick="() => LoadAsync(refresh: true)">refresh</button>
+        </span>
+    </div>
+
+    @if (_message is { } message)
+    {
+        <p class="@(message.Ok ? "hp-yes" : "hp-error")" data-testid="planner-message" data-ok="@(message.Ok ? "true" : "false")">
+            <span class="glyph">@(message.Ok ? "+" : "!!")</span> @message.Text
+        </p>
+    }
+
+    @if (_snapshot.State == PlannerState.Unreadable)
+    {
+        <p class="hp-empty" data-testid="planner-unreadable">
+            <span class="hp-error"><span class="glyph">!!</span> The board could not be read.</span>
+            @_snapshot.Problem
+        </p>
+    }
+    else if (_snapshot.Board is { } board)
+    {
+        @if (ViewName == ViewPlan)
+        {
+            @if (_order.Count == 0)
+            {
+                <p class="hp-empty" data-testid="planner-empty">
+                    <span class="glyph">+</span>
+                    @if (_snapshot.Entries.Count == 0)
+                    {
+                        <text>The board has no open issue.</text>
+                    }
+                    else
+                    {
+                        <text>Nothing needs a decision. @_snapshot.Entries.Count open issues are on the board, and none of them is
+                        finished, waiting or missing a field.</text>
+                    }
+                </p>
+            }
+            else
+            {
+                var id = _order[_index];
+                var entry = _snapshot.Entry(id);
+                var closed = entry is null && _closed.TryGetValue(id, out var was) ? was : default;
+                var shown = entry ?? closed.Entry;
+                var next = _index + 1 < _order.Count ? Known(_order[_index + 1]) : null;
+
+                <div class="hp-planner-walk">
+                    <button type="button" data-testid="planner-previous" disabled="@(_index == 0 || _busy)" @onclick="() => Step(-1)">&lt; previous</button>
+                    <button type="button" class="@(entry is null ? "hp-submit" : null)" data-testid="planner-next"
+                            disabled="@(_index >= _order.Count - 1 || _busy)" @onclick="() => Step(1)">next &gt;</button>
+                    @if (next is not null)
+                    {
+                        <span class="hp-muted" data-testid="planner-then">then <span class="mono">@next.Item.Reference</span> @Display.Truncate(next.Item.Title, 80)</span>
+                    }
+                </div>
+
+                <div class="hp-planner">
+                    @if (shown is not null)
+                    {
+                        <PlannerItemCard @key="id" Entry="shown" Board="board" Open="@(entry is not null)" ClosedHow="@closed.How"
+                                         Parent="@ParentOf(shown)" Assignees="_snapshot.Assignees" BotLogin="@_snapshot.BotLogin" Now="_now"
+                                         Busy="_busy" LockedBecause="@LockedBecause"
+                                         OnDay="day => DayAsync(id, day, thenNext: day != PlannerDay.Undecided)"
+                                         OnClose="notPlanned => CloseAsync(id, notPlanned)"
+                                         OnField="choice => FieldAsync(id, choice.Field, choice.Option)"
+                                         OnAssign="choice => AssignAsync(id, choice.Login, choice.Assign)" />
+                    }
+                    else
+                    {
+                        <p class="hp-empty" data-testid="planner-gone">This item is no longer among the board's open issues. Go on to the next one.</p>
+                    }
+
+                    <aside class="hp-planner-queue" data-testid="planner-rail">
+                        <h4>today <span class="hp-count" data-testid="planner-rail-today-count">@ForToday.Count</span></h4>
+                        <table class="hp-table">
+                            <tbody>
+                                @foreach (var e in ForToday)
+                                {
+                                    <tr @key="e.Item.ItemId" data-testid="planner-rail-row" data-list="today" data-item="@e.Item.ItemId">
+                                        <td class="c-mark"><span class="mono @PriorityClass(board, e)">@(e.Item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                        <td><a class="mono" href="@WalkHref(e)">@e.Item.Reference</a> <span class="hp-cf-line">@Display.Truncate(e.Item.Title, 70)</span></td>
+                                    </tr>
+                                }
+                                @if (ForToday.Count == 0)
+                                {
+                                    <tr><td class="c-mark"></td><td class="hp-muted">nothing yet</td></tr>
+                                }
+                            </tbody>
+                        </table>
+
+                        <h4>put away for today <span class="hp-count" data-testid="planner-rail-away-count">@PutAway.Count</span></h4>
+                        @if (PutAway.Count > 0)
+                        {
+                            <table class="hp-table">
+                                <tbody>
+                                    @foreach (var e in PutAway.Take(RailRows))
+                                    {
+                                        <tr @key="e.Item.ItemId" class="is-away" data-testid="planner-rail-row" data-list="away" data-item="@e.Item.ItemId">
+                                            <td class="c-mark"><span class="glyph">-</span></td>
+                                            <td><a class="mono" href="@WalkHref(e)">@e.Item.Reference</a> <span class="hp-cf-line">@Display.Truncate(e.Item.Title, 70)</span></td>
+                                        </tr>
+                                    }
+                                    @if (PutAway.Count > RailRows)
+                                    {
+                                        <tr class="is-away"><td class="c-mark"></td><td>and @(PutAway.Count - RailRows) more</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+
+                        <h4>up next <span class="hp-count">@(_order.Count - _index - 1)</span></h4>
+                        <table class="hp-table">
+                            <tbody>
+                                @foreach (var upcoming in _order.Skip(_index + 1).Take(RailRows).Select(Known).Where(e => e is not null).Select(e => e!))
+                                {
+                                    <tr @key="upcoming.Item.ItemId" data-testid="planner-rail-row" data-list="next" data-item="@upcoming.Item.ItemId">
+                                        <td class="c-mark">
+                                            <span class="hp-planner-ids">
+                                                <span class="hp-state @Display.PlannerReasonClass(upcoming.Reason)"><span class="glyph">@Display.PlannerReasonGlyph(upcoming.Reason)</span></span>
+                                                <span class="mono @PriorityClass(board, upcoming)">@(upcoming.Item.Field(PlannerQueue.PriorityField) ?? "--")</span>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <a class="mono" href="@WalkHref(upcoming)">@upcoming.Item.Reference</a>
+                                            <span class="hp-cf-line">
+                                                @if (upcoming.NeedsDecision)
+                                                {
+                                                    <text>@Display.PlannerReasonWord(upcoming.Reason) &middot; </text>
+                                                }
+                                                @Display.Truncate(upcoming.Item.Title, 70)
+                                            </span>
+                                        </td>
+                                    </tr>
+                                }
+                                @if (_order.Count - _index - 1 > RailRows)
+                                {
+                                    <tr><td class="c-mark"></td><td class="hp-muted">and @(_order.Count - _index - 1 - RailRows) more</td></tr>
+                                }
+                                else if (_index >= _order.Count - 1)
+                                {
+                                    <tr><td class="c-mark"></td><td class="hp-muted">this is the last one</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </aside>
+                </div>
+            }
+        }
+        else if (ViewName == ViewToday)
+        {
+            <div class="hp-status-grid">
+                <div class="hp-stat" data-testid="planner-stat" data-stat="today"><span class="hp-stat-label">for today</span><span class="hp-stat-value">@ForToday.Count</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="done"><span class="hp-stat-label">done today</span><span class="hp-stat-value">@_snapshot.ClosedToday.Count</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="away"><span class="hp-stat-label">put away</span><span class="hp-stat-value">@PutAway.Count</span><span class="hp-muted">come back tomorrow</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="undecided"><span class="hp-stat-label">not decided</span><span class="hp-stat-value">@_snapshot.Entries.Count(e => e.Day == PlannerDay.Undecided)</span><span class="hp-muted"><a href="planner">go on planning</a></span></div>
+            </div>
+
+            <section class="hp-section">
+                <h2>for today <span class="hp-count">@ForToday.Count</span></h2>
+                @if (ForToday.Count == 0)
+                {
+                    <p class="hp-empty" data-testid="planner-today-empty">Nothing is planned for today yet. <a href="planner">Plan the day</a>, or pick items from <a href="planner?view=all">all open</a>.</p>
+                }
+                else
+                {
+                    <table class="hp-table">
+                        <thead>
+                            <tr><th class="c-prio">prio</th><th>issue</th><th>parent</th><th>status</th><th>pull requests</th><th class="c-act">this day</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var e in ForToday)
+                            {
+                                var item = e.Item;
+
+                                <tr @key="item.ItemId" data-testid="planner-today-row" data-item="@item.ItemId" data-reference="@item.Reference">
+                                    <td class="c-prio"><span class="mono @PriorityClass(board, e)">@(item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                    <td>
+                                        <span class="hp-planner-ids">
+                                            <a class="mono" href="@WalkHref(e)">@item.Reference</a>
+                                            @if (item.Type is { Length: > 0 } type)
+                                            {
+                                                <span class="hp-chip">@type</span>
+                                            }
+                                            @if (e.NeedsDecision)
+                                            {
+                                                <span class="hp-state @Display.PlannerReasonClass(e.Reason)"><span class="glyph">@Display.PlannerReasonGlyph(e.Reason)</span> @Display.PlannerReasonWord(e.Reason)</span>
+                                            }
+                                            @if (e.CarriedOver)
+                                            {
+                                                <span class="hp-chip" data-testid="planner-carried" title="Scheduled on an earlier day and still open">from an earlier day</span>
+                                            }
+                                        </span>
+                                        <span class="hp-cf-line">@item.Title</span>
+                                    </td>
+                                    <td>
+                                        @if (item.ParentUrl is { } parentUrl)
+                                        {
+                                            <span class="mono">@Display.ShortIssue(parentUrl)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="hp-faint">none</span>
+                                        }
+                                    </td>
+                                    <td class="c-time">@(item.Field(PlannerQueue.StatusField) ?? "--")</td>
+                                    <td>@Pulls(item)</td>
+                                    <td class="c-act">
+                                        <button type="button" class="@(e.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone ? "hp-submit" : null)"
+                                                data-testid="planner-today-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false)">close: done</button>
+                                        <button type="button" data-testid="planner-today-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="hp-section">
+                <h2>done today <span class="hp-count">@_snapshot.ClosedToday.Count</span></h2>
+                @if (_snapshot.ClosedToday.Count == 0)
+                {
+                    <p class="hp-muted">Nothing on the board was closed today.</p>
+                }
+                else
+                {
+                    <table class="hp-table">
+                        <tbody>
+                            @foreach (var item in _snapshot.ClosedToday)
+                            {
+                                <tr @key="item.ItemId" class="is-done" data-testid="planner-done-row" data-item="@item.ItemId" data-reference="@item.Reference">
+                                    <td class="c-prio"><span class="hp-yes"><span class="glyph">+</span></span></td>
+                                    <td><span class="mono">@item.Reference</span> @item.Title</td>
+                                    <td class="c-act">closed at <span class="mono">@(item.ClosedAt is { } at ? Display.TimeOnly(at) : "--")</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+
+            <section class="hp-section">
+                <h2>put away for today <span class="hp-count">@PutAway.Count</span></h2>
+                @if (PutAway.Count == 0)
+                {
+                    <p class="hp-muted">Nothing was put away today.</p>
+                }
+                else
+                {
+                    <table class="hp-table">
+                        <tbody>
+                            @foreach (var e in PutAway)
+                            {
+                                <tr @key="e.Item.ItemId" class="is-away" data-testid="planner-away-row" data-item="@e.Item.ItemId" data-reference="@e.Item.Reference">
+                                    <td class="c-prio"><span class="mono">@(e.Item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                    <td><a class="mono" href="@WalkHref(e)">@e.Item.Reference</a> @e.Item.Title</td>
+                                    <td class="c-act"><button type="button" data-testid="planner-away-back" disabled="@RowLocked" @onclick="() => DayAsync(e.Item.ItemId, PlannerDay.Today, false)">back to today</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        }
+        else
+        {
+            var others = board.Fields.Where(f => !IsStatus(f) && !IsPriority(f)).ToList();
+            var groups = Groups(board);
+
+            <p class="hp-muted">
+                Grouped under the top-level issue. A group comes first when it holds the highest priority; inside a group the
+                order is by priority, and a sub-issue follows its parent.
+            </p>
+
+            @if (groups.Count == 0)
+            {
+                <p class="hp-empty" data-testid="planner-all-empty">No open issue matches this filter.</p>
+            }
+
+            @foreach (var group in groups)
+            {
+                var key = group.Epic?.Item.ItemId ?? "none";
+                var rows = _expanded.Contains(key) ? group.Rows : [.. group.Rows.Take(GroupRows)];
+
+                <section class="hp-section" @key="key" data-testid="planner-group" data-epic="@(group.Epic?.Item.Reference ?? "none")">
+                    <div class="hp-epic-head">
+                        @if (group.Epic is { } epic)
+                        {
+                            <a class="mono" href="@WalkHref(epic)">@epic.Item.Reference</a>
+                            <h2 class="hp-epic-title">@epic.Item.Title</h2>
+                            @if (epic.Item.Field(PlannerQueue.PriorityField) is { } epicPriority)
+                            {
+                                <span class="mono @PriorityClass(board, epic)">@epicPriority</span>
+                            }
+                            <span class="hp-epic-meta">
+                                <span class="hp-muted">@(epic.Item.Field(PlannerQueue.StatusField) ?? "no status") &middot; @epic.Item.SubIssuesDone of @epic.Item.SubIssues done</span>
+                                <span class="hp-conf-track" role="img" aria-label="@epic.Item.SubIssuesDone of @epic.Item.SubIssues done">
+                                    <span class="hp-conf-fill" style="width:@Percent(epic.Item.SubIssuesDone, epic.Item.SubIssues)"></span>
+                                </span>
+                                <span class="hp-muted">@group.Rows.Count open &middot; @group.Rows.Count(r => r.Entry.Day == PlannerDay.Today) for today</span>
+                            </span>
+                        }
+                        else
+                        {
+                            <h2 class="hp-epic-title">without a parent</h2>
+                            <span class="hp-epic-meta"><span class="hp-muted">@group.Rows.Count open &middot; @group.Rows.Count(r => r.Entry.Day == PlannerDay.Today) for today</span></span>
+                        }
+                    </div>
+
+                    <table class="hp-table">
+                        <thead>
+                            <tr>
+                                <th class="c-prio">prio</th>
+                                <th class="c-issue">issue</th>
+                                <th>status</th>
+                                @foreach (var field in others)
+                                {
+                                    <th>@field.Name</th>
+                                }
+                                <th>pull requests</th>
+                                <th>last activity</th>
+                                <th class="c-act">this day</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in rows)
+                            {
+                                var e = row.Entry;
+                                var item = e.Item;
+
+                                <tr @key="item.ItemId" class="@RowClass(e)" data-testid="planner-row" data-item="@item.ItemId" data-reference="@item.Reference"
+                                    data-depth="@row.Depth" data-day="@e.Day">
+                                    <td class="c-prio"><span class="mono @PriorityClass(board, e)">@(item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                    <td class="@(row.Depth == 0 ? null : row.Depth == 1 ? "c-sub1" : "c-sub2")">
+                                        <span class="hp-planner-ids">
+                                            <a class="mono" href="@WalkHref(e)">@item.Reference</a>
+                                            @if (item.Type is { Length: > 0 } type)
+                                            {
+                                                <span class="hp-chip">@type</span>
+                                            }
+                                            @if (e.NeedsDecision)
+                                            {
+                                                <span class="hp-state @Display.PlannerReasonClass(e.Reason)"><span class="glyph">@Display.PlannerReasonGlyph(e.Reason)</span> @Display.PlannerReasonWord(e.Reason)</span>
+                                            }
+                                        </span>
+                                        <span class="hp-cf-line">
+                                            @item.Title
+                                            @if (item.SubIssues > 0)
+                                            {
+                                                <text> &middot; @item.SubIssuesDone of @item.SubIssues sub-issues</text>
+                                            }
+                                        </span>
+                                    </td>
+                                    <td class="c-time">@(item.Field(PlannerQueue.StatusField) ?? "--")</td>
+                                    @foreach (var field in others)
+                                    {
+                                        <td>@(item.Field(field.Name) ?? "--")</td>
+                                    }
+                                    <td>@Pulls(item)</td>
+                                    <td class="c-time hp-muted">@Display.Ago(e.LastActivity, _now)</td>
+                                    <td class="c-act">
+                                        <span class="hp-seg small">
+                                            <button type="button" class="@(e.Day == PlannerDay.Today ? "on" : null)" aria-pressed="@Pressed(e.Day == PlannerDay.Today)"
+                                                    data-testid="planner-row-day" data-day="today" data-current="@Pressed(e.Day == PlannerDay.Today)" disabled="@RowLocked"
+                                                    @onclick="() => DayAsync(item.ItemId, e.Day == PlannerDay.Today && !e.CarriedOver ? PlannerDay.Undecided : PlannerDay.Today, false)">today</button>
+                                            <button type="button" class="@(e.Day == PlannerDay.NotToday ? "on" : null)" aria-pressed="@Pressed(e.Day == PlannerDay.NotToday)"
+                                                    data-testid="planner-row-day" data-day="not today" data-current="@Pressed(e.Day == PlannerDay.NotToday)" disabled="@RowLocked"
+                                                    @onclick="() => DayAsync(item.ItemId, e.Day == PlannerDay.NotToday ? PlannerDay.Undecided : PlannerDay.NotToday, false)">not today</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                            @if (group.Rows.Count > rows.Count)
+                            {
+                                <tr>
+                                    <td class="c-prio"></td>
+                                    <td colspan="@(5 + others.Count)">
+                                        <button type="button" data-testid="planner-group-more" @onclick="() => _expanded.Add(key)">show @(group.Rows.Count - rows.Count) more</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+    }
+
+    @if (LockedBecause is { } locked && ViewName != ViewPlan && _snapshot.State == PlannerState.Read)
+    {
+        <p class="hp-warn" data-testid="planner-locked"><span class="glyph">!</span> @locked</p>
+    }
+}
+
+@code {
+    private const string ViewPlan = "plan";
+    private const string ViewToday = "today";
+    private const string ViewAll = "all";
+
+    private const string WalkAll = "all";
+    private const string WalkTop = "top";
+    private const string WalkDecision = "decision";
+
+    private const string FilterEmpty = "(empty)";
+
+    /// <summary>Rows of each list of the walk's rail. It is a glance, not the list.</summary>
+    private const int RailRows = 5;
+
+    /// <summary>Rows a group of the board view shows before "show N more".</summary>
+    private const int GroupRows = 8;
+
+    /// <summary>Shared with the other pages, so a name typed once is typed once.</summary>
+    private const string NameStorageKey = "hephaisto.feedback.name";
+
+    private const string NotAnApprover = "Setting a field, planning the day, assigning and closing need the approver role.";
+
+    private PlannerSnapshot _snapshot = PlannerSnapshot.Off;
+    private ConsoleViewer _viewer = ConsoleViewer.Anonymous;
+    private string _actor = string.Empty;
+    private bool _loading = true;
+    private bool _busy;
+    private (bool Ok, string Text)? _message;
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+
+    private string _walk = WalkAll;
+
+    /// <summary>
+    /// The walk: item ids in the order they were in when the board was read. Kept apart from the
+    /// board on purpose - a click changes an item's reason and with it its place in the queue,
+    /// and the item a person is looking at must not move away under the click.
+    /// </summary>
+    private List<string> _order = [];
+
+    private int _index;
+
+    /// <summary>What was closed from this page, so its card can stay and say so.</summary>
+    private readonly Dictionary<string, (PlannerEntry Entry, string How)> _closed = [];
+
+    private readonly Dictionary<string, PlannerEntry> _seen = [];
+    private readonly Dictionary<string, string> _filters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _expanded = [];
+
+    private CancellationTokenSource? _cts;
+    private string? _positionedFor;
+
+    [SupplyParameterFromQuery(Name = "view")]
+    public string? View { get; set; }
+
+    /// <summary>The item the walk opens on, by its id: what a row of the other views links to.</summary>
+    [SupplyParameterFromQuery(Name = "item")]
+    public string? Item { get; set; }
+
+    [Inject]
+    private AuthenticationStateProvider? AuthProvider { get; set; }
+
+    private string ViewName => View is ViewToday or ViewAll ? View : ViewPlan;
+
+    private IReadOnlyList<PlannerEntry> ForToday =>
+        [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Today).OrderBy(e => _snapshot.Board is { } b ? PlannerQueue.PriorityRank(b, e.Item) : 0)];
+
+    private IReadOnlyList<PlannerEntry> PutAway => [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.NotToday)];
+
+    private string HeadCount => ViewName switch
+    {
+        _ when _snapshot.State != PlannerState.Read => string.Empty,
+        ViewToday => Day,
+        ViewAll => $"{_snapshot.Entries.Count} open",
+        _ when _order.Count == 0 => Day,
+        _ => $"{Day} · {_index + 1} of {_order.Count}",
+    };
+
+    private string Day => _now.UtcDateTime.ToString("dddd d MMMM", CultureInfo.InvariantCulture);
+
+    /// <summary>Why no button can be pressed, or null when one can.</summary>
+    private string? LockedBecause =>
+        !_viewer.MayDecide ? NotAnApprover
+        : string.IsNullOrWhiteSpace(_viewer.Actor(_actor)) ? "Type your name above: every click is recorded under it."
+        : null;
+
+    private bool RowLocked => _busy || LockedBecause is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        _viewer = await ConsoleViewer.ResolveAsync(AuthProvider, Authorization);
+
+        await LoadAsync(refresh: false);
+    }
+
+    protected override void OnParametersSet() => Position();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            var remembered = await Js.InvokeAsync<string?>("hephaisto.storageGet", NameStorageKey);
+
+            if (!string.IsNullOrWhiteSpace(remembered) && string.IsNullOrWhiteSpace(_actor))
+            {
+                _actor = remembered;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // A convenience. The field is still there to type into.
+        }
+        catch (InvalidOperationException)
+        {
+            // Prerendering: there is no browser yet.
+        }
+    }
+
+    private async Task LoadAsync(bool refresh)
+    {
+        _loading = true;
+
+        try
+        {
+            _snapshot = await Service.ReadAsync(refresh, _cts?.Token ?? CancellationToken.None);
+            _now = DateTimeOffset.UtcNow;
+
+            if (refresh)
+            {
+                _closed.Clear();
+                _message = null;
+            }
+
+            Order(keep: _order.Count > 0 ? _order[Math.Min(_index, _order.Count - 1)] : null);
+            _positionedFor = null;
+            Position();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _loading = false;
+    }
+
+    /// <summary>Lays the walk out anew, staying on <paramref name="keep"/> when it is still part of it.</summary>
+    private void Order(string? keep)
+    {
+        var board = _snapshot.Board;
+
+        foreach (var entry in _snapshot.Entries)
+        {
+            _seen[entry.Item.ItemId] = entry;
+        }
+
+        _order = [.. _snapshot.Entries
+            .Where(e => _walk switch
+            {
+                WalkDecision => e.NeedsDecision,
+                WalkTop => e.NeedsDecision || (board is not null && PlannerQueue.PriorityRank(board, e.Item) < 2),
+                _ => true,
+            })
+            .Select(e => e.Item.ItemId)];
+
+        var at = keep is null ? -1 : _order.IndexOf(keep);
+        _index = at >= 0 ? at : Math.Clamp(_index, 0, Math.Max(0, _order.Count - 1));
+    }
+
+    /// <summary>Opens the walk on the item the address names, once per address.</summary>
+    private void Position()
+    {
+        if (ViewName != ViewPlan || string.IsNullOrEmpty(Item) || _positionedFor == Item || _snapshot.Entry(Item) is null)
+        {
+            return;
+        }
+
+        if (!_order.Contains(Item))
+        {
+            // It is open and not part of this walk: only the walk through everything holds it.
+            _walk = WalkAll;
+            Order(keep: Item);
+        }
+
+        _index = Math.Max(0, _order.IndexOf(Item));
+        _positionedFor = Item;
+    }
+
+    private void Step(int by)
+    {
+        _index = Math.Clamp(_index + by, 0, Math.Max(0, _order.Count - 1));
+        _message = null;
+    }
+
+    private void Go(string view) => Nav.NavigateTo(view == ViewPlan ? "planner" : $"planner?view={view}");
+
+    private void OnWalkChanged(ChangeEventArgs e)
+    {
+        _walk = e.Value?.ToString() is WalkTop or WalkDecision ? e.Value!.ToString()! : WalkAll;
+        Order(keep: _order.Count > 0 ? _order[_index] : null);
+    }
+
+    private void OnFilterChanged(string field, ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } value)
+        {
+            _filters[field] = value;
+        }
+        else
+        {
+            _filters.Remove(field);
+        }
+    }
+
+    private string Filter(string field) => _filters.TryGetValue(field, out var value) ? value : string.Empty;
+
+    private IReadOnlyList<PlannerGroup> Groups(Board board) =>
+        _filters.Count == 0
+            ? _snapshot.Groups
+            : [.. _snapshot.Groups
+                .Select(g => g with { Rows = [.. g.Rows.Where(r => _filters.All(f => Matches(r.Entry.Item.Field(f.Key), f.Value)))] })
+                .Where(g => g.Rows.Count > 0)];
+
+    private static bool Matches(string? value, string filter) =>
+        filter == FilterEmpty ? value is null : string.Equals(value, filter, StringComparison.OrdinalIgnoreCase);
+
+    private Task DayAsync(string itemId, PlannerDay day, bool thenNext) =>
+        ActAsync(itemId, (actor, ct) => Service.SetDayAsync(itemId, day, actor, ct), thenNext);
+
+    private Task CloseAsync(string itemId, bool notPlanned) =>
+        ActAsync(itemId, (actor, ct) => Service.CloseAsync(itemId, notPlanned, actor, ct), thenNext: false);
+
+    private Task FieldAsync(string itemId, string field, string option) =>
+        ActAsync(itemId, (actor, ct) => Service.SetFieldAsync(itemId, field, option, actor, ct), thenNext: false);
+
+    private Task AssignAsync(string itemId, string login, bool assign) =>
+        ActAsync(itemId, (actor, ct) => Service.AssignAsync(itemId, login, assign, actor, ct), thenNext: false);
+
+    /// <summary>
+    /// One click. Who may, and who it is, are asked here and again by the service's door; the
+    /// name recorded is the token's when somebody is signed in, never the typed one.
+    /// </summary>
+    private async Task ActAsync(string itemId, Func<string, CancellationToken, Task<PlannerActionResult>> act, bool thenNext)
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        if (LockedBecause is { } locked)
+        {
+            _message = (false, locked);
+            return;
+        }
+
+        var actor = _viewer.Actor(_actor)!;
+        var before = _snapshot.Entry(itemId);
+
+        _busy = true;
+
+        try
+        {
+            var result = await act(actor, _cts?.Token ?? CancellationToken.None);
+
+            if (result.Snapshot.State != PlannerState.Off)
+            {
+                _snapshot = result.Snapshot;
+            }
+
+            _now = DateTimeOffset.UtcNow;
+
+            foreach (var entry in _snapshot.Entries)
+            {
+                _seen[entry.Item.ItemId] = entry;
+            }
+
+            var reference = before?.Item.Reference ?? "the item";
+
+            if (result.Done)
+            {
+                _message = (true, $"{reference}: {result.Message}.");
+
+                if (before is not null && _snapshot.Entry(itemId) is null)
+                {
+                    _closed[itemId] = (before, result.Message);
+                }
+
+                if (thenNext && ViewName == ViewPlan && _index < _order.Count - 1)
+                {
+                    _index++;
+                }
+
+                await RememberAsync();
+            }
+            else
+            {
+                _message = (false, $"{reference}: not done. {result.Message}.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _busy = false;
+    }
+
+    private async Task RememberAsync()
+    {
+        if (_viewer.Authenticated || string.IsNullOrWhiteSpace(_actor))
+        {
+            return;
+        }
+
+        try
+        {
+            await Js.InvokeVoidAsync("hephaisto.storageSet", NameStorageKey, _actor.Trim());
+        }
+        catch (JSException)
+        {
+            // A convenience; the click is already recorded.
+        }
+    }
+
+    /// <summary>An item of the walk as it is now, or as it last was when it has left the open ones.</summary>
+    private PlannerEntry? Known(string itemId) =>
+        _snapshot.Entry(itemId) ?? (_seen.TryGetValue(itemId, out var seen) ? seen : null);
+
+    private PlannerEntry? ParentOf(PlannerEntry entry) =>
+        entry.Item.ParentUrl is { } url ? _snapshot.Entries.FirstOrDefault(e => string.Equals(e.Item.Url, url, StringComparison.OrdinalIgnoreCase)) : null;
+
+    private static string WalkHref(PlannerEntry entry) => $"planner?item={Uri.EscapeDataString(entry.Item.ItemId)}";
+
+    private static string PriorityClass(Board board, PlannerEntry entry) =>
+        entry.Item.Field(PlannerQueue.PriorityField) is null ? "hp-faint" : Display.PlannerPriorityClass(PlannerQueue.PriorityRank(board, entry.Item));
+
+    private static bool IsStatus(BoardField field) => string.Equals(field.Name, PlannerQueue.StatusField, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPriority(BoardField field) => string.Equals(field.Name, PlannerQueue.PriorityField, StringComparison.OrdinalIgnoreCase);
+
+    private static string RowClass(PlannerEntry entry) => entry.Day switch
+    {
+        PlannerDay.Today => "is-today",
+        PlannerDay.NotToday => "is-away",
+        _ => string.Empty,
+    };
+
+    private string Seg(string view) => ViewName == view ? "on" : string.Empty;
+
+    private static string Pressed(bool on) => on ? "true" : "false";
+
+    private static string Percent(int done, int total) =>
+        total <= 0 ? "0%" : (Math.Clamp(done * 100.0 / total, 0, 100)).ToString("F0", CultureInfo.InvariantCulture) + "%";
+
+    /// <summary>The pull requests of a row, short: each with its state, or how many when there are several of one state.</summary>
+    private RenderFragment Pulls(BoardItem item) => builder =>
+    {
+        if (item.PullRequests.Count == 0)
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "hp-faint");
+            builder.AddContent(2, "none");
+            builder.CloseElement();
+            return;
+        }
+
+        var sequence = 3;
+
+        foreach (var group in item.PullRequests.GroupBy(p => p.State).OrderBy(g => g.Key))
+        {
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", "hp-state " + Display.PullStateClass(group.Key));
+            builder.OpenElement(sequence++, "span");
+            builder.AddAttribute(sequence++, "class", "glyph");
+            builder.AddContent(sequence++, Display.PullStateGlyph(group.Key));
+            builder.CloseElement();
+            builder.AddContent(sequence++, group.Count() == 1
+                ? $" {group.First().Reference} {Display.PullStateWord(group.Key)} "
+                : $" {group.Count().ToString(CultureInfo.InvariantCulture)} {Display.PullStateWord(group.Key)} ");
+            builder.CloseElement();
+        }
+    };
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

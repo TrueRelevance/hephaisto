@@ -3,6 +3,8 @@ using Hephaisto.Agent.Components;
 using Hephaisto.Core.Domain;
 using Hephaisto.Agent.Observability;
 
+using Hephaisto.Core.Planning;
+
 namespace Hephaisto.Tests.Design;
 
 /// <summary>
@@ -41,6 +43,70 @@ public class DisplayVocabularyTests
 
         states.Select(Display.WorkItemGlyph).Should().OnlyHaveUniqueItems();
         states.Select(Display.WorkItemWord).Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
+    /// The planner's vocabulary (v0.15.0). Every reason is "a person decides" and shares one
+    /// colour, so the glyph and the word are all that tells two of them apart - which is why
+    /// both have to be unique, and why "nothing asks for a decision" may not look like one.
+    /// </summary>
+    [Fact]
+    public void The_planner_vocabulary_covers_every_reason_day_and_pull_request_state()
+    {
+        var reasons = Enum.GetValues<PlannerReason>();
+
+        foreach (var reason in reasons)
+        {
+            Display.PlannerReasonWord(reason).Should().NotBe("unknown");
+            Display.PlannerReasonClass(reason).Should().StartWith("st-");
+        }
+
+        reasons.Select(Display.PlannerReasonGlyph).Should().OnlyHaveUniqueItems();
+        reasons.Select(Display.PlannerReasonWord).Should().OnlyHaveUniqueItems();
+        reasons.Where(r => r != PlannerReason.None).Select(Display.PlannerReasonClass).Distinct().Should().Equal("st-awaiting");
+        Display.PlannerReasonClass(PlannerReason.None).Should().NotBe("st-awaiting");
+
+        var days = Enum.GetValues<PlannerDay>();
+
+        days.Select(Display.PlannerDayWord).Should().OnlyHaveUniqueItems().And.NotContain("unknown");
+        days.Select(Display.PlannerDayGlyph).Should().OnlyHaveUniqueItems().And.NotContain("?");
+
+        var pulls = Enum.GetValues<BoardPullState>();
+
+        pulls.Select(Display.PullStateWord).Should().OnlyHaveUniqueItems().And.NotContain("unknown");
+        pulls.Select(Display.PullStateGlyph).Should().OnlyHaveUniqueItems().And.NotContain("?");
+        pulls.Select(Display.PullStateClass).Should().OnlyContain(c => c.StartsWith("st-"));
+    }
+
+    [Theory]
+    [InlineData(0, "sev-critical")]
+    [InlineData(1, "sev-warning")]
+    [InlineData(2, "sev-info")]
+    [InlineData(int.MaxValue, "sev-info")]
+    public void A_priority_is_coloured_by_where_it_stands_among_its_fields_options(int rank, string expected)
+    {
+        Display.PlannerPriorityClass(rank).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("2026-10-13T00:00:01Z", "today")]
+    [InlineData("2026-10-12T23:59:59Z", "yesterday")]
+    [InlineData("2026-10-04T09:00:00Z", "9 days ago")]
+    [InlineData("2026-10-14T09:00:00Z", "today")]
+    public void How_long_ago_is_counted_in_utc_days(string at, string expected)
+    {
+        Display.Ago(DateTimeOffset.Parse(at, System.Globalization.CultureInfo.InvariantCulture), new DateTimeOffset(2026, 10, 13, 9, 0, 0, TimeSpan.Zero))
+            .Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("https://github.com/acme/api/issues/12", "acme/api#12")]
+    [InlineData("https://github.example/acme/api/issues/12", "acme/api#12")]
+    [InlineData("https://github.com/acme/api/pull/12", "https://github.com/acme/api/pull/12")]
+    [InlineData("not an address", "not an address")]
+    public void An_issues_address_is_shortened_to_its_reference_and_anything_else_is_left_alone(string url, string expected)
+    {
+        Display.ShortIssue(url).Should().Be(expected);
     }
 
     /// <summary>Through what a plan was answered: every source a person can decide through has words.</summary>

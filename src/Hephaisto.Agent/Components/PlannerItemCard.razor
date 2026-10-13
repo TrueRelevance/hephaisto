@@ -1,0 +1,379 @@
+@using Hephaisto.Core.Planning
+@preservewhitespace true
+
+@*
+    One item of the planner (v0.15.0), with everything a person decides by and everything they can
+    do about it. Used by the walk of /planner.
+
+    An issue's title, its author, a field's value and a login are somebody else's text and are
+    rendered as text. An address is a link only when it is an absolute http(s) address.
+
+    The card decides nothing: every button calls back, and the page is where "may this person",
+    "who is it" and the service are.
+*@
+
+<article class="hp-codefix" data-testid="planner-item" data-item="@Item.ItemId" data-reference="@Item.Reference"
+         data-reason="@Entry.Reason" data-day="@Entry.Day" data-open="@(Open ? "true" : "false")">
+    <header class="hp-inv-header">
+        @if (Open)
+        {
+            <span class="hp-state @Display.PlannerReasonClass(Entry.Reason)" data-testid="planner-item-reason">
+                <span class="glyph">@Display.PlannerReasonGlyph(Entry.Reason)</span>
+                @Display.PlannerReasonWord(Entry.Reason)
+            </span>
+        }
+        else
+        {
+            <span class="hp-state st-closed" data-testid="planner-item-reason"><span class="glyph">x</span> closed</span>
+        }
+
+        <span class="mono" data-testid="planner-item-reference">@Item.Reference</span>
+
+        @if (Item.Type is { Length: > 0 } type)
+        {
+            <span class="hp-chip">@type</span>
+        }
+
+        @if (Item.Field(PlannerQueue.PriorityField) is { } priority)
+        {
+            <span class="mono @Display.PlannerPriorityClass(PlannerQueue.PriorityRank(Board, Item))">@priority</span>
+        }
+
+        <span class="hp-muted">opened by <span class="mono">@Item.Author</span> @Display.Ago(Item.CreatedAt, Now)</span>
+
+        @if (Display.HttpUrl(Item.Url) is { } url)
+        {
+            <a class="hp-planner-out" href="@url" target="_blank" rel="noopener" data-testid="planner-item-github" title="@url">open on GitHub</a>
+        }
+    </header>
+
+    <h2 class="hp-planner-title" data-testid="planner-item-title">@Item.Title</h2>
+
+    @if (!Open)
+    {
+        <div class="hp-callout callout-resolved" data-testid="planner-item-closed">
+            <span class="glyph">+</span> <strong>@(ClosedHow ?? "closed")</strong>
+            <span class="hp-muted">It counts as done today.</span>
+        </div>
+    }
+    else if (Entry.NeedsDecision)
+    {
+        <div class="hp-plan-banner" data-testid="planner-item-why">
+            <span class="glyph">@Display.PlannerReasonGlyph(Entry.Reason)</span>
+            <strong>@Why</strong>
+            <span class="hp-muted">@WhatNow</span>
+        </div>
+    }
+
+    <dl class="hp-kv">
+        <dt>this day</dt>
+        <dd data-testid="planner-item-day">
+            <span class="hp-planner-ids">
+                <span><span class="glyph">@Display.PlannerDayGlyph(Entry.Day)</span> @Display.PlannerDayWord(Entry.Day)</span>
+                @if (Entry.CarriedOver)
+                {
+                    <span class="hp-chip" title="Scheduled on an earlier day and still open">from an earlier day</span>
+                }
+            </span>
+        </dd>
+
+        @foreach (var field in Board.Fields)
+        {
+            <dt>@field.Name</dt>
+
+            @if (Item.Field(field.Name) is { } value)
+            {
+                <dd data-testid="planner-item-field" data-field="@field.Name">@value</dd>
+            }
+            else if (Entry.EmptyFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                <dd class="hp-warn" data-testid="planner-item-field" data-field="@field.Name"><span class="glyph">?</span> empty</dd>
+            }
+            else
+            {
+                <dd class="hp-muted" data-testid="planner-item-field" data-field="@field.Name">empty</dd>
+            }
+        }
+
+        <dt>assignees</dt>
+        <dd data-testid="planner-item-assignees">
+            @if (Item.Assignees.Count == 0)
+            {
+                <span class="hp-muted">nobody</span>
+            }
+            else
+            {
+                <span class="mono">@string.Join(", ", Item.Assignees)</span>
+            }
+        </dd>
+
+        <dt>parent</dt>
+        <dd>
+            @if (Item.ParentUrl is null)
+            {
+                <span class="hp-muted">none</span>
+            }
+            else if (Parent is { } parent)
+            {
+                <span class="hp-planner-ids">
+                    <span class="mono">@parent.Item.Reference</span>
+                    <span>@parent.Item.Title</span>
+                    @if (parent.Item.SubIssues > 0)
+                    {
+                        <span class="hp-muted">&middot; @parent.Item.SubIssuesDone of @parent.Item.SubIssues done</span>
+                    }
+                </span>
+            }
+            else if (Display.HttpUrl(Item.ParentUrl) is { } parentUrl)
+            {
+                <a class="mono" href="@parentUrl" target="_blank" rel="noopener">@Display.ShortIssue(parentUrl)</a>
+            }
+        </dd>
+
+        <dt>pull requests</dt>
+        <dd data-testid="planner-item-pulls">
+            @if (Item.PullRequests.Count == 0)
+            {
+                <span class="hp-muted">none names this issue</span>
+            }
+
+            <span class="hp-planner-ids">
+                @foreach (var pull in Item.PullRequests)
+                {
+                    <span class="hp-planner-ids" data-testid="planner-item-pull" data-state="@pull.State">
+                        @if (Display.HttpUrl(pull.Url) is { } pullUrl)
+                        {
+                            <a class="mono" href="@pullUrl" target="_blank" rel="noopener">@pull.Reference</a>
+                        }
+                        else
+                        {
+                            <span class="mono">@pull.Reference</span>
+                        }
+                        <span class="hp-state @Display.PullStateClass(pull.State)"><span class="glyph">@Display.PullStateGlyph(pull.State)</span> @Display.PullStateWord(pull.State)</span>
+                        <span class="hp-muted">@Display.Ago(pull.At, Now)</span>
+                    </span>
+                }
+            </span>
+        </dd>
+
+        <dt>sub-issues</dt>
+        <dd>
+            @if (Item.SubIssues == 0)
+            {
+                <span class="hp-muted">none</span>
+            }
+            else
+            {
+                <text>@Item.SubIssuesDone of @Item.SubIssues done</text>
+            }
+        </dd>
+
+        <dt>last activity</dt>
+        <dd><span class="mono">@Display.Timestamp(Entry.LastActivity)</span> <span class="hp-muted">&middot; @Display.Ago(Entry.LastActivity, Now)</span></dd>
+    </dl>
+
+    <div class="hp-cf-decide" data-testid="planner-item-actions">
+        <div class="hp-field hp-planner-day">
+            <span class="hp-label">this day</span>
+            <button type="button" class="@DayClass(PlannerDay.Today)" aria-pressed="@Pressed(Entry.Day == PlannerDay.Today)"
+                    data-testid="planner-day" data-day="today" data-current="@Current(Entry.Day == PlannerDay.Today)"
+                    disabled="@Locked" @onclick="() => OnDay.InvokeAsync(Toggle(PlannerDay.Today))">
+                @if (Entry.Day == PlannerDay.Today)
+                {
+                    <span class="glyph">*</span>
+                }
+                today
+            </button>
+            <button type="button" class="@DayClass(PlannerDay.NotToday)" aria-pressed="@Pressed(Entry.Day == PlannerDay.NotToday)"
+                    data-testid="planner-day" data-day="not today" data-current="@Current(Entry.Day == PlannerDay.NotToday)"
+                    disabled="@Locked" @onclick="() => OnDay.InvokeAsync(Toggle(PlannerDay.NotToday))">
+                @if (Entry.Day == PlannerDay.NotToday)
+                {
+                    <span class="glyph">*</span>
+                }
+                not today
+            </button>
+            <span class="hp-muted">
+                @if (!Open)
+                {
+                    <text>the issue is closed</text>
+                }
+                else if (Entry.Day == PlannerDay.Undecided)
+                {
+                    <text>either choice goes on to the next item</text>
+                }
+                else if (Entry.CarriedOver)
+                {
+                    <text>planned on an earlier day: click today to keep it for today</text>
+                }
+                else
+                {
+                    <text>click the marked one to take it back</text>
+                }
+            </span>
+        </div>
+
+        <div class="hp-field">
+            <span class="hp-label">close</span>
+            <button type="button" class="@(SuggestsClose ? "hp-submit" : null)" data-testid="planner-close" data-how="done"
+                    disabled="@Locked" @onclick="() => OnClose.InvokeAsync(false)">close: done</button>
+            <button type="button" data-testid="planner-close" data-how="not planned"
+                    disabled="@Locked" @onclick="() => OnClose.InvokeAsync(true)">close: not planned</button>
+            @if (Open && SuggestsClose)
+            {
+                <span class="hp-muted" data-testid="planner-suggested">suggested: @Display.PlannerReasonWord(Entry.Reason)</span>
+            }
+        </div>
+
+        @foreach (var field in Fields)
+        {
+            var current = Item.Field(field.Name);
+            var asked = Entry.EmptyFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase);
+
+            <div class="hp-field" data-testid="planner-field" data-field="@field.Name">
+                <span class="hp-label">@field.Name</span>
+                @foreach (var option in field.Options)
+                {
+                    var on = string.Equals(option.Name, current, StringComparison.OrdinalIgnoreCase);
+
+                    <button type="button" class="@(on ? "hp-thumb on" : asked ? "hp-submit" : null)" aria-pressed="@Pressed(on)"
+                            data-testid="planner-option" data-field="@field.Name" data-option="@option.Name" data-current="@Current(on)"
+                            disabled="@Locked" @onclick="() => Choose(field.Name, option.Name, on)">
+                        @if (on)
+                        {
+                            <span class="glyph">*</span>
+                        }
+                        @option.Name
+                    </button>
+                }
+                @if (Open && asked)
+                {
+                    <span class="hp-warn"><span class="glyph">?</span> empty</span>
+                }
+            </div>
+        }
+
+        @if (Assignees.Count > 0)
+        {
+            <div class="hp-field" data-testid="planner-assignees">
+                <span class="hp-label">assignee</span>
+                @foreach (var login in Assignees)
+                {
+                    var on = Item.Assignees.Contains(login, StringComparer.OrdinalIgnoreCase);
+                    var bot = string.Equals(login, BotLogin, StringComparison.OrdinalIgnoreCase);
+
+                    <button type="button" class="@(on ? "hp-thumb on" : null)" aria-pressed="@Pressed(on)"
+                            data-testid="planner-assignee" data-login="@login" data-current="@Current(on)"
+                            title="@(bot ? "Hephaisto's own account. In a repository the install lists, assigning an issue to it hands the issue over." : null)"
+                            disabled="@Locked" @onclick="() => OnAssign.InvokeAsync((login, !on))">
+                        @if (on)
+                        {
+                            <span class="glyph">*</span>
+                        }
+                        @login
+                    </button>
+                }
+                <span class="hp-muted">click the marked one to take it off</span>
+            </div>
+        }
+
+        @if (LockedBecause is { Length: > 0 } because)
+        {
+            <span class="hp-warn" data-testid="planner-locked"><span class="glyph">!</span> @because</span>
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired]
+    public PlannerEntry Entry { get; set; } = null!;
+
+    [Parameter, EditorRequired]
+    public Board Board { get; set; } = null!;
+
+    /// <summary>False once the issue was closed from here: the card stays and says so.</summary>
+    [Parameter]
+    public bool Open { get; set; } = true;
+
+    [Parameter]
+    public string? ClosedHow { get; set; }
+
+    /// <summary>The parent, when it is among the board's open issues.</summary>
+    [Parameter]
+    public PlannerEntry? Parent { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<string> Assignees { get; set; } = [];
+
+    [Parameter]
+    public string? BotLogin { get; set; }
+
+    [Parameter]
+    public DateTimeOffset Now { get; set; }
+
+    /// <summary>A click is under way.</summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>Why nothing here can be clicked, when that is so: no approver role, nobody named.</summary>
+    [Parameter]
+    public string? LockedBecause { get; set; }
+
+    [Parameter]
+    public EventCallback<PlannerDay> OnDay { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnClose { get; set; }
+
+    [Parameter]
+    public EventCallback<(string Field, string Option)> OnField { get; set; }
+
+    [Parameter]
+    public EventCallback<(string Login, bool Assign)> OnAssign { get; set; }
+
+    private BoardItem Item => Entry.Item;
+
+    private bool Locked => Busy || !Open || LockedBecause is not null;
+
+    private bool SuggestsClose => Entry.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone;
+
+    /// <summary>The fields a person is asked to fill come first; the rest keep the board's order.</summary>
+    private IEnumerable<BoardField> Fields =>
+        Board.Fields.OrderBy(f => Entry.EmptyFields.Contains(f.Name, StringComparer.OrdinalIgnoreCase) ? 0 : 1);
+
+    private string Why => Entry.Reason switch
+    {
+        PlannerReason.MergedStillOpen => "Every pull request that names this issue is merged, and the issue is still open.",
+        PlannerReason.SubIssuesDone => "Every sub-issue is done, and this issue is still open.",
+        PlannerReason.PullRequestQuiet => "A pull request is open, and nothing happened here since.",
+        PlannerReason.FieldEmpty => Entry.EmptyFields.Count == 1
+            ? $"{Entry.EmptyFields[0]} is empty."
+            : $"{string.Join(", ", Entry.EmptyFields.Take(Entry.EmptyFields.Count - 1))} and {Entry.EmptyFields[^1]} are empty.",
+        _ => string.Empty,
+    };
+
+    private string WhatNow => Entry.Reason switch
+    {
+        PlannerReason.MergedStillOpen => $"Last activity {Display.Ago(Entry.LastActivity, Now)}. If it is verified and deployed, close it.",
+        PlannerReason.SubIssuesDone => "If nothing is left to do, close it.",
+        PlannerReason.PullRequestQuiet => $"Last activity {Display.Ago(Entry.LastActivity, Now)}. Review it, or put the issue away for today.",
+        PlannerReason.FieldEmpty => "This board asks for it. Pick one below; the item then leaves this list.",
+        _ => string.Empty,
+    };
+
+    private string? DayClass(PlannerDay day) =>
+        Entry.Day == day ? "hp-thumb on" : Entry.Day == PlannerDay.Undecided && day == PlannerDay.Today ? "hp-submit" : null;
+
+    /// <summary>
+    /// A click on the day that is already set takes it back - unless it was set on an earlier
+    /// day: then the click says "today as well", and the label is dated today again.
+    /// </summary>
+    private PlannerDay Toggle(PlannerDay day) => Entry.Day == day && !Entry.CarriedOver ? PlannerDay.Undecided : day;
+
+    private Task Choose(string field, string option, bool current) =>
+        current ? Task.CompletedTask : OnField.InvokeAsync((field, option));
+
+    private static string Pressed(bool on) => on ? "true" : "false";
+
+    private static string Current(bool on) => on ? "true" : "false";
+}

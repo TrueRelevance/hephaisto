@@ -24,6 +24,23 @@ github:
   # 443 and forwards to 80, to names on its allowlist: it would refuse this, rightly.
   useEgressProxy: false
 
+  # The planner (v0.15.0), against the board the stand-in seeds: issues of repositories
+  # acme/..., which are not listed above, so the poller never asks about them. `stranger` is
+  # the one login the stand-in answers 201 for and never assigns - the planner's suite reads the
+  # refusal off it. scripts/e2e/ui/tests/planner.spec.ts is how a change to the planner is
+  # accepted; `curl http://$H:8110/github/control/project` shows the board's side of it.
+  planner:
+    enabled: true
+    owner: acme
+    number: 3
+    requiredFields:
+      - Priority
+      - Area
+    staleAfterDays: 5
+    assignees:
+      - flo
+      - stranger
+
 # The issues suite (scripts/e2e/issues-local.sh) hands the agent a dozen issues a run, all in the
 # one repository the in-cluster git server holds, and every one of them is an attempt on it.
 # values-dev-coder.yaml allows 20 a day, which the incident suites alone come close to; with the

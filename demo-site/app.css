@@ -1716,3 +1716,186 @@ details > summary {
     padding-top: 0.6rem;
     border-top: 1px solid var(--border);
 }
+
+/* ---- the planner (v0.15.0) ---------------------------------------------------------------
+ * One project's open issues: a walk through them one at a time, the day's plan, and the whole
+ * board under its top-level issues. Almost all of it is components that already existed - the
+ * card is the code-fix card, the reason is the banner of a plan that waits, the facts are the
+ * key/value list, the choices are the feedback form's toggles. What is new is layout.
+ *
+ * No colour is the planner's own. "A person decides" is the yellow of a plan that waits for
+ * every reason; today is the accent, because it is what the person chose; put away is faint.
+ */
+.hp-faint {
+    color: var(--fg-faint);
+}
+
+/* The switch between the three views, and - small - between today and not today on a row. One
+   control with joined edges, because the choices exclude each other. */
+.hp-seg {
+    display: inline-flex;
+}
+
+.hp-seg button {
+    border-radius: 0;
+    margin-left: -1px;
+    background: transparent;
+    color: var(--fg-dim);
+}
+
+.hp-seg button:first-child {
+    border-radius: var(--radius) 0 0 var(--radius);
+    margin-left: 0;
+}
+
+.hp-seg button:last-child {
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* Raised above its neighbours so its accent border is whole, not half covered by theirs. */
+.hp-seg button.on {
+    position: relative;
+    border-color: var(--accent);
+    background: var(--bg-raised);
+    color: var(--fg);
+    font-weight: 600;
+}
+
+.hp-seg.small button {
+    padding: 0.08rem 0.45rem;
+    font-size: var(--text-xs);
+}
+
+/* The walk: the item, and beside it what the day looks like so far. */
+.hp-planner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 27rem;
+    gap: 1rem;
+    align-items: start;
+}
+
+.hp-planner .hp-codefix {
+    margin-bottom: 0;
+}
+
+.hp-planner-walk {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.6rem;
+}
+
+/* The issue's title is the largest thing on the card and carries no rule under it: it is the
+   subject, not a section. */
+.hp-planner-title {
+    font-size: var(--text-3xl);
+    margin: 0.7rem 0 0.6rem;
+    padding: 0;
+    border: 0;
+}
+
+.hp-planner-out {
+    margin-left: auto;
+}
+
+/* The rows of choices share one label column, narrower than the feedback form's: the labels
+   here are a board's field names, a word each. */
+.hp-planner .hp-field {
+    margin-bottom: 0;
+}
+
+.hp-planner .hp-label {
+    min-width: 6rem;
+}
+
+/* Today or not today is the decision the walk is for: larger, and set apart from the rest. */
+.hp-planner-day {
+    padding-bottom: 0.6rem;
+    border-bottom: 1px dashed var(--border);
+}
+
+.hp-planner-day button {
+    padding: 0.35rem 1.1rem;
+    font-size: var(--text-xl);
+}
+
+.hp-planner-queue {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
+    padding: 0.2rem 0.7rem 0.6rem;
+}
+
+.hp-planner-queue .c-mark {
+    width: 3.4rem;
+    white-space: nowrap;
+}
+
+/* A row's day, in every table of the planner: an accent edge for today, faint for put away
+   and for done. The word is in the row as well - the edge alone would be colour alone. */
+.hp-table tr.is-today td:first-child {
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.hp-table tr.is-away td,
+.hp-table tr.is-away a,
+.hp-table tr.is-done td {
+    color: var(--fg-faint);
+}
+
+/* A reference with what is said about it on the same line - its type, its reason, a pull
+   request's state. A row of its own with a gap, because Razor drops the spaces around a
+   conditional block and the pieces would otherwise touch. */
+.hp-planner-ids {
+    display: inline-flex;
+    gap: 0.45rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+/* A group of the board view: its top-level issue as a heading with its progress at the end. */
+.hp-epic-head {
+    display: flex;
+    gap: 0.8rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--border-strong);
+}
+
+.hp-epic-title {
+    font-size: var(--text-2xl);
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.hp-epic-meta {
+    margin-left: auto;
+    display: flex;
+    gap: 0.8rem;
+    align-items: center;
+}
+
+.c-prio {
+    width: 3rem;
+    white-space: nowrap;
+}
+
+.c-issue {
+    width: 38%;
+}
+
+.c-act {
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* A sub-issue under its parent's row, one step in per level; deeper than two reads no better. */
+.hp-table td.c-sub1 {
+    padding-left: 1.9rem;
+}
+
+.hp-table td.c-sub2 {
+    padding-left: 3.3rem;
+}
