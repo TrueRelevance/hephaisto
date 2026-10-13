@@ -605,6 +605,7 @@ Events:
         <li><a href="#">incidents</a></li>
         <li><a href="#" class="active" data-testid="nav-codefixes">code fixes <span class="hp-nav-badge" title="1 running, 1 awaiting approval">2</span></a></li>
         <li><a href="#" data-testid="nav-workitems">work items</a></li>
+        <li><a href="#" data-testid="nav-planner">planner <span class="hp-nav-badge" title="3 planned for today and still open">3</span></a></li>
         <li><a href="#">search</a></li>
         <li><a href="#">status</a></li>
       </ul>
@@ -1046,6 +1047,202 @@ Closes acme/api#412
 ## What changes, and why
 
 `src/Cart/Total.cs:41` - see [the docs](https://example.invalid), cc @somebody</pre>
+      </section>
+    </section>
+
+    <section class="g-sec">
+      <h2>Planner</h2>
+      <p class="g-note">
+        v0.15.0: one GitHub project&rsquo;s open issues. Almost nothing here is new &mdash; the card
+        is the code-fix card, the reason is the banner of a plan that waits, the facts are the
+        key/value list, the choices are the feedback form&rsquo;s toggles. New is layout: the
+        switch between the three views, the walk&rsquo;s two columns, the heading of a group. No
+        colour is the planner&rsquo;s own: every reason is &ldquo;a person decides&rdquo; and takes
+        the yellow of a plan that waits, told apart by glyph and word; today is the accent, put
+        away is faint. The current choice of a field is marked with <code>*</code>, never by
+        colour alone, and the action a reason suggests is the emphasised button.
+      </p>
+
+      <div class="hp-filters">
+        <span class="hp-seg" data-testid="planner-views">
+          <button type="button" class="on" aria-pressed="true">plan the day</button>
+          <button type="button" aria-pressed="false">today 3</button>
+          <button type="button" aria-pressed="false">all open 92</button>
+        </span>
+        <label>walk through <select><option>every open item</option></select></label>
+        <span class="hp-muted">board <a href="#">Platform planning</a></span>
+        <span class="hp-filter-status">
+          <span class="hp-muted">signed in as <span class="mono">flo</span></span>
+          <span class="hp-muted">92 open &middot; 3 for today &middot; 2 put away &middot; read 07:41:12</span>
+          <button type="button">refresh</button>
+        </span>
+      </div>
+
+      <div class="hp-planner-walk">
+        <button type="button">&lt; previous</button>
+        <button type="button">next &gt;</button>
+        <span class="hp-muted">then <span class="mono">acme/infra#27</span> Second replica on the two new nodes</span>
+      </div>
+
+      <div class="hp-planner">
+        <article class="hp-codefix" data-testid="planner-item">
+          <header class="hp-inv-header">
+            <span class="hp-state st-awaiting"><span class="glyph">!</span> merged, still open</span>
+            <span class="mono">acme/api#431</span>
+            <span class="hp-chip">Bug</span>
+            <span class="mono sev-critical">P0</span>
+            <span class="hp-muted">opened by <span class="mono">reporter</span> 9 days ago</span>
+            <a class="hp-planner-out" href="#">open on GitHub</a>
+          </header>
+          <h2 class="hp-planner-title">Stale cache entry survives a price change</h2>
+          <div class="hp-plan-banner">
+            <span class="glyph">!</span>
+            <strong>Every pull request that names this issue is merged, and the issue is still open.</strong>
+            <span class="hp-muted">Last activity 2 days ago. If it is verified and deployed, close it.</span>
+          </div>
+          <dl class="hp-kv">
+            <dt>this day</dt>
+            <dd><span class="hp-planner-ids"><span><span class="glyph">*</span> today</span><span class="hp-chip">from an earlier day</span></span></dd>
+            <dt>Status</dt><dd>In review</dd>
+            <dt>Priority</dt><dd>P0</dd>
+            <dt>Area</dt><dd class="hp-warn"><span class="glyph">?</span> empty</dd>
+            <dt>assignees</dt><dd><span class="mono">flo</span></dd>
+            <dt>parent</dt>
+            <dd><span class="hp-planner-ids"><span class="mono">acme/planning#17</span><span>Epic: move order history to the column store</span><span class="hp-muted">&middot; 10 of 28 done</span></span></dd>
+            <dt>pull requests</dt>
+            <dd>
+              <span class="hp-planner-ids">
+                <span class="hp-planner-ids"><a class="mono" href="#">acme/api#433</a><span class="hp-state st-resolved"><span class="glyph">+</span> merged</span><span class="hp-muted">2 days ago</span></span>
+                <span class="hp-planner-ids"><a class="mono" href="#">acme/web#238</a><span class="hp-state st-investigating"><span class="glyph">~</span> open</span><span class="hp-muted">today</span></span>
+                <span class="hp-planner-ids"><a class="mono" href="#">acme/web#201</a><span class="hp-state st-closed"><span class="glyph">x</span> closed</span><span class="hp-muted">12 days ago</span></span>
+              </span>
+            </dd>
+            <dt>sub-issues</dt><dd><span class="hp-muted">none</span></dd>
+            <dt>last activity</dt><dd><span class="mono">2026-10-11 14:02:10Z</span> <span class="hp-muted">&middot; 2 days ago</span></dd>
+          </dl>
+          <div class="hp-cf-decide">
+            <div class="hp-field hp-planner-day">
+              <span class="hp-label">this day</span>
+              <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> today</button>
+              <button type="button" aria-pressed="false">not today</button>
+              <span class="hp-muted">planned on an earlier day: click today to keep it for today</span>
+            </div>
+            <div class="hp-field">
+              <span class="hp-label">close</span>
+              <button type="button" class="hp-submit">close: done</button>
+              <button type="button">close: not planned</button>
+              <span class="hp-muted">suggested: merged, still open</span>
+            </div>
+            <div class="hp-field">
+              <span class="hp-label">Area</span>
+              <button type="button" class="hp-submit" aria-pressed="false">API</button>
+              <button type="button" class="hp-submit" aria-pressed="false">Web</button>
+              <button type="button" class="hp-submit" aria-pressed="false">Infra</button>
+              <span class="hp-warn"><span class="glyph">?</span> empty</span>
+            </div>
+            <div class="hp-field">
+              <span class="hp-label">Status</span>
+              <button type="button" aria-pressed="false">Inbox</button>
+              <button type="button" aria-pressed="false">Backlog</button>
+              <button type="button" aria-pressed="false">In progress</button>
+              <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> In review</button>
+              <button type="button" aria-pressed="false">Done</button>
+            </div>
+            <div class="hp-field">
+              <span class="hp-label">Priority</span>
+              <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> P0</button>
+              <button type="button" aria-pressed="false">P1</button>
+              <button type="button" aria-pressed="false">P2</button>
+            </div>
+            <div class="hp-field">
+              <span class="hp-label">assignee</span>
+              <button type="button" aria-pressed="false">hephaisto-bot</button>
+              <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> flo</button>
+              <span class="hp-muted">click the marked one to take it off</span>
+            </div>
+          </div>
+        </article>
+
+        <aside class="hp-planner-queue">
+          <h4>today <span class="hp-count">3</span></h4>
+          <table class="hp-table">
+            <tbody>
+              <tr><td class="c-mark"><span class="mono sev-critical">P0</span></td><td><a class="mono" href="#">acme/billing#88</a> <span class="hp-cf-line">Refund webhook is retried after a 200</span></td></tr>
+              <tr><td class="c-mark"><span class="mono sev-warning">P1</span></td><td><a class="mono" href="#">acme/planning#21</a> <span class="hp-cf-line">Fill the store by replaying every active account</span></td></tr>
+              <tr><td class="c-mark"><span class="mono hp-faint">--</span></td><td><a class="mono" href="#">acme/web#240</a> <span class="hp-cf-line">Dark mode for the invoice view</span></td></tr>
+            </tbody>
+          </table>
+          <h4>put away for today <span class="hp-count">2</span></h4>
+          <table class="hp-table">
+            <tbody>
+              <tr class="is-away"><td class="c-mark"><span class="glyph">-</span></td><td><a class="mono" href="#">acme/infra#31</a> <span class="hp-cf-line">mongo-3 cannot keep up with replication</span></td></tr>
+              <tr class="is-away"><td class="c-mark"><span class="glyph">-</span></td><td><a class="mono" href="#">acme/api#405</a> <span class="hp-cf-line">Paginate the audit export</span></td></tr>
+            </tbody>
+          </table>
+          <h4>up next <span class="hp-count">86</span></h4>
+          <table class="hp-table">
+            <tbody>
+              <tr><td class="c-mark"><span class="hp-planner-ids"><span class="hp-state st-awaiting"><span class="glyph">+</span></span><span class="mono sev-info">P2</span></span></td><td><a class="mono" href="#">acme/planning#9</a> <span class="hp-cf-line">every sub-issue done &middot; Epic: one dashboard per pipeline</span></td></tr>
+              <tr><td class="c-mark"><span class="hp-planner-ids"><span class="hp-state st-awaiting"><span class="glyph">~</span></span><span class="mono sev-warning">P1</span></span></td><td><a class="mono" href="#">acme/api#440</a> <span class="hp-cf-line">pull request quiet &middot; Mirror delete fails for large batches</span></td></tr>
+              <tr><td class="c-mark"><span class="hp-planner-ids"><span class="hp-state st-closed"><span class="glyph">.</span></span><span class="mono sev-warning">P1</span></span></td><td><a class="mono" href="#">acme/api#425</a> <span class="hp-cf-line">Top-N reads from the column store</span></td></tr>
+              <tr><td class="c-mark"></td><td class="hp-muted">and 83 more</td></tr>
+            </tbody>
+          </table>
+        </aside>
+      </div>
+
+      <p class="g-note" style="margin-top:1.4rem">
+        The board view: a group under its top-level issue, with that issue&rsquo;s progress at the
+        end of the heading. A row planned for today carries an accent edge <em>and</em> the marked
+        half of its switch; a row put away is faint and says so in the other half. A sub-issue
+        sits one step in under its parent&rsquo;s row.
+      </p>
+      <section class="hp-section" data-testid="planner-group">
+        <div class="hp-epic-head">
+          <a class="mono" href="#">acme/planning#17</a>
+          <h2 class="hp-epic-title">Epic: move order history to the column store</h2>
+          <span class="mono sev-warning">P1</span>
+          <span class="hp-epic-meta">
+            <span class="hp-muted">In progress &middot; 10 of 28 done</span>
+            <span class="hp-conf-track" role="img" aria-label="10 of 28 done"><span class="hp-conf-fill" style="width:36%"></span></span>
+            <span class="hp-muted">18 open &middot; 1 for today</span>
+          </span>
+        </div>
+        <table class="hp-table">
+          <thead>
+            <tr><th class="c-prio">prio</th><th class="c-issue">issue</th><th>status</th><th>Area</th><th>pull requests</th><th>last activity</th><th class="c-act">this day</th></tr>
+          </thead>
+          <tbody>
+            <tr class="is-today">
+              <td class="c-prio"><span class="mono sev-critical">P0</span></td>
+              <td><span class="hp-planner-ids"><a class="mono" href="#">acme/api#431</a><span class="hp-chip">Bug</span><span class="hp-state st-awaiting"><span class="glyph">!</span> merged, still open</span></span><span class="hp-cf-line">Stale cache entry survives a price change</span></td>
+              <td class="c-time">In review</td><td>API</td>
+              <td><span class="hp-state st-resolved"><span class="glyph">+</span> acme/api#433 merged </span></td>
+              <td class="c-time hp-muted">2 days ago</td>
+              <td class="c-act"><span class="hp-seg small"><button type="button" class="on" aria-pressed="true">today</button><button type="button" aria-pressed="false">not today</button></span></td>
+            </tr>
+            <tr>
+              <td class="c-prio"><span class="mono sev-warning">P1</span></td>
+              <td><span class="hp-planner-ids"><a class="mono" href="#">acme/planning#21</a><span class="hp-chip">Task</span></span><span class="hp-cf-line">Fill the store by replaying every active account &middot; 0 of 2 sub-issues</span></td>
+              <td class="c-time">In progress</td><td>API</td>
+              <td><span class="hp-faint">none</span></td>
+              <td class="c-time hp-muted">yesterday</td>
+              <td class="c-act"><span class="hp-seg small"><button type="button" aria-pressed="false">today</button><button type="button" aria-pressed="false">not today</button></span></td>
+            </tr>
+            <tr class="is-away">
+              <td class="c-prio"><span class="mono sev-warning">P1</span></td>
+              <td class="c-sub1"><span class="hp-planner-ids"><a class="mono" href="#">acme/api#440</a><span class="hp-chip">Bug</span><span class="hp-state st-awaiting"><span class="glyph">~</span> pull request quiet</span></span><span class="hp-cf-line">Mirror delete fails for large batches</span></td>
+              <td class="c-time">In review</td><td>API</td>
+              <td><span class="hp-state st-investigating"><span class="glyph">~</span> 2 open </span></td>
+              <td class="c-time hp-muted">9 days ago</td>
+              <td class="c-act"><span class="hp-seg small"><button type="button" aria-pressed="false">today</button><button type="button" class="on" aria-pressed="true">not today</button></span></td>
+            </tr>
+            <tr>
+              <td class="c-prio"></td>
+              <td colspan="6"><button type="button">show 12 more</button></td>
+            </tr>
+          </tbody>
+        </table>
       </section>
     </section>
 

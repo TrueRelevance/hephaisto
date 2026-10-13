@@ -63,6 +63,9 @@ test.describe('the design language', () => {
     // v0.14.0: the work-item list, and the head of an attempt's own page - the issue, the
     // history with who decided and through what, a pull request's description as text.
     ['workitems', 'Work items'],
+    // v0.15.0: the planner - the switch between its views, the walk with one issue's card and
+    // the day beside it, and a group of the board view with a planned and a put-away row.
+    ['planner', 'Planner'],
   ] as const;
 
   /**
