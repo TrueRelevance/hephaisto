@@ -245,6 +245,28 @@ namespace, cluster, kind or label and asks for no severity above `Info`, because
 none of those; a fallback route is for incidents and does not take it. The Teams board stays a
 board of incidents.
 
+**The planner** (`github.planner`, v0.15.0, off by default) is a page of the console over ONE
+project of an organisation: its open issues one at a time, the day's plan, and everything open
+under its top-level issue. It reads the project when somebody opens the page and writes only on a
+click of the approver role - a single-select field, close, the labels `today` and `not today`, an
+assignee - through the agent's token, recorded under the person's name.
+
+```yaml
+github:
+  planner:
+    enabled: true
+    owner: example        # github.com/orgs/<owner>/projects/<number>
+    number: 3
+    requiredFields: [Priority]
+    staleAfterDays: 5
+    assignees: [octocat]
+```
+
+It needs more of the agent's token than issues as work: the organisation's projects (classic
+`project`; fine-grained "Projects: read and write") and issues read and write on every repository
+whose issues are on the board. Measured with a classic token (`scripts/e2e/planner-live.sh`); the
+fine-grained permissions are GitHub's documentation.
+
 **What it takes on github.com**, as measured against it (`scripts/e2e/github-live.sh`), not as
 read in its documentation:
 

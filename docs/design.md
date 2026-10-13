@@ -246,6 +246,34 @@ page has, whose plan is the shared `CodeFixPlan` component so the two cannot com
 plan differently. Approve and deny there follow the rules above and go through the same door, by
 the attempt's subject (`DecideAsync` for an incident, `DecideForWorkItemAsync` for a work item).
 
+### The planner (v0.15.0)
+
+`/planner` is one GitHub project's open issues in three views. It took the existing vocabulary
+and **no token**: the card is the code-fix card, the reason is the banner of a plan that waits,
+the facts are `hp-kv`, a row of choices is the feedback form's `hp-field` with `hp-thumb on` for
+the current one.
+
+| What | Glyph | Word | Class |
+|---|---|---|---|
+| merged, still open | `!` | merged, still open | `st-awaiting` |
+| every sub-issue done | `+` | every sub-issue done | `st-awaiting` |
+| pull request quiet | `~` | pull request quiet | `st-awaiting` |
+| a required field is empty | `?` | a required field is empty | `st-awaiting` |
+| nothing asks for a decision | `.` | open | `st-closed` |
+
+Every reason is "a person decides", so they share the colour of a plan that waits and are told
+apart by glyph and word - which is why `DisplayVocabularyTests` holds both unique. A priority is
+coloured by where it stands among its field's options (`sev-critical`, `sev-warning`, then
+`sev-info`), because a board names them as it likes. The current choice of a field carries `*`;
+today is the accent edge of a row *and* the marked half of its switch; put away is faint and says
+so in the other half.
+
+New in `app.css`, all layout: `hp-seg` (the joined switch between views, and small on a row),
+`hp-planner` and `hp-planner-queue` (the walk's two columns), `hp-planner-day` (today / not today,
+larger and set apart), `hp-epic-head` (a group's heading with its progress), and
+`hp-planner-ids` - a reference with what is said about it on one line, with a gap, because Razor
+drops the spaces around a conditional block and the pieces would otherwise touch.
+
 **Somebody else's text is text.** An issue's title, a plan, a pull request's description and a
 rejection's reason are written by a stranger, a model, or an approver typing into a comment. They
 are rendered through Razor's encoding and nowhere through `MarkupString`: no markdown, no HTML,

@@ -11,6 +11,62 @@ the links to it below are to that record.
 Versions are set by the git tag through MinVer; the chart version and the app version are always
 the same number.
 
+## v0.15.0 — unreleased
+
+**A board somebody walks.** v0.14.0 let Hephaisto be handed a GitHub issue. This release is
+about the board those issues are on ([#300](https://github.com/TrueRelevance/hephaisto/issues/300)):
+a page of the console that goes through one GitHub project with a person, one issue at a time,
+and lets them decide each with a click. It is off unless `github.planner.enabled` is set, and an
+install that leaves it off gets a navigation entry whose page says so, and nothing else. How to
+turn it on - the project, the token, the values - is one page:
+[The planner](https://docs.hephaisto.dev/operate/planner).
+
+### New
+- **`/planner`: one project's open issues, in three views**
+  ([#300](https://github.com/TrueRelevance/hephaisto/issues/300)). *Plan the day* shows one
+  issue at a time - why it is in front of the person, the facts, and a button for everything
+  that can be done about it. *Today* is the day's plan with what was closed and what was put
+  away. *All open* groups everything under its top-level issue, by priority, sub-issues under
+  their parent. The board is read when the page opens and on "refresh", never on a timer.
+- **Four reasons an issue asks for a decision**, from facts and not from column names: every
+  pull request that names it is merged and it is still open; every sub-issue is done; a pull
+  request is open and nothing happened for `github.planner.staleAfterDays`; a field named in
+  `github.planner.requiredFields` is empty. A pull request names an issue when GitHub lists it as
+  closing it or its description says `Closes` or `Part of` followed by the issue.
+- **Everything is a click, by an approver, recorded under their name.** Set any single-select
+  field of the board, close an issue as done or as not planned, plan it for today or put it away,
+  assign it. GitHub is told by the agent's account; the audit trail (`planner.field`,
+  `planner.close`, `planner.day`, `planner.assign`, and `planner.refused` when GitHub said no)
+  names the person, and its row is written before GitHub is called.
+- **The day is two labels on the issue**, `today` and `not today`. `today` stays until somebody
+  takes it off; from an earlier day it is shown as carried over. `not today` counts only on the
+  day it was set, so what was put away comes back the next morning by itself.
+- **`GET /api/planner`** and four writes behind the approver policy:
+  `POST /api/planner/items/{itemId}/field`, `/close`, `/day`, `/assignee`.
+- **The agent's GitHub client speaks GraphQL**, for the project only: a project is nowhere else.
+  The token, the egress proxy, the rate-limit hold and "it retries nothing" are the REST calls'.
+
+### Changed
+- **The agent can close an issue now** - from the planner, on a person's click, and from nowhere
+  else. Until this release its GitHub client held "nothing that deletes or closes"; it still
+  deletes nothing, and a test holds that only the planner's service calls what closes, labels or
+  assigns.
+
+### Upgrading
+- Nothing to do for an install that does not enable the planner.
+- **The planner needs more of the agent's token than issues as work does**: the organisation's
+  projects (classic `project`; fine-grained "Projects: read and write"), and issues read and
+  write on *every* repository whose issues are on the board, not only the ones in
+  `github.issues.repositories`. Without the first the page says that the board could not be read;
+  without the second a click on an issue of that repository is refused and says so.
+- Assigning an issue to the agent's own account from the planner hands it over, in a repository
+  the install lists - that is what `github.enabled` means, and the planner offers the button.
+
+### Known limits
+- One project, of an organisation; single-select fields; issues only.
+- GitHub sometimes gives an issue that was added to a project an item and never lists it - on
+  the planner and on the board alike. Taking it off the project and adding it again lists it.
+
 ## v0.14.0 — 2026-10-12
 
 **A second way in.** Until now the only thing Hephaisto could be handed was an alert. This

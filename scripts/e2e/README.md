@@ -528,3 +528,33 @@ passes leaves clean issues, and the next one needs no flag.
 `gh pr list` against the in-cluster git server and hold the one Job slot meanwhile. So
 `codefix-local.sh`, `investigate-local.sh` and `issues-local.sh` do not run while it is on. Put
 `"github"` back to `"stand-in"` afterwards and wait for the agent.
+
+## The planner's suite (`ui/tests/planner.spec.ts`, `planner-live.sh`), v0.15.0
+
+`/planner` is tested by the console suite, and what makes it more than a page test is that every
+click is read back **from the board** and not from the page.
+
+```sh
+# tilt_config.json: "github": "stand-in" - the planner is on, against the stand-in's seeded board
+HEPHAISTO_URL=http://$H:8100 GITHUB_STANDIN_URL=http://$H:8110 scripts/e2e/ui/run.sh planner.spec.ts
+curl -s http://$H:8110/github/control/project | jq .          # the board's side of it
+curl -s -X POST http://$H:8110/github/control/project/reset   # the seeded board again
+```
+
+Twelve specs, serial, about fifteen seconds: every option of every field, today / not today / the
+decision taken back, an issue planned on an earlier day, every account assigned and taken off and
+the one GitHub leaves out, both ways of closing from the card and one from the day's list, the
+board view's groups, filters and row switch, and the page without a name. The board is seeded
+anew before the first one (`GitHubStandIn.Project.cs` says what is on it and why), so two of them
+may close what they touch. Without `GITHUB_STANDIN_URL` only the first spec runs - the page says
+whether the planner is on - and the rest skip with a `PRECONDITION:` marker.
+
+**Against github.com**: `scripts/e2e/planner-live.sh` (`"github": "live"`, `"planner-live":
+true`, and a Secret the script's header says how to make). It makes seven issues in the sandbox,
+puts them on the real project, runs the same specs with `PLANNER_E2E_LIVE=1` - `gh` then says
+what a click did - and deletes the issues again; `--sweep` removes what an aborted run left. Run
+it after changing anything the planner sends GitHub. Three things it knows that the stand-in
+does not: GitHub sometimes gives an added issue an item and never lists it (the runner adds each
+alone and adds it again); a board's own workflow may close an issue whose status reaches the last
+column (the field spec presses that one last); and nothing is retried, because a second attempt
+would start from what the first one closed.
