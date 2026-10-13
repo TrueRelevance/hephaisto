@@ -106,6 +106,10 @@ config.define_bool('mcp',           args = False, usage = 'The MCP endpoint on 8
 #             nothing else: it lists ONE repository, the sandbox, and needs `coder`. The Secrets
 #             are made by hand; see that file's header.
 config.define_string('github',      args = False, usage = 'GitHub issues as work: off | stand-in | live (default off)')
+# The planner (v0.15.0, #300) against a real project on github.com, for scripts/e2e/planner-live.sh.
+# Needs "github": "live" and a Secret made by hand; charts/hephaisto/values-dev-planner-live.yaml
+# says which. With "github": "stand-in" the planner is on already, against the stand-in's board.
+config.define_bool('planner-live',  args = False, usage = 'The planner against a real GitHub project (needs github: live)')
 cfg = config.parse()
 
 HOST    = cfg.get('host', 'localhost')
@@ -125,6 +129,7 @@ teams_bot     = cfg.get('teams-bot', 'off')
 pager_e2e     = cfg.get('pager-e2e', False)
 mcp           = cfg.get('mcp', False) or pager_e2e
 github        = cfg.get('github', 'off')
+planner_live  = cfg.get('planner-live', False)
 if pager_e2e:
     local_llm = False
     teams_bot = 'stand-in'
@@ -135,6 +140,8 @@ if teams_bot not in ['off', 'stand-in', 'real']:
     fail('teams-bot must be off, stand-in or real, not %r' % teams_bot)
 if github not in ['off', 'stand-in', 'live']:
     fail('github must be off, stand-in or live, not %r' % github)
+if planner_live and github != 'live':
+    fail('planner-live needs github=live: it layers a real project over the live tier. With github=stand-in the planner already runs, against the stand-in\'s board.')
 if github == 'live' and not coder:
     fail('github=live needs coder: an issue is planned and implemented by a coder Job, and the live tier is about its real `gh`.')
 if github == 'live' and pager_e2e:
@@ -513,6 +520,12 @@ if agent:
     # GitHub__Approvers__* and CodeFix__Sdk off the Deployment and refuses anything but this.
     if github == 'live':
         chart_values.append('charts/hephaisto/values-dev-github-live.yaml')
+
+    # The planner on a real project, after the live tier it needs: another Secret, the bot named
+    # by its login, and the project. scripts/e2e/planner-live.sh reads GitHub__Planner__* off the
+    # Deployment and refuses an agent whose planner is anywhere else.
+    if planner_live:
+        chart_values.append('charts/hephaisto/values-dev-planner-live.yaml')
 
     if teams_bot == 'stand-in' or github == 'stand-in':
 

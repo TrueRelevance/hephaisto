@@ -107,6 +107,25 @@ public sealed class PlannerServiceTests
         github.Calls.Count(c => c == "project acme/3").Should().Be(1, "a write changes the kept board; it does not read it again");
     }
 
+    [Fact]
+    public async Task A_click_acts_on_the_board_that_is_kept_however_old_and_reads_only_when_there_is_none()
+    {
+        var (planner, github, clock, _) = Build();
+
+        // Nothing kept: the API on a fresh process. The board is read first.
+        (await planner.SetFieldAsync("PVTI_431", "Priority", "P1", "flo", Ct)).Done.Should().BeTrue();
+        github.Calls.Count(c => c == "project acme/3").Should().Be(1);
+
+        // A person who looked at an item for ten minutes before deciding.
+        clock.UtcNow = clock.UtcNow.AddMinutes(10);
+        (await planner.SetFieldAsync("PVTI_431", "Priority", "P0", "flo", Ct)).Done.Should().BeTrue();
+        github.Calls.Count(c => c == "project acme/3").Should().Be(1);
+
+        // Looking again is what reads again.
+        await planner.ReadAsync(refresh: false, Ct);
+        github.Calls.Count(c => c == "project acme/3").Should().Be(2);
+    }
+
     [Theory]
     [InlineData("Severity", "High", "the board has no field 'Severity'")]
     [InlineData("Priority", "P9", "'P9' is not an option of Priority")]

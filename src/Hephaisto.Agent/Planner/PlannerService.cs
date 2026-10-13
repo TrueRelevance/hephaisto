@@ -105,6 +105,13 @@ public sealed class PlannerService(
     private PlannerSnapshot? kept;
     private string? botLogin;
 
+    /// <summary>
+    /// The kept board changed: it was read, or a click changed it. For the navigation's badge,
+    /// which shows the day's plan on every page and asks GitHub nothing. Whoever listens takes
+    /// itself off again when it goes away - this service outlives every circuit.
+    /// </summary>
+    public event Action? Changed;
+
     public bool Enabled => options.CurrentValue is { Enabled: true, Planner.Enabled: true };
 
     /// <summary>What was last read, without asking GitHub. For the navigation, which may not cost a request per tab.</summary>
@@ -297,7 +304,11 @@ public sealed class PlannerService(
 
         try
         {
-            var snapshot = await ReadLockedAsync(refresh: false, ct).ConfigureAwait(false);
+            // A click acts on the board the person is looking at, however long they looked: a
+            // read here would cost seconds before every click of a slow walk, and could hand
+            // back a replica that has not heard of the click before. Only with nothing kept at
+            // all - the API, on a fresh process - is the board read first.
+            var snapshot = kept is { Board: not null } ? kept : await ReadLockedAsync(refresh: false, ct).ConfigureAwait(false);
 
             if (IncidentStateMachine.IsForbiddenGranter(who))
             {
@@ -324,6 +335,8 @@ public sealed class PlannerService(
                     board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] },
                     snapshot.ReadAt ?? clock.UtcNow,
                     snapshot.Problem);
+
+                Changed?.Invoke();
             }
 
             if (outcome == PlannerActionOutcome.Refused)
@@ -377,7 +390,10 @@ public sealed class PlannerService(
                 : new PlannerSnapshot(PlannerState.Unreadable, problem, null, null, [], [], [], [], botLogin);
         }
 
-        return kept = Present(read.Value!, now, problem: null);
+        kept = Present(read.Value!, now, problem: null);
+        Changed?.Invoke();
+
+        return kept;
     }
 
     private PlannerSnapshot Present(Board board, DateTimeOffset readAt, string? problem)

@@ -1,0 +1,33 @@
+# The planner against the REAL github.com, layered over values-dev-github-live.yaml when
+# tilt_config.json says "github": "live" and "planner-live": true.
+#
+# This is what scripts/e2e/planner-live.sh runs against: the planner's page on this cluster, one
+# real project, and issues the runner makes in the sandbox and deletes again. Every click of the
+# suite is on one of those issues; of everything else on the board it only reads.
+#
+# What has to exist, made by hand and removed afterwards:
+#   - the Secret named below in the agent's namespace, key GITHUB_TOKEN: a token that may read
+#     and write the organisation's projects and the sandbox's issues. The bot's own token
+#     (hephaisto-github) is limited to the sandbox's issues and cannot see a project, which is
+#     why this tier has a Secret of its own; the runner says how to make it from `gh`.
+#
+# With somebody's own token in that Secret the account of the token is NOT the bot, so botLogin
+# says who is: an issue assigned to the bot is work for Hephaisto, an issue assigned to the
+# person whose token this is, is not.
+github:
+  botLogin: tr-agent-dev
+
+  planner:
+    enabled: true
+    owner: TrueRelevance
+    number: 3
+    requiredFields:
+      - Priority
+      - Area
+    staleAfterDays: 5
+    # Flou21: the account the suite assigns besides the bot.
+    assignees:
+      - Flou21
+
+secrets:
+  github: hephaisto-github-planner-live

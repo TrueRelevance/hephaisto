@@ -138,7 +138,13 @@
         await RefreshAsync();
         _ = PollAsync(_cts.Token);
         _ = ListenAsync(_cts.Token);
+
+        // The planner's badge follows the plan at once: a click on "today" on any page of this
+        // tab, or of another one, is the day's plan changing.
+        Planner.Changed += OnPlannerChanged;
     }
+
+    private void OnPlannerChanged() => _ = InvokeAsync(StateHasChanged);
 
     /// <summary>
     /// The badge moves the moment an attempt does, rather than up to thirty seconds later: a plan
@@ -220,6 +226,7 @@
 
     public void Dispose()
     {
+        Planner.Changed -= OnPlannerChanged;
         _cts?.Cancel();
         _cts?.Dispose();
     }

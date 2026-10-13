@@ -161,6 +161,10 @@ test.describe('planner', () => {
   });
 
   test.describe('with a board', () => {
+    // Against github.com nothing is tried twice: a second attempt would start from the issues
+    // the first one closed, and fail for that and nothing else.
+    test.describe.configure({ mode: 'serial', retries: LIVE ? 0 : undefined });
+
     test.beforeAll(async ({ request }) => {
       const board = await planner(request);
 
@@ -237,17 +241,28 @@ test.describe('planner', () => {
     });
 
     test('every option of every field can be set, and the board says so', async ({ page }) => {
-      test.setTimeout(240_000);
+      test.setTimeout(300_000);
 
       const board = await planner(page.request);
       const target = await item(page.request, 'fields');
       const card = await openItem(page, target.itemId);
       const pressed: string[] = [];
+      const last: Record<string, string> = {};
+      let closedBy: string | null = null;
 
-      for (const field of board.fields) {
+      // Status last, and of every field its last option last: a board may close an issue whose
+      // status reaches its last column (GitHub's own "auto-close issue" workflow does), and then
+      // nothing more can be pressed on it. In this order that is the final click.
+      const fields = [...board.fields.filter(f => f.name !== 'Status'), ...board.fields.filter(f => f.name === 'Status')];
+
+      for (const field of fields) {
         const original = target.fields[field.name];
-        // The one it has last, so that every option is a change when its turn comes.
-        const order = [...field.options.filter(o => o.name !== original), ...field.options.filter(o => o.name === original)];
+        const end = field.options[field.options.length - 1].name;
+        const order = [
+          ...field.options.filter(o => o.name !== original && o.name !== end),
+          ...field.options.filter(o => o.name === original && o.name !== end),
+          ...field.options.filter(o => o.name === end),
+        ];
 
         for (const option of order) {
           const button = card.locator(`[data-testid="planner-option"][data-field="${field.name}"][data-option="${option.name}"]`);
@@ -257,6 +272,8 @@ test.describe('planner', () => {
             await said(page, `${field.name} set to ${option.name}`);
             pressed.push(`${field.name}=${option.name}`);
           }
+
+          last[field.name] = option.name;
 
           await expect(button).toHaveAttribute('data-current', 'true');
           await expect(card.locator(`[data-testid="planner-item-field"][data-field="${field.name}"]`)).toHaveText(option.name);
@@ -269,11 +286,22 @@ test.describe('planner', () => {
       const options = board.fields.reduce((n, f) => n + f.options.length, 0);
       expect(pressed.length, `pressed ${pressed.join(', ')}`).toBeGreaterThanOrEqual(options - board.fields.length);
 
-      // And the API agrees with the page.
-      const after = await item(page.request, 'fields');
-      for (const field of board.fields) {
-        expect(after.fields[field.name]).toBe(target.fields[field.name] ?? field.options[field.options.length - 1].name);
-      }
+      // And the API agrees with the page - or the board closed the issue when its status reached
+      // the last column, and then it is among what was closed today.
+      await expect.poll(async () => {
+        const now = await truth(page.request, ref(target));
+        const fresh = await planner(page.request, true);
+        const open = fresh.items.find(i => ref(i) === ref(target));
+
+        if (now.state === 'closed') {
+          closedBy = `Status = ${last.Status}`;
+          return fresh.closedToday.some(c => ref(c) === ref(target)) && !open;
+        }
+
+        return !!open && fields.every(f => open.fields[f.name] === last[f.name]);
+      }, { timeout: 60_000, intervals: [3_000] }).toBe(true);
+
+      test.info().annotations.push({ type: 'board', description: closedBy ? `the board closed the issue at ${closedBy}` : 'the board leaves an issue open whatever its status' });
     });
 
     test('today, not today, and taking the decision back are labels on the issue', async ({ page }) => {
@@ -380,7 +408,17 @@ test.describe('planner', () => {
 
       // Every open issue is a row or the head of a group, once.
       const heads = (await page.getByTestId('planner-group').evaluateAll(els => els.map(e => (e as HTMLElement).dataset.epic!))).filter(e => e !== 'none');
-      for (const more of await page.getByTestId('planner-group-more').all()) await more.click();
+
+      // A group shows its first rows and a button for the rest. Pressed only once the circuit
+      // is live - the row switches are enabled when the remembered name has arrived over it -
+      // and until none is left, because a click into a page that is not interactive yet is lost.
+      await expect(page.getByTestId('planner-row-day').first()).toBeEnabled();
+
+      for (let left = await page.getByTestId('planner-group-more').count(); left > 0; left--) {
+        await page.getByTestId('planner-group-more').first().click();
+        await expect(page.getByTestId('planner-group-more')).toHaveCount(left - 1);
+      }
+
       const rows = await page.getByTestId('planner-row').evaluateAll(els => els.map(e => (e as HTMLElement).dataset.reference!));
 
       expect([...heads, ...rows].sort()).toEqual(board.items.map(ref).sort());
