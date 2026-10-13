@@ -159,10 +159,32 @@ public static class PlannerQueue
             return current;
         }
 
-        var children = entries
-            .Where(e => ParentOf(e) is not null)
-            .GroupBy(e => ParentOf(e)!, ReferenceEqualityComparer.Instance)
-            .ToDictionary(g => (PlannerEntry)g.Key, g => g.OrderBy(e => PriorityRank(board, e.Item)).ThenBy(e => e.Item.Number).ToList(), ReferenceEqualityComparer.Instance);
+        // By the parent itself, not by what it equals: two entries are records, and two records
+        // with the same content are one key.
+        var children = new Dictionary<PlannerEntry, List<PlannerEntry>>(ReferenceEqualityComparer.Instance);
+
+        foreach (var entry in entries)
+        {
+            if (ParentOf(entry) is not { } parent)
+            {
+                continue;
+            }
+
+            if (!children.TryGetValue(parent, out var siblings))
+            {
+                children[parent] = siblings = [];
+            }
+
+            siblings.Add(entry);
+        }
+
+        foreach (var siblings in children.Values)
+        {
+            siblings.Sort((x, y) =>
+                PriorityRank(board, x.Item).CompareTo(PriorityRank(board, y.Item)) is var byPriority and not 0 ? byPriority
+                : x.Item.Number.CompareTo(y.Item.Number) is var byNumber and not 0 ? byNumber
+                : string.CompareOrdinal(x.Item.Repository, y.Item.Repository));
+        }
 
         var groups = new List<PlannerGroup>();
         var alone = new List<PlannerRow>();
