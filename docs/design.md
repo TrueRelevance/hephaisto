@@ -268,6 +268,10 @@ coloured by where it stands among its field's options (`sev-critical`, `sev-warn
 today is the accent edge of a row *and* the marked half of its switch; put away is faint and says
 so in the other half.
 
+The issue's description sits under its title in `hp-excerpt` - the reading face, as high as a
+screen allows and no higher, because the buttons are below it - as its markdown source. It is
+never rendered: a heading stays `##`, an element stays its angle brackets.
+
 New in `app.css`, all layout: `hp-seg` (the joined switch between views, and small on a row),
 `hp-planner` and `hp-planner-queue` (the walk's two columns), `hp-planner-day` (today / not today,
 larger and set apart), `hp-epic-head` (a group's heading with its progress), and

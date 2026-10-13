@@ -33,6 +33,8 @@ public sealed record BoardLabel(string Name, DateTimeOffset? AddedAt);
 /// <param name="Repository"><c>owner/repo</c>.</param>
 /// <param name="ParentUrl">The issue this one is a sub-issue of, by its address.</param>
 /// <param name="Fields">The board's single-select fields that have a value on this item: field name to option name.</param>
+/// <param name="Body">The issue's description as its author wrote it: markdown, and somebody else's text. Null when nobody wrote one.</param>
+/// <param name="Comments">How many comments the issue has.</param>
 public sealed record BoardItem(
     string ItemId,
     string IssueId,
@@ -52,7 +54,9 @@ public sealed record BoardItem(
     IReadOnlyDictionary<string, string> Fields,
     IReadOnlyList<BoardLabel> Labels,
     IReadOnlyList<string> Assignees,
-    IReadOnlyList<BoardPullRequest> PullRequests)
+    IReadOnlyList<BoardPullRequest> PullRequests,
+    string? Body = null,
+    int Comments = 0)
 {
     public string Reference => $"{Repository}#{Number}";
 

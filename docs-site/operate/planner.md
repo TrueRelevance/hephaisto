@@ -13,9 +13,14 @@ click of a person who holds the console's approver role.
 
 ## Three views of one board
 
-**Plan the day.** One issue: why it is here, the facts a person decides by, and a button for
-everything that can be done about it. *Today* and *not today* go on to the next issue. Beside it
-the day as it stands — what is planned, what was put away, what comes next.
+**Plan the day.** One issue: why it is here, what its author wrote, the facts a person decides by,
+and a button for everything that can be done about it. *Today*, *not today* and closing go on to
+the next issue; a closed issue's card is one step back and says what was done. Beside it the day
+as it stands — what is planned, what was put away, what comes next.
+
+The issue's description is shown under its title as its markdown source — somebody else's text
+is shown as text, never rendered — with its comment count and its labels. *Hide description* puts
+it away for the whole walk, and the browser remembers that.
 
 **Today.** What is planned, by priority, with *close* and *not today* on each row; what was closed
 today; what was put away, each with *back to today*.

@@ -541,9 +541,10 @@ curl -s http://$H:8110/github/control/project | jq .          # the board's side
 curl -s -X POST http://$H:8110/github/control/project/reset   # the seeded board again
 ```
 
-Twelve specs, serial, about fifteen seconds: every option of every field, today / not today / the
-decision taken back, an issue planned on an earlier day, every account assigned and taken off and
-the one GitHub leaves out, both ways of closing from the card and one from the day's list, the
+Thirteen specs, serial, about fifteen seconds: the issue's description as text and put away,
+every option of every field, today / not today / the decision taken back, an issue planned on an
+earlier day, every account assigned and taken off and the one GitHub leaves out, both ways of
+closing from the card - after which the walk has gone on - and one from the day's list, the
 board view's groups, filters and row switch, and the page without a name. The board is seeded
 anew before the first one (`GitHubStandIn.Project.cs` says what is on it and why), so two of them
 may close what they touch. Without `GITHUB_STANDIN_URL` only the first spec runs - the page says

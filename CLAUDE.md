@@ -624,7 +624,7 @@ minutes - so a red live run is read request by request before it is believed.
 
 `github.planner`: `/planner` in the console walks ONE project's open issues with a person
 (`src/Hephaisto.Core/Planning/`, `src/Hephaisto.Agent/Planner/`, `Components/Pages/Planner.razor`,
-`GitHub/GitHubClient.Projects.cs`; #300). Eight things to know before touching it:
+`GitHub/GitHubClient.Projects.cs`; #300). Nine things to know before touching it:
 
 - **Nothing in it runs by itself.** No timer, no pass: a read is a page load or the API, a write
   is a click. So the agent's mode does not gate it, and `PlannerService.cs` is the ONLY file that
@@ -635,8 +635,12 @@ minutes - so a red live run is read request by request before it is believed.
   GitHub was told to; reading first cost seconds per click and could hand back a replica that had
   not heard of the click before. A page load reads again after `PlannerService.KeepFor`.
 - **The walk keeps its own order** (`_order` in `Planner.razor`): a click changes an issue's
-  reason and its place in the queue, and the issue a person looks at must not move away. A closed
-  issue's card stays, from `_closed`.
+  reason and its place in the queue, and the issue a person looks at must not move away. Today,
+  not today and closing go on to the next issue; a closed issue's card is one step back, from
+  `_closed`.
+- **The description is the board read's, and it is text.** `body` comes with the project query,
+  cut at `GitHubClient.MaxIssueBody`; GraphQL sends `""` where REST sends null. It is shown as
+  its markdown source and never rendered - the spec counts the elements inside it: none.
 - **The rules are facts, not column names** (`PlannerQueue`): no rule may know "In review". The
   only names it knows are the fields `Status` and `Priority`, for the order.
 - **The day is two labels and their age**, from the newest `labeled` event of the issue's

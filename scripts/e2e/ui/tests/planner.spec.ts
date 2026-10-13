@@ -43,6 +43,7 @@ type Item = {
   reason: string; emptyFields: string[]; day: string; carriedOver: boolean;
   fields: Record<string, string>; assignees: string[]; parentUrl: string | null;
   subIssues: number; subIssuesDone: number; pullRequests: Pull[];
+  body: string | null; comments: number; labels: string[];
 };
 
 type Planner = {
@@ -237,6 +238,46 @@ test.describe('planner', () => {
 
       if (!LIVE) {
         expect([...reasons].sort(), 'the seeded board holds one of each').toEqual(['FieldEmpty', 'MergedStillOpen', 'None', 'PullRequestQuiet', 'SubIssuesDone']);
+      }
+    });
+
+    test('the issue\'s own text is shown as text, and can be put away for the whole walk', async ({ page }) => {
+      const board = await planner(page.request);
+      const written = board.items.slice(0, 30).find(i => i.body);
+      const blank = board.items.slice(0, 30).find(i => !i.body);
+
+      test.skip(!written, 'PRECONDITION: none of the first thirty open issues has a description');
+
+      let card = await openItem(page, written!.itemId);
+
+      // Markdown as its source: exactly the stored string, and no element made of it.
+      const description = card.getByTestId('planner-item-description');
+      expect(await description.evaluate(e => e.textContent)).toBe(written!.body);
+      expect(await description.locator('*').count()).toBe(0);
+
+      await expect(card.getByTestId('planner-item-comments')).toHaveText(
+        written!.comments === 0 ? 'no comments' : written!.comments === 1 ? '1 comment' : `${written!.comments} comments`);
+
+      // Its labels, without the two that are the day: those are a field of their own.
+      const labels = written!.labels.filter(l => !['today', 'not today'].includes(l.toLowerCase()));
+      expect(await card.getByTestId('planner-item-label').allTextContents()).toEqual(labels);
+
+      // Put away, it stays away: on the next issue, and after the page was loaded again.
+      await card.getByTestId('planner-description-toggle').click();
+      await expect(card.getByTestId('planner-item-description')).toHaveCount(0);
+      await expect(card.getByTestId('planner-description-toggle')).toHaveText('show description');
+
+      card = await openItem(page, written!.itemId);
+      await expect(card.getByTestId('planner-description-toggle')).toHaveText('show description');
+      await expect(card.getByTestId('planner-item-description')).toHaveCount(0);
+
+      await card.getByTestId('planner-description-toggle').click();
+      await expect(card.getByTestId('planner-item-description')).toHaveCount(1);
+
+      if (blank) {
+        card = await openItem(page, blank.itemId);
+        await expect(card.getByTestId('planner-item-description-none')).toContainText('Nobody wrote a description');
+        await expect(card.getByTestId('planner-item-description')).toHaveCount(0);
       }
     });
 
@@ -505,18 +546,32 @@ test.describe('planner', () => {
       ['closeDone', 'done', 'COMPLETED', 'closed as done'],
       ['closeNotPlanned', 'not planned', 'NOT_PLANNED', 'closed as not planned'],
     ] as const) {
-      test(`an issue is closed as ${how} from its card, which then stays and says so`, async ({ page }) => {
+      test(`an issue is closed as ${how} from its card, and the walk goes on to the next one`, async ({ page }) => {
         const target = await item(page.request, role);
-        const card = await openItem(page, target.itemId);
+        let card = await openItem(page, target.itemId);
+
+        const [at, of] = ((await page.getByTestId('planner-count').textContent()) ?? '').match(/(\d+) of (\d+)/)!.slice(1).map(Number);
 
         await card.locator(`[data-testid="planner-close"][data-how="${how}"]`).click();
         await said(page, `${ref(target)}: ${word}`);
 
+        card = page.getByTestId('planner-item');
+
+        if (at < of) {
+          // Closing is the end of deciding about it: the next issue is in front of the person,
+          // and the one that was closed is one step back.
+          await expect(card).not.toHaveAttribute('data-item', target.itemId);
+          await expect(page.getByTestId('planner-count')).toContainText(`${at + 1} of ${of}`);
+
+          await page.getByTestId('planner-previous').click();
+        }
+
+        // Its card is still there, says what was done, and offers nothing any more.
+        await expect(card).toHaveAttribute('data-item', target.itemId);
         await expect(card).toHaveAttribute('data-open', 'false');
         await expect(card.getByTestId('planner-item-closed')).toContainText(word);
         await expect(card.getByTestId('planner-item-reason')).toContainText('closed');
 
-        // Nothing of a closed issue can be pressed any more.
         for (const button of await card.locator('[data-testid="planner-item-actions"] button').all()) {
           await expect(button).toBeDisabled();
         }

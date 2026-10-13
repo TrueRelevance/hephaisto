@@ -172,8 +172,9 @@ else
                         <PlannerItemCard @key="id" Entry="shown" Board="board" Open="@(entry is not null)" ClosedHow="@closed.How"
                                          Parent="@ParentOf(shown)" Assignees="_snapshot.Assignees" BotLogin="@_snapshot.BotLogin" Now="_now"
                                          Busy="_busy" LockedBecause="@LockedBecause"
+                                         DescriptionOpen="_showDescription" OnToggleDescription="ToggleDescriptionAsync"
                                          OnDay="day => DayAsync(id, day, thenNext: day != PlannerDay.Undecided)"
-                                         OnClose="notPlanned => CloseAsync(id, notPlanned)"
+                                         OnClose="notPlanned => CloseAsync(id, notPlanned, thenNext: true)"
                                          OnField="choice => FieldAsync(id, choice.Field, choice.Option)"
                                          OnAssign="choice => AssignAsync(id, choice.Login, choice.Assign)" />
                     }
@@ -318,7 +319,7 @@ else
                                     <td>@Pulls(item)</td>
                                     <td class="c-act">
                                         <button type="button" class="@(e.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone ? "hp-submit" : null)"
-                                                data-testid="planner-today-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false)">close: done</button>
+                                                data-testid="planner-today-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
                                         <button type="button" data-testid="planner-today-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
                                     </td>
                                 </tr>
@@ -524,6 +525,11 @@ else
     /// <summary>Shared with the other pages, so a name typed once is typed once.</summary>
     private const string NameStorageKey = "hephaisto.feedback.name";
 
+    /// <summary>Whether a card shows the issue's description: remembered by the browser, like the name.</summary>
+    private const string DescriptionStorageKey = "hephaisto.planner.description";
+
+    private const string DescriptionHidden = "hidden";
+
     private const string NotAnApprover = "Setting a field, planning the day, assigning and closing need the approver role.";
 
     private PlannerSnapshot _snapshot = PlannerSnapshot.Off;
@@ -535,6 +541,9 @@ else
     private DateTimeOffset _now = DateTimeOffset.UtcNow;
 
     private string _walk = WalkAll;
+
+    /// <summary>Shown unless the person put it away; the choice holds from issue to issue.</summary>
+    private bool _showDescription = true;
 
     /// <summary>
     /// The walk: item ids in the order they were in when the board was read. Kept apart from the
@@ -612,9 +621,23 @@ else
         {
             var remembered = await Js.InvokeAsync<string?>("hephaisto.storageGet", NameStorageKey);
 
+            var description = await Js.InvokeAsync<string?>("hephaisto.storageGet", DescriptionStorageKey);
+            var changed = false;
+
             if (!string.IsNullOrWhiteSpace(remembered) && string.IsNullOrWhiteSpace(_actor))
             {
                 _actor = remembered;
+                changed = true;
+            }
+
+            if (description == DescriptionHidden && _showDescription)
+            {
+                _showDescription = false;
+                changed = true;
+            }
+
+            if (changed)
+            {
                 StateHasChanged();
             }
         }
@@ -741,8 +764,12 @@ else
     private Task DayAsync(string itemId, PlannerDay day, bool thenNext) =>
         ActAsync(itemId, (actor, ct) => Service.SetDayAsync(itemId, day, actor, ct), thenNext);
 
-    private Task CloseAsync(string itemId, bool notPlanned) =>
-        ActAsync(itemId, (actor, ct) => Service.CloseAsync(itemId, notPlanned, actor, ct), thenNext: false);
+    /// <summary>
+    /// Closing an issue is the end of deciding about it, so the walk goes on - as it does after
+    /// today and not today. Its card is still there one step back, and says what was done.
+    /// </summary>
+    private Task CloseAsync(string itemId, bool notPlanned, bool thenNext) =>
+        ActAsync(itemId, (actor, ct) => Service.CloseAsync(itemId, notPlanned, actor, ct), thenNext);
 
     private Task FieldAsync(string itemId, string field, string option) =>
         ActAsync(itemId, (actor, ct) => Service.SetFieldAsync(itemId, field, option, actor, ct), thenNext: false);
@@ -820,6 +847,20 @@ else
         }
 
         _busy = false;
+    }
+
+    private async Task ToggleDescriptionAsync()
+    {
+        _showDescription = !_showDescription;
+
+        try
+        {
+            await Js.InvokeVoidAsync("hephaisto.storageSet", DescriptionStorageKey, _showDescription ? "shown" : DescriptionHidden);
+        }
+        catch (JSException)
+        {
+            // A convenience; it holds for this visit either way.
+        }
     }
 
     private async Task RememberAsync()

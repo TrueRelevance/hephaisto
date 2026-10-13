@@ -28,6 +28,9 @@ turn it on - the project, the token, the values - is one page:
   that can be done about it. *Today* is the day's plan with what was closed and what was put
   away. *All open* groups everything under its top-level issue, by priority, sub-issues under
   their parent. The board is read when the page opens and on "refresh", never on a timer.
+  The card shows the issue's description as its markdown source, with its comment count and
+  labels, and it can be put away for the whole walk. Today, not today and closing go on to the
+  next issue.
 - **Four reasons an issue asks for a decision**, from facts and not from column names: every
   pull request that names it is merged and it is still open; every sub-issue is done; a pull
   request is open and nothing happened for `github.planner.staleAfterDays`; a field named in

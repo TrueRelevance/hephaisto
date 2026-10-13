@@ -1798,6 +1798,24 @@ details > summary {
     margin-left: auto;
 }
 
+/* The issue's own text under its title. Prose, so the reading face and not the mono one; as
+   high as a screen allows and no higher, because the buttons are below it. */
+.hp-planner-more {
+    margin: 0 0 0.7rem;
+}
+
+.hp-planner-body {
+    margin: 0.4rem 0 0;
+    padding: 0.5rem 0.7rem;
+    max-height: 22rem;
+    overflow: auto;
+    font-size: var(--text-xl);
+}
+
+.hp-planner-nobody {
+    margin: 0.4rem 0 0;
+}
+
 /* The rows of choices share one label column, narrower than the feedback form's: the labels
    here are a board's field names, a word each. */
 .hp-planner .hp-field {

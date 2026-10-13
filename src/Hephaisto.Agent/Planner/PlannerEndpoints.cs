@@ -21,6 +21,8 @@ public sealed record PlannerView(
 /// <param name="Reason">Why the item asks for a decision, or <c>None</c>.</param>
 /// <param name="Day"><c>Today</c>, <c>NotToday</c> or <c>Undecided</c>.</param>
 /// <param name="Fields">The board's single-select fields that have a value: field name to option name.</param>
+/// <param name="Body">The issue's description, as markdown source. Somebody else's text; null when there is none.</param>
+/// <param name="Labels">Every label of the issue, the two of the day among them.</param>
 public sealed record PlannerItemView(
     string ItemId,
     string Repository,
@@ -38,7 +40,10 @@ public sealed record PlannerItemView(
     int SubIssues,
     int SubIssuesDone,
     IReadOnlyList<BoardPullRequest> PullRequests,
-    DateTimeOffset LastActivity);
+    DateTimeOffset LastActivity,
+    string? Body,
+    int Comments,
+    IReadOnlyList<string> Labels);
 
 public sealed record PlannerClosedView(string ItemId, string Repository, int Number, string Title, string Url, DateTimeOffset? ClosedAt);
 
@@ -131,7 +136,10 @@ public static class PlannerEndpoints
         entry.Item.SubIssues,
         entry.Item.SubIssuesDone,
         entry.Item.PullRequests,
-        entry.LastActivity);
+        entry.LastActivity,
+        entry.Item.Body,
+        entry.Item.Comments,
+        [.. entry.Item.Labels.Select(l => l.Name)]);
 
     private static PlannerDay? Day(string? word) => word?.Trim().ToLowerInvariant() switch
     {

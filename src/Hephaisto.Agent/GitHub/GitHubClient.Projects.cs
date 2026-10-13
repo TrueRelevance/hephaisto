@@ -28,6 +28,12 @@ public sealed partial class GitHubClient
 
     public const int MaxProjectPages = 20;
 
+    /// <summary>
+    /// How much of an issue's description is kept. A board is read whole, and one issue somebody
+    /// pasted a log into must not make every read of it megabytes.
+    /// </summary>
+    public const int MaxIssueBody = 20_000;
+
     private const string ProjectQuery = """
         query($owner: String!, $number: Int!, $after: String) {
           organization(login: $owner) {
@@ -41,6 +47,8 @@ public sealed partial class GitHubClient
                   fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } } } }
                   content { __typename ... on Issue {
                     id number title url state createdAt updatedAt closedAt
+                    body
+                    comments { totalCount }
                     author { login }
                     repository { nameWithOwner }
                     issueType { name }
@@ -367,7 +375,11 @@ public sealed partial class GitHubClient
             fields,
             [.. Nodes(issue, "labels").Select(l => Text(l, "name")).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => new BoardLabel(l!, labelled.TryGetValue(l!, out var at) ? at : null))],
             [.. Nodes(issue, "assignees").Select(a => Text(a, "login")).Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a!)],
-            pulls);
+            pulls,
+            Text(issue, "body") is { Length: > 0 } body && !string.IsNullOrWhiteSpace(body)
+                ? body.Length <= MaxIssueBody ? body : string.Concat(body.AsSpan(0, MaxIssueBody), "\n…")
+                : null,
+            issue.TryGetProperty("comments", out var comments) ? Count(comments, "totalCount") : 0);
     }
 
     private static BoardPullRequest? BoardPullOf(JsonElement pull)

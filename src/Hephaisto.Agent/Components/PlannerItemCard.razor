@@ -65,6 +65,33 @@
         </div>
     }
 
+    @* The issue itself: what its author wrote, how much was said under it, and its labels. It
+       can be put away - a long description pushes the buttons off the screen - and the choice
+       is the page's, so it holds for the next issue too. Markdown is shown as its source:
+       somebody else's text is text. *@
+    <div class="hp-planner-more" data-testid="planner-item-more">
+        <div class="hp-planner-ids">
+            <button type="button" data-testid="planner-description-toggle" aria-expanded="@Pressed(DescriptionOpen)"
+                    @onclick="() => OnToggleDescription.InvokeAsync()">@(DescriptionOpen ? "hide description" : "show description")</button>
+            <span class="hp-muted" data-testid="planner-item-comments">@CommentsWord</span>
+            @foreach (var label in OtherLabels)
+            {
+                <span class="hp-chip" data-testid="planner-item-label">@label</span>
+            }
+        </div>
+        @if (DescriptionOpen)
+        {
+            @if (Item.Body is { Length: > 0 } body)
+            {
+                <div class="hp-excerpt hp-planner-body" data-testid="planner-item-description">@body</div>
+            }
+            else
+            {
+                <p class="hp-muted hp-planner-nobody" data-testid="planner-item-description-none">Nobody wrote a description.</p>
+            }
+        }
+    </div>
+
     <dl class="hp-kv">
         <dt>this day</dt>
         <dd data-testid="planner-item-day">
@@ -315,6 +342,13 @@
     [Parameter]
     public bool Busy { get; set; }
 
+    /// <summary>Whether the issue's description is shown. The page's choice, so it outlives this card.</summary>
+    [Parameter]
+    public bool DescriptionOpen { get; set; } = true;
+
+    [Parameter]
+    public EventCallback OnToggleDescription { get; set; }
+
     /// <summary>Why nothing here can be clicked, when that is so: no approver role, nobody named.</summary>
     [Parameter]
     public string? LockedBecause { get; set; }
@@ -334,6 +368,19 @@
     private BoardItem Item => Entry.Item;
 
     private bool Locked => Busy || !Open || LockedBecause is not null;
+
+    private string CommentsWord => Item.Comments switch
+    {
+        0 => "no comments",
+        1 => "1 comment",
+        var n => $"{n.ToString(CultureInfo.InvariantCulture)} comments",
+    };
+
+    /// <summary>The issue's labels without the two that are the day: those are a field of their own here.</summary>
+    private IEnumerable<string> OtherLabels => Item.Labels
+        .Select(l => l.Name)
+        .Where(l => !string.Equals(l, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase));
 
     private bool SuggestsClose => Entry.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone;
 

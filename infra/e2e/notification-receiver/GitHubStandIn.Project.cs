@@ -77,7 +77,7 @@ public static partial class GitHubStandIn
             var reporter = new Account("reporter", 3003);
 
             Issue Add(string repo, int number, string type, string title, string? status, string? priority, string? area,
-                (string Repo, int Number)? parent = null, BoardPull[]? pulls = null, int updatedDaysAgo = 1)
+                (string Repo, int Number)? parent = null, BoardPull[]? pulls = null, int updatedDaysAgo = 1, string? body = null, int comments = 0)
             {
                 var issue = new Issue
                 {
@@ -85,6 +85,8 @@ public static partial class GitHubStandIn
                     Number = number,
                     Author = reporter,
                     Title = title,
+                    Body = body,
+                    Comments = comments,
                     Type = type,
                     CreatedAt = now.AddDays(-9),
                     UpdatedAt = now.AddDays(-updatedDaysAgo),
@@ -118,8 +120,13 @@ public static partial class GitHubStandIn
             Add("acme/planning", 17, "Epic", "Epic: move order history to the column store", "In progress", "P1", "API");
 
             // Finished and still open: its one pull request is merged.
+            // Its description is markdown with everything in it that must stay text on a page: a
+            // heading, a list, an element, a link, a mention, a reference to another issue.
             Add("acme/api", 431, "Bug", "Stale cache entry survives a price change", "In review", "P0", "API", ("acme/planning", 17),
-                [new("acme/api", 433, "MERGED", now.AddDays(-2), "Closes #431", Closing: true)], updatedDaysAgo: 2);
+                [new("acme/api", 433, "MERGED", now.AddDays(-2), "Closes #431", Closing: true)], updatedDaysAgo: 2,
+                body: "## What happens\n\nAfter a price change the cart shows the old total until the entry expires.\n\n1. Change a price\n2. <b>Reload</b> the cart\n\nSee [the runbook](https://example.invalid/runbook), cc @somebody, related to #12.",
+                comments: 4);
+            issues[("acme/api", 431)].Labels.Add("customer");
 
             Add("acme/planning", 21, "Task", "Fill the store by replaying every active account", "In progress", "P1", "API", ("acme/planning", 17));
 
@@ -130,7 +137,8 @@ public static partial class GitHubStandIn
 
             // An open pull request that moved today: work in progress, nobody's decision.
             Add("acme/billing", 88, "Bug", "Refund webhook is retried after a 200", "In progress", "P0", "API", null,
-                [new("acme/billing", 90, "OPEN", now, "Fixes #88", Closing: true)], updatedDaysAgo: 0);
+                [new("acme/billing", 90, "OPEN", now, "Fixes #88", Closing: true)], updatedDaysAgo: 0,
+                body: "The provider retries although we answer 200.", comments: 1);
 
             // Priority and area are empty.
             Add("acme/web", 240, "Feature", "Dark mode for the invoice view", "Inbox", null, null);
@@ -200,6 +208,9 @@ public static partial class GitHubStandIn
                     ["createdAt"] = Stamp(issue.CreatedAt),
                     ["updatedAt"] = Stamp(issue.UpdatedAt),
                     ["closedAt"] = row.ClosedAt is { } closed ? Stamp(closed) : null,
+                    // GitHub's GraphQL sends "" for a description nobody wrote, where REST sends null.
+                    ["body"] = issue.Body ?? string.Empty,
+                    ["comments"] = new JsonObject { ["totalCount"] = issue.Comments },
                     ["author"] = new JsonObject { ["login"] = issue.Author.Login },
                     ["repository"] = new JsonObject { ["nameWithOwner"] = issue.Repo },
                     ["issueType"] = issue.Type is null ? null : new JsonObject { ["name"] = issue.Type },

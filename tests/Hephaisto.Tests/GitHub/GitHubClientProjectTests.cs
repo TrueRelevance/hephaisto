@@ -90,6 +90,27 @@ public sealed class GitHubClientProjectTests
         item.Field("Status").Should().Be("In review");
         item.Field("priority").Should().Be("P0");
         item.Assignees.Should().Equal("flo");
+        item.Body.Should().Be("## What happens\n\n1. <b>Reload</b> the cart, cc @somebody", "the description is kept as its author wrote it; showing it as text is the page's job");
+        item.Comments.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task A_description_nobody_wrote_is_none_and_one_somebody_pasted_a_log_into_is_cut()
+    {
+        // GraphQL sends "" where REST sends null.
+        var empty = OneIssue.Replace("\"body\":\"## What happens\\n\\n1. <b>Reload</b> the cart, cc @somebody\"", "\"body\":\"\"", StringComparison.Ordinal);
+        var huge = OneIssue.Replace("## What happens", new string('x', GitHubClient.MaxIssueBody + 500), StringComparison.Ordinal);
+
+        empty.Should().NotBe(OneIssue);
+
+        var (none, _, _) = Build(_ => Json(Page(empty, next: null)));
+        var (cut, _, _) = Build(_ => Json(Page(huge, next: null)));
+
+        (await none.GetProjectAsync("acme", 3, Ct)).Value!.Items.Single().Body.Should().BeNull();
+
+        var body = (await cut.GetProjectAsync("acme", 3, Ct)).Value!.Items.Single().Body!;
+        body.Length.Should().Be(GitHubClient.MaxIssueBody + 2);
+        body.Should().EndWith("\n…");
     }
 
     [Fact]
@@ -349,6 +370,7 @@ public sealed class GitHubClientProjectTests
          "content":{"__typename":"Issue","id":"I_431","number":431,"title":"Stale cache entry survives a price change",
            "url":"https://github.com/acme/api/issues/431","state":"OPEN",
            "createdAt":"2026-10-04T08:00:00Z","updatedAt":"2026-10-11T14:02:10Z","closedAt":null,
+           "body":"## What happens\n\n1. <b>Reload</b> the cart, cc @somebody","comments":{"totalCount":4},
            "author":{"login":"reporter"},"repository":{"nameWithOwner":"acme/api"},"issueType":{"name":"Bug"},
            "parent":{"url":"https://github.com/acme/planning/issues/17"},"subIssuesSummary":{"total":3,"completed":1},
            "assignees":{"nodes":[{"login":"flo"}]},
