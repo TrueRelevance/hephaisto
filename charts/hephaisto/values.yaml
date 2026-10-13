@@ -960,6 +960,52 @@ github:
   # codeFix.egressProxy.extraAllowlist, and the proxy tunnels to port 443 only.
   useEgressProxy: true
 
+  # ---------------------------------------------------------------------------------------
+  # The planner (v0.15.0) - OFF by default
+  # ---------------------------------------------------------------------------------------
+  # /planner in the console: the open issues of ONE project of an organisation, walked through
+  # one at a time, with the day's plan and the whole board grouped by its top-level issues.
+  # Needs github.enabled: it uses the agent's token, through the same proxy.
+  #
+  # It reads the project on a person's page load, never on a timer. Every write is one click
+  # of somebody who holds the console's approver role, recorded in the audit trail under their
+  # name and done on GitHub by the token's account: set one of the board's single-select
+  # fields, close an issue, put the label `today` or `not today` on it, assign it.
+  #
+  # THE TOKEN NEEDS MORE THAN ISSUES AS WORK DOES. A fine-grained token: organisation
+  # permission "Projects: read and write", and "Issues: read and write" on EVERY repository
+  # whose issues are on the board - not only the ones listed in issues.repositories. A classic
+  # token: `project` and `repo`. Without the first the page says that the board could not be
+  # read; without the second a click on an issue of that repository is refused and says so.
+  #
+  # Assigning an issue to the agent's account in a repository of issues.repositories hands it
+  # over: that is what github.enabled means. The planner offers the button; the rule is above.
+  planner:
+    enabled: false
+
+    # The organisation and the project's number: github.com/orgs/<owner>/projects/<number>.
+    # A project of a user account is not supported.
+    owner: ""
+    number: 0
+
+    # Names of the board's fields an item should not leave empty. An item with one of them
+    # empty is put in front of a person. Empty: no field is asked for.
+    #
+    # requiredFields:
+    #   - Priority
+    #   - Area
+    requiredFields: []
+
+    # An issue with an open pull request on which nothing happened for this many days is put in
+    # front of a person.
+    staleAfterDays: 5
+
+    # The logins an issue can be assigned to from the planner, besides the agent's own account.
+    #
+    # assignees:
+    #   - octocat
+    assignees: []
+
 # -----------------------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------------------

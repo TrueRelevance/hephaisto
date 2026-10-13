@@ -39,6 +39,10 @@ public static class GitHubServiceCollectionExtensions
         services.TryAddSingleton<GitHubRateLimit>();
         services.AddScoped<WorkItemQueries>();
 
+        // The planner (v0.15.0), registered always for the reason the reads above are: its page
+        // and /api/planner say "off" on an install that never enabled it.
+        services.TryAddSingleton<Planner.PlannerService>();
+
         var configured = configuration.GetSection(GitHubOptions.SectionName).Get<GitHubOptions>() ?? new GitHubOptions();
 
         if (!configured.Enabled)

@@ -422,6 +422,18 @@ is the earlier, cheaper place to hear it - except the last, which only the chart
 */}}
 {{- define "hephaisto.validateGitHub" -}}
 {{- $gh := .Values.github | default dict -}}
+{{- $planner := $gh.planner | default dict -}}
+{{- if $planner.enabled -}}
+{{- if not $gh.enabled -}}
+  {{- fail "github.enabled is required when github.planner.enabled is true: the planner reads its board with the agent's GitHub token, and without github.enabled there is none." -}}
+{{- end -}}
+{{- if not $planner.owner -}}
+  {{- fail "github.planner.owner is required when github.planner.enabled is true: the organisation of github.com/orgs/<owner>/projects/<number>." -}}
+{{- end -}}
+{{- if not $planner.number -}}
+  {{- fail "github.planner.number is required when github.planner.enabled is true: the project's number, the <number> of github.com/orgs/<owner>/projects/<number>." -}}
+{{- end -}}
+{{- end -}}
 {{- if $gh.enabled -}}
 {{- if not .Values.secrets.github -}}
   {{- fail "secrets.github is required when github.enabled is true: the Secret in the release namespace holding the agent's GitHub token under key GITHUB_TOKEN. The chart never creates a Secret, it only references one." -}}

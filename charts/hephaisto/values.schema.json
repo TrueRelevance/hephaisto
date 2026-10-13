@@ -1410,6 +1410,47 @@
         "useEgressProxy": {
           "type": "boolean",
           "description": "Send the agent's GitHub calls through codeFix.egressProxy when that proxy is rendered."
+        },
+        "planner": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The planner (v0.15.0): the open issues of one organisation project, walked through in the console. Off by default; needs github.enabled.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "owner": {
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9-]*$",
+              "description": "The organisation the project belongs to: the <owner> of github.com/orgs/<owner>/projects/<number>."
+            },
+            "number": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The project's number. 0 is 'not set'."
+            },
+            "requiredFields": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "description": "Names of the board's fields an item should not leave empty."
+            },
+            "staleAfterDays": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Days an open pull request may be quiet before its issue is put in front of a person."
+            },
+            "assignees": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$"
+              },
+              "description": "The logins an issue can be assigned to from the planner, besides the agent's own account."
+            }
+          }
         }
       }
     }

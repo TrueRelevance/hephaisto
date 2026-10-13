@@ -710,6 +710,27 @@ spec:
             - name: GitHub__ProxyUrl
               value: {{ . | quote }}
             {{- end }}
+            {{- with .planner }}
+            {{- if .enabled }}
+            # The planner (v0.15.0): one project, read on a page load, written by a click.
+            - name: GitHub__Planner__Enabled
+              value: "true"
+            - name: GitHub__Planner__Owner
+              value: {{ .owner | quote }}
+            - name: GitHub__Planner__Number
+              value: {{ int64 .number | quote }}
+            - name: GitHub__Planner__StaleAfterDays
+              value: {{ int64 (.staleAfterDays | default 5) | quote }}
+            {{- range $i, $f := .requiredFields }}
+            - name: GitHub__Planner__RequiredFields__{{ $i }}
+              value: {{ $f | quote }}
+            {{- end }}
+            {{- range $i, $a := .assignees }}
+            - name: GitHub__Planner__Assignees__{{ $i }}
+              value: {{ $a | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- end }}
 

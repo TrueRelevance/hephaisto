@@ -755,6 +755,20 @@ refuses "a Go duration where a .NET TimeSpan belongs" "${GH[@]}" --set github.po
 refuses "an API root that is not a URL"        "${GH[@]}" --set github.apiBaseUrl=api.github.com
 refuses "the token as a chart value"           "${GH[@]}" --set github.token=hunter2
 refuses "the coder's Secret as the agent's"    "${GH[@]}" --set codeFix.enabled=true --set secrets.github=hephaisto-codefix
+
+# The planner (v0.15.0): one project, and it has no token of its own.
+PLANNER=("${GH[@]}" --set github.planner.enabled=true --set github.planner.owner=example --set github.planner.number=3)
+renders "the planner with an owner and a number" "${PLANNER[@]}" \
+    --set 'github.planner.requiredFields[0]=Priority' --set 'github.planner.assignees[0]=octocat'
+refuses "the planner without github.enabled" \
+    --set github.planner.enabled=true --set github.planner.owner=example --set github.planner.number=3
+refuses "the planner without an owner"         "${GH[@]}" --set github.planner.enabled=true --set github.planner.number=3
+refuses "the planner without a number"         "${GH[@]}" --set github.planner.enabled=true --set github.planner.owner=example
+refuses "a planner owner given as a URL"       "${PLANNER[@]}" --set github.planner.owner=https://github.com/example
+refuses "a planner number that is a name"      "${PLANNER[@]}" --set github.planner.number=planning
+refuses "a quiet period of no days"            "${PLANNER[@]}" --set github.planner.staleAfterDays=0
+refuses "an assignee that is not a login"      "${PLANNER[@]}" --set 'github.planner.assignees[0]=some one'
+refuses "a planner key nobody declared"        "${PLANNER[@]}" --set github.planner.project=3
 refuses "the token set behind the chart's back" \
     --set 'extraEnv[0].name=GitHub__Token' --set 'extraEnv[0].value=hunter2'
 refuses "a repository added behind the chart's back" \

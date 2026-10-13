@@ -1461,6 +1461,28 @@ public sealed partial class WorkItemStageTests(PostgresFixture pg)
     /// </summary>
     private sealed class FakeGitHub : IGitHubClient
     {
+        // The planner's calls (v0.15.0). The poller makes none of them: each is a person's click.
+        public Task<GitHubResult<Hephaisto.Core.Planning.Board>> GetProjectAsync(string owner, int number, CancellationToken ct) =>
+            throw new NotSupportedException("the poller does not read a project");
+
+        public Task<GitHubResult<bool>> SetProjectFieldAsync(string projectId, string itemId, string fieldId, string optionId, CancellationToken ct) =>
+            throw new NotSupportedException("the poller sets no field");
+
+        public Task<GitHubResult<bool>> CloseIssueAsync(string issueId, bool notPlanned, CancellationToken ct) =>
+            throw new NotSupportedException("the poller closes nothing");
+
+        public Task<GitHubResult<bool>> AddLabelAsync(string repository, int number, string label, CancellationToken ct) =>
+            throw new NotSupportedException("the poller labels nothing");
+
+        public Task<GitHubResult<bool>> RemoveLabelAsync(string repository, int number, string label, CancellationToken ct) =>
+            throw new NotSupportedException("the poller labels nothing");
+
+        public Task<GitHubResult<bool>> AddAssigneeAsync(string repository, int number, string login, CancellationToken ct) =>
+            throw new NotSupportedException("the poller assigns nobody");
+
+        public Task<GitHubResult<bool>> RemoveAssigneeAsync(string repository, int number, string login, CancellationToken ct) =>
+            throw new NotSupportedException("the poller assigns nobody");
+
         private sealed class Stored
         {
             public required int Number { get; init; }

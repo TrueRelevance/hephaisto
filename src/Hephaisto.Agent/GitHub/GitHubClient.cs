@@ -126,7 +126,11 @@ public sealed record GitHubRepository(string FullName, string? DefaultBranch);
 /// </summary>
 public sealed record GitHubAssignment(GitHubAccount Assignee, string? Actor, DateTimeOffset At);
 
-/// <summary>What the agent asks of GitHub. Eleven calls, and nothing that deletes or closes.</summary>
+/// <summary>
+/// What the agent asks of GitHub. Eleven calls for issues as work, none of which deletes or
+/// closes; and seven for the planner (v0.15.0), each of whose writes is one person's click in the
+/// console - there, and only there, an issue is closed.
+/// </summary>
 public interface IGitHubClient
 {
     /// <summary>Whose token this is.</summary>
@@ -196,6 +200,30 @@ public interface IGitHubClient
     /// answered for a question that was not asked.
     /// </remarks>
     Task<GitHubResult<IReadOnlyList<GitHubAssignment>>> ListAssignmentsAsync(string repository, int number, string? etag, CancellationToken ct);
+
+    /// <summary>
+    /// An organisation's project: its single-select fields and every issue on it, open and
+    /// closed, each with the pull requests that name it. Drafts and pull requests on the board
+    /// are left out. Up to <see cref="GitHubClient.MaxProjectPages"/> requests.
+    /// </summary>
+    Task<GitHubResult<Hephaisto.Core.Planning.Board>> GetProjectAsync(string owner, int number, CancellationToken ct);
+
+    /// <summary>Sets one single-select field of one project item. Ids, all four: GitHub takes no names here.</summary>
+    Task<GitHubResult<bool>> SetProjectFieldAsync(string projectId, string itemId, string fieldId, string optionId, CancellationToken ct);
+
+    /// <summary>Closes an issue, by its node id, as completed or as not planned.</summary>
+    Task<GitHubResult<bool>> CloseIssueAsync(string issueId, bool notPlanned, CancellationToken ct);
+
+    /// <summary>Puts a label on an issue. GitHub creates one the repository does not have.</summary>
+    Task<GitHubResult<bool>> AddLabelAsync(string repository, int number, string label, CancellationToken ct);
+
+    /// <summary>Takes a label off an issue. One that is not on it is <see cref="GitHubOutcome.NotFound"/>.</summary>
+    Task<GitHubResult<bool>> RemoveLabelAsync(string repository, int number, string label, CancellationToken ct);
+
+    /// <summary>Makes an account an assignee. False when GitHub answered and left the account out: it may not be assigned there.</summary>
+    Task<GitHubResult<bool>> AddAssigneeAsync(string repository, int number, string login, CancellationToken ct);
+
+    Task<GitHubResult<bool>> RemoveAssigneeAsync(string repository, int number, string login, CancellationToken ct);
 }
 
 /// <summary>

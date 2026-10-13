@@ -145,6 +145,7 @@ public static class HephaistoWebExtensions
         console.MapAlertNoteEndpoints();
         CodeFix.CodeFixEndpoints.MapCodeFixEndpoints(console);
         WorkItems.WorkItemEndpoints.MapWorkItemEndpoints(console);
+        Planner.PlannerEndpoints.MapPlannerEndpoints(console);
         Investigations.Jobs.InvestigationJobEndpoints.MapInvestigationJobEndpoints(console);
 
         // Authentication (#110). The webhook group is the ONE surface outside OIDC: Alertmanager

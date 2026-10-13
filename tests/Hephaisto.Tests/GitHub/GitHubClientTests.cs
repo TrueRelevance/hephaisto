@@ -46,15 +46,38 @@ public sealed class GitHubClientTests
     }
 
     [Fact]
-    public void The_client_can_neither_delete_nor_close()
+    public void The_client_deletes_nothing_and_closes_only_for_the_planner()
     {
-        // Hephaisto writes comments. Closing an issue is its pull request's job, on merge, and
-        // nothing here should ever be able to remove what a person wrote.
+        // Issues as work writes comments: closing an issue is its pull request's job, on merge,
+        // and nothing may remove what a person wrote. The planner (v0.15.0) is a person's click
+        // in the console, and it brought exactly three calls that end or take something away.
         typeof(IGitHubClient).GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Select(m => m.Name)
-            .Should().NotContain(n => n.Contains("Delete", StringComparison.OrdinalIgnoreCase)
+            .Where(n => n.Contains("Delete", StringComparison.OrdinalIgnoreCase)
                 || n.Contains("Close", StringComparison.OrdinalIgnoreCase)
-                || n.Contains("Remove", StringComparison.OrdinalIgnoreCase));
+                || n.Contains("Remove", StringComparison.OrdinalIgnoreCase))
+            .Should().BeEquivalentTo(
+                nameof(IGitHubClient.CloseIssueAsync),
+                nameof(IGitHubClient.RemoveLabelAsync),
+                nameof(IGitHubClient.RemoveAssigneeAsync));
+    }
+
+    [Fact]
+    public void Nothing_but_the_planner_calls_what_closes_or_takes_away()
+    {
+        // The poller acts by itself, on every pass. A call that closes an issue or removes a
+        // label may only be reached from a person's click, which is the planner's service.
+        var src = Path.Combine(RepoRoot(), "src", "Hephaisto.Agent");
+
+        var callers = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+                && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => System.Text.RegularExpressions.Regex.IsMatch(
+                File.ReadAllText(f), @"\.(CloseIssueAsync|RemoveLabelAsync|RemoveAssigneeAsync|SetProjectFieldAsync|AddLabelAsync|AddAssigneeAsync)\("))
+            .Select(f => Path.GetFileName(f))
+            .ToList();
+
+        callers.Should().BeEquivalentTo("PlannerService.cs");
     }
 
     // --- the list ---------------------------------------------------------------------------
@@ -724,6 +747,19 @@ public sealed class GitHubClientTests
     // --- harness ------------------------------------------------------------------------------
 
     internal sealed record Sent(HttpMethod Method, string Uri, string Body, IReadOnlyDictionary<string, string> Headers);
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Hephaisto.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        Assert.NotNull(dir);
+        return dir!.FullName;
+    }
 
     private static (GitHubClient Client, RecordingHandler Handler, Given.FixedClock Clock) Build(Func<Sent, HttpResponseMessage> answer)
     {

@@ -150,6 +150,72 @@ public sealed class GitHubOptionsTests
         act.Should().Throw<OptionsValidationException>().Which.Message.Should().NotContain("ghp_");
     }
 
+    // --- the planner (v0.15.0) ---------------------------------------------------------------
+
+    [Fact]
+    public void The_planner_binds_from_the_keys_the_chart_emits_and_is_off_until_asked_for()
+    {
+        using var off = Services(Working);
+        off.GetRequiredService<IOptions<GitHubOptions>>().Value.Planner.Enabled.Should().BeFalse();
+
+        using var services = Services(With(
+            ("GitHub:Planner:Enabled", "true"),
+            ("GitHub:Planner:Owner", "example"),
+            ("GitHub:Planner:Number", "3"),
+            ("GitHub:Planner:StaleAfterDays", "7"),
+            ("GitHub:Planner:RequiredFields:0", "Priority"),
+            ("GitHub:Planner:RequiredFields:1", "Area"),
+            ("GitHub:Planner:Assignees:0", "octocat")));
+
+        var planner = services.GetRequiredService<IOptions<GitHubOptions>>().Value.Planner;
+
+        planner.Enabled.Should().BeTrue();
+        planner.Owner.Should().Be("example");
+        planner.Number.Should().Be(3);
+        planner.StaleAfterDays.Should().Be(7);
+        planner.RequiredFields.Should().Equal("Priority", "Area");
+        planner.Assignees.Should().Equal("octocat");
+    }
+
+    [Theory]
+    [InlineData("GitHub:Planner:Owner", "https://github.com/example", "is not an organisation's login")]
+    [InlineData("GitHub:Planner:Owner", "", "is not an organisation's login")]
+    [InlineData("GitHub:Planner:Number", "0", "must be the project's number")]
+    [InlineData("GitHub:Planner:StaleAfterDays", "0", "at least 1")]
+    [InlineData("GitHub:Planner:Assignees:0", "some one", "is not a GitHub login")]
+    public void A_planner_that_cannot_work_is_refused_with_what_to_set(string key, string value, string says)
+    {
+        (string Key, string Value)[] planner =
+            [("GitHub:Planner:Enabled", "true"), ("GitHub:Planner:Owner", "example"), ("GitHub:Planner:Number", "3")];
+
+        using var services = Services(With([.. planner.Where(p => p.Key != key), (key, value)]));
+
+        var act = () => services.GetRequiredService<IOptions<GitHubOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain(says);
+    }
+
+    [Fact]
+    public void A_planner_without_github_is_the_one_fault_an_install_with_github_off_can_have()
+    {
+        using var services = Services(
+            ("GitHub:Planner:Enabled", "true"), ("GitHub:Planner:Owner", "example"), ("GitHub:Planner:Number", "3"));
+
+        var act = () => services.GetRequiredService<IOptions<GitHubOptions>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().Which.Message.Should().Contain("needs GitHub:Enabled");
+    }
+
+    [Fact]
+    public void A_planner_that_is_off_is_never_a_fault_whatever_else_it_says()
+    {
+        using var services = Services(With(("GitHub:Planner:Owner", "not a login"), ("GitHub:Planner:Number", "-1")));
+
+        var act = () => services.GetRequiredService<IOptions<GitHubOptions>>().Value;
+
+        act.Should().NotThrow();
+    }
+
     /// <summary>
     /// The first connection probe is registered with a TryAdd on the service type, so a probe
     /// registered before the web layer runs would silently take Postgres's place in the panel.

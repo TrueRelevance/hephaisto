@@ -56,6 +56,9 @@ public sealed partial class GitHubOptions
     /// </summary>
     public List<string> Approvers { get; set; } = [];
 
+    /// <summary>The planner (v0.15.0): one project's open issues, walked through in the console.</summary>
+    public GitHubPlannerOptions Planner { get; set; } = new();
+
     /// <summary>The approvers as numbers. Only meaningful once <see cref="Problems"/> is empty.</summary>
     public IReadOnlySet<long> ApproverIds() =>
         Approvers
@@ -67,6 +70,18 @@ public sealed partial class GitHubOptions
     public Uri ApiBase() => new(ApiBaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
 
     /// <summary>
+    /// Where GraphQL is asked - the planner's board is nowhere else. Beside the REST root on
+    /// github.com and on a stand-in; on GitHub Enterprise Server it is <c>/api/graphql</c>, a
+    /// sibling of the <c>/api/v3</c> the REST root ends in.
+    /// </summary>
+    public string GraphQlUrl()
+    {
+        var api = ApiBase();
+
+        return new Uri(api, api.AbsolutePath.EndsWith("/api/v3/", StringComparison.OrdinalIgnoreCase) ? "../graphql" : "graphql").ToString();
+    }
+
+    /// <summary>
     /// Everything wrong with this configuration, one sentence each. Empty when it may start -
     /// and always empty when the feature is off, because an option nobody enabled is not a fault.
     /// </summary>
@@ -74,10 +89,16 @@ public sealed partial class GitHubOptions
     {
         if (!Enabled)
         {
-            return [];
+            // The one fault an install with GitHub off can have: a planner that was asked for
+            // and would silently never show a board.
+            return Planner.Enabled
+                ? ["GitHub:Planner:Enabled needs GitHub:Enabled: the planner reads its board with the agent's GitHub token, and there is none."]
+                : [];
         }
 
         var problems = new List<string>();
+
+        problems.AddRange(Planner.Problems());
 
         if (string.IsNullOrWhiteSpace(Token))
         {
@@ -130,4 +151,79 @@ public sealed partial class GitHubOptions
     // dots and underscores. Loose is enough - the point is to refuse a URL or a bare name.
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")]
     private static partial Regex RepositoryName();
+}
+
+/// <summary>
+/// The planner (v0.15.0). Bound from <c>GitHub:Planner:*</c>; the chart emits
+/// <c>GitHub__Planner__*</c>.
+/// </summary>
+/// <remarks>
+/// Off by default, and it needs <c>GitHub:Enabled</c>: it has no token of its own. What it reads
+/// is ONE project of an organisation; what it writes there is always one person's click.
+/// </remarks>
+public sealed partial class GitHubPlannerOptions
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>The organisation the project belongs to. A project of a user account is not read.</summary>
+    public string Owner { get; set; } = string.Empty;
+
+    /// <summary>The project's number, as in <c>github.com/orgs/&lt;owner&gt;/projects/&lt;number&gt;</c>.</summary>
+    public int Number { get; set; }
+
+    /// <summary>
+    /// Names of the board's fields an item should not leave empty. Only the operator knows which
+    /// of a board's fields are meant to be filled; a name the board does not have is ignored.
+    /// </summary>
+    public List<string> RequiredFields { get; set; } = [];
+
+    /// <summary>How many days an open pull request may be quiet before its issue is put in front of a person.</summary>
+    public int StaleAfterDays { get; set; } = 5;
+
+    /// <summary>
+    /// The logins an issue can be assigned to from the planner, besides the agent's own account.
+    /// A list and not "whoever is signed in": the console knows a person by their identity
+    /// provider's name, and that is not a GitHub login.
+    /// </summary>
+    public List<string> Assignees { get; set; } = [];
+
+    public IReadOnlyList<string> Problems()
+    {
+        if (!Enabled)
+        {
+            return [];
+        }
+
+        var problems = new List<string>();
+
+        if (!Login().IsMatch(Owner))
+        {
+            problems.Add($"GitHub:Planner:Owner '{Owner}' is not an organisation's login. It is the <owner> of github.com/orgs/<owner>/projects/<number>.");
+        }
+
+        if (Number <= 0)
+        {
+            problems.Add("GitHub:Planner:Number must be the project's number, the <number> of github.com/orgs/<owner>/projects/<number>.");
+        }
+
+        if (StaleAfterDays < 1)
+        {
+            problems.Add("GitHub:Planner:StaleAfterDays must be at least 1.");
+        }
+
+        foreach (var field in RequiredFields.Where(string.IsNullOrWhiteSpace))
+        {
+            problems.Add("GitHub:Planner:RequiredFields holds an empty entry; each is the name of a field of the board.");
+        }
+
+        foreach (var assignee in Assignees.Where(a => !Login().IsMatch(a)))
+        {
+            problems.Add($"GitHub:Planner:Assignees entry '{assignee}' is not a GitHub login.");
+        }
+
+        return problems;
+    }
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9-]*$")]
+    private static partial Regex Login();
 }
