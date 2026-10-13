@@ -35,7 +35,13 @@ test.describe('the design language', () => {
   });
 
   test('the whole gallery', async ({ page }) => {
-    await expect(page).toHaveScreenshot('gallery-full.png', { fullPage: true });
+    // Its own timeout, three times the default. The page is over nine thousand pixels tall, a
+    // full-page shot of it takes two to three seconds on a CI runner, and the FIRST one comes
+    // out short - on 2026-10-13 by 32 pixels, cut off at the bottom, the rest identical - so a
+    // third is needed before two agree. With the default five seconds that fit while the page
+    // was shorter; the planner's section made it not fit, and the run failed on a final shot
+    // that was pixel for pixel the baseline.
+    await expect(page).toHaveScreenshot('gallery-full.png', { fullPage: true, timeout: 15_000 });
   });
 
   const sections = [
