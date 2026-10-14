@@ -709,15 +709,18 @@ public sealed class PlannerService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Where a new issue goes: the configured repositories, or the board's own, the one with
-        // the most issues first.
-        var repositories = planner.Repositories.Count > 0
-            ? planner.Repositories.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
-            : [.. board.Items
+        // Where a new issue goes: the configured repositories first - the first of them is the
+        // default - then the board's own, the one with the most issues first.
+        var repositories = planner.Repositories
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.Trim())
+            .Concat(board.Items
                 .GroupBy(i => i.Repository, StringComparer.OrdinalIgnoreCase)
                 .OrderByDescending(g => g.Count())
                 .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.Key)];
+                .Select(g => g.Key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         return new PlannerSnapshot(
             PlannerState.Read, problem, readAt, board, entries, PlannerQueue.Group(board, entries), PlannerQueue.ClosedToday(board, now), assignees, botLogin, repositories);

@@ -189,8 +189,8 @@ public sealed partial class GitHubPlannerOptions
 
     /// <summary>
     /// Where a new issue can be opened from the planner, as <c>owner/repo</c>; the first is chosen
-    /// unless somebody picks another. Empty: the repositories of the board's issues, the one with
-    /// the most first.
+    /// unless somebody picks another. The repositories of the board's issues follow, the one with
+    /// the most first - and are all there is when this is empty.
     /// </summary>
     public List<string> Repositories { get; set; } = [];
 

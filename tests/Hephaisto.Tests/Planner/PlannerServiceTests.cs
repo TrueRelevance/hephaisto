@@ -334,15 +334,15 @@ public sealed class PlannerServiceTests
     }
 
     [Fact]
-    public async Task A_new_issue_goes_to_the_configured_repositories_or_else_to_the_boards_own()
+    public async Task A_new_issue_goes_to_the_configured_repositories_first_and_then_to_the_boards_own()
     {
         var (planner, _, _, _) = Build();
 
         (await planner.ReadAsync(false, Ct)).NewIssueRepositories.Should().Equal("acme/api", "acme/scraper", "acme/web");
 
-        var (configured, _, _, _) = Build(repositories: ["acme/planning", "acme/api"]);
+        var (configured, _, _, _) = Build(repositories: ["acme/planning", "ACME/web"]);
 
-        (await configured.ReadAsync(false, Ct)).NewIssueRepositories.Should().Equal("acme/planning", "acme/api");
+        (await configured.ReadAsync(false, Ct)).NewIssueRepositories.Should().Equal("acme/planning", "ACME/web", "acme/api", "acme/scraper");
     }
 
     [Theory]

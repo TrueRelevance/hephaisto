@@ -45,7 +45,7 @@ turn it on - the project, the token, the values - is one page:
   takes it off; from an earlier day it is shown as carried over. `not today` counts only on the
   day it was set, so what was put away comes back the next morning by itself.
 - **A new issue, written in the console.** *New issue* opens one in a repository picked by a
-  button (`github.planner.repositories`, the first by default; without the list, the board's own),
+  button (`github.planner.repositories`, the first by default, then the board's own),
   with its title, its description, one of the organisation's issue types and any field of the
   board. The agent's account opens it, puts it on the project and sets the fields; the audit row
   is `planner.create`.

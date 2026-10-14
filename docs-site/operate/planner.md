@@ -87,8 +87,8 @@ Three requests, and none is taken back: when a later one is refused, the page sa
 was opened and what is missing, and the issue is on GitHub to be finished by hand. The audit row
 is `planner.create`.
 
-The repositories are `github.planner.repositories`, the first chosen by default. Without the list
-they are the repositories of the board's issues, the one with the most first. The types are the
+The repositories are `github.planner.repositories`, the first chosen by default, followed by the
+repositories of the board's issues, the one with the most first. The types are the
 organisation's enabled issue types; a token that may not read them leaves the type out.
 
 ### Asking Claude
