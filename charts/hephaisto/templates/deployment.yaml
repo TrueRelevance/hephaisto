@@ -729,6 +729,25 @@ spec:
             - name: GitHub__Planner__Assignees__{{ $i }}
               value: {{ $a | quote }}
             {{- end }}
+            {{- range $i, $r := .repositories }}
+            - name: GitHub__Planner__Repositories__{{ $i }}
+              value: {{ $r | quote }}
+            {{- end }}
+            {{- with .triage }}
+            {{- if .enabled }}
+            # Claude labels and analyses an issue when a person asks, in a coder Job.
+            - name: GitHub__Planner__Triage__Enabled
+              value: "true"
+            - name: GitHub__Planner__Triage__MaxCostUsd
+              value: {{ .maxCostUsd | default 2 | toString | quote }}
+            - name: GitHub__Planner__Triage__MaxTurns
+              value: {{ int64 (.maxTurns | default 40) | quote }}
+            - name: GitHub__Planner__Triage__Deadline
+              value: {{ .deadline | default "00:15:00" | quote }}
+            - name: GitHub__Planner__Triage__MaxConcurrentJobs
+              value: {{ int64 (.maxConcurrentJobs | default 2) | quote }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- end }}

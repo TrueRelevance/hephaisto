@@ -42,6 +42,7 @@ public static class GitHubServiceCollectionExtensions
         // The planner (v0.15.0), registered always for the reason the reads above are: its page
         // and /api/planner say "off" on an install that never enabled it.
         services.TryAddSingleton<Planner.PlannerService>();
+        services.TryAddSingleton<Planner.TriageRunner>();
 
         var configured = configuration.GetSection(GitHubOptions.SectionName).Get<GitHubOptions>() ?? new GitHubOptions();
 
@@ -60,6 +61,9 @@ public static class GitHubServiceCollectionExtensions
 #pragma warning restore EXTEXP0001
 
         services.AddHostedService<GitHubIssuePoller>();
+
+        // It follows the Jobs somebody started with a click, and does nothing while there are none.
+        services.AddHostedService(sp => sp.GetRequiredService<Planner.TriageRunner>());
 
         return services;
     }

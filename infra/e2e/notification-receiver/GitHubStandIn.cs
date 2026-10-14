@@ -447,7 +447,7 @@ public static partial class GitHubStandIn
 
         // GitHub's 404 rather than an empty one, for a call this stand-in does not serve.
         // The project board of the planner (v0.15.0): GitHubStandIn.Project.cs.
-        var seedBoard = MapProject(app, api, gate, issues, bot);
+        var seedBoard = MapProject(app, api, gate, issues, comments, bot);
 
         api.MapFallback(() => Problem(404, "Not Found"));
 

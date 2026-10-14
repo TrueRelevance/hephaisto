@@ -1,4 +1,4 @@
-// Two conveniences and nothing else. Everything that matters on these pages is rendered
+// A few conveniences and nothing else. Everything that matters on these pages is rendered
 // server-side over the circuit; if this file fails to load, the console still works and
 // only the scroll-to-step animation and the remembered name are lost.
 //
@@ -20,6 +20,35 @@ window.hephaisto = {
             window.localStorage.setItem(key, value);
         } catch {
             // Full, disabled, or a private window. Nothing to do and nothing to report.
+        }
+    },
+
+    // A line onto the clipboard, for the planner's "Execute github issue" (v0.15.0). The
+    // clipboard API exists only in a secure context, and a console reached over plain http on
+    // a private network is not one - so a selected, off-screen textarea and execCommand are
+    // the fallback. Answers whether either worked; the page then says so, or says to copy by hand.
+    async copy(text) {
+        try {
+            if (window.isSecureContext && navigator.clipboard) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch {
+            // Refused (no permission, no focus): try the old way.
+        }
+        try {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.left = '-9999px';
+            document.body.appendChild(area);
+            area.select();
+            var done = document.execCommand('copy');
+            document.body.removeChild(area);
+            return done;
+        } catch {
+            return false;
         }
     },
 

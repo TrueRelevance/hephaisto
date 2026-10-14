@@ -40,6 +40,13 @@ github:
     assignees:
       - flo
       - stranger
+    # A new issue is opened in one of these; the stand-in numbers it after the seeded ones.
+    repositories:
+      - acme/planning
+      - acme/api
+      - acme/web
+    # Asking Claude (triage) is switched on by the Tiltfile when the coder is on: the chart
+    # refuses it without codeFix.enabled.
 
 # The issues suite (scripts/e2e/issues-local.sh) hands the agent a dozen issues a run, all in the
 # one repository the in-cluster git server holds, and every one of them is an attempt on it.

@@ -7,9 +7,10 @@ namespace NotificationReceiver;
 // The stand-in's project board, for the planner (v0.15.0, #300).
 //
 // A project is only in GraphQL, so this is the one GraphQL endpoint here: POST /graphql, which
-// knows three documents by a word in them - the project read, updateProjectV2ItemFieldValue and
-// closeIssue - and answers each in GitHub's shape. Beside it the four REST calls a click makes:
-// a label on and off, an assignee on and off.
+// knows four documents by a word in them - the project read, updateProjectV2ItemFieldValue,
+// closeIssue and addProjectV2ItemById - and answers each in GitHub's shape. Beside it the REST
+// calls a click makes: a label on and off, an assignee on and off, a new issue, and a
+// repository's labels.
 //
 // What it copies, because a client gets it wrong against the real thing:
 //
@@ -22,6 +23,8 @@ namespace NotificationReceiver;
 //     date stays the old one
 //   - taking off a label that is not there is a 404
 //   - an account that may not be assigned is answered 201 and left out of the issue
+//   - a new issue with a type the organisation does not have is a 422, and a disabled type is
+//     listed among the organisation's types with isEnabled false
 //
 // The board is SEEDED, at start and whenever the stand-in is told to forget: issues of
 // repositories `acme/...`, which no install lists, so the poller never asks about them and the
@@ -43,6 +46,13 @@ public static partial class GitHubStandIn
         ("F_area", "Area", [("a_api", "API"), ("a_web", "Web"), ("a_infra", "Infra")]),
     ];
 
+    /// <summary>The organisation's issue types: the last one is disabled, and a new issue may not have it.</summary>
+    private static readonly (string Name, bool Enabled)[] IssueTypes = [("Task", true), ("Bug", true), ("Feature", true), ("Epic", true), ("Legacy", false)];
+
+    /// <summary>The labels every repository of the board has. A label put on an issue is listed too.</summary>
+    private static readonly (string Name, string? Description)[] RepositoryLabels =
+        [("bug", "Something isn't working"), ("enhancement", "New feature or request"), ("documentation", null), ("question", "Further information is requested")];
+
     private sealed record BoardPull(string Repo, int Number, string State, DateTimeOffset At, string Body, bool Closing);
 
     private sealed class BoardRow
@@ -60,7 +70,7 @@ public static partial class GitHubStandIn
     /// Maps the board's routes and seeds it. Returns the seeding, for the control that forgets
     /// everything; it must be called under <paramref name="gate"/>.
     /// </summary>
-    private static Action MapProject(WebApplication app, RouteGroupBuilder api, object gate, Dictionary<(string Repo, int Number), Issue> issues, Account bot)
+    private static Action MapProject(WebApplication app, RouteGroupBuilder api, object gate, Dictionary<(string Repo, int Number), Issue> issues, List<Comment> comments, Account bot)
     {
         var board = new Dictionary<(string Repo, int Number), BoardRow>();
 
@@ -69,6 +79,7 @@ public static partial class GitHubStandIn
             foreach (var key in board.Keys.ToList())
             {
                 issues.Remove(key);
+                comments.RemoveAll(c => c.Repo == key.Repo && c.Number == key.Number);
             }
 
             board.Clear();
@@ -256,6 +267,26 @@ public static partial class GitHubStandIn
                     return Json(new JsonObject { ["data"] = new JsonObject { ["updateProjectV2ItemFieldValue"] = new JsonObject { ["projectV2Item"] = new JsonObject { ["id"] = row.ItemId } } } });
                 }
 
+                if (query.Contains("addProjectV2ItemById", StringComparison.Ordinal))
+                {
+                    var key = issues.Keys.FirstOrDefault(k => NodeId("I", k.Repo, k.Number) == Field(variables, "content"));
+
+                    if (Field(variables, "project") != ProjectId || key == default)
+                    {
+                        return GraphQlError("addProjectV2ItemById", "NOT_FOUND", "Could not resolve to a node with the global id given.");
+                    }
+
+                    // An issue already on the board keeps its item, as on GitHub.
+                    if (!board.TryGetValue(key, out var row))
+                    {
+                        row = new BoardRow { ItemId = $"PVTI_{key.Repo.Replace('/', '_')}_{key.Number}" };
+                        board[key] = row;
+                        Console.WriteLine($"GITHUB board: {key.Repo}#{key.Number} added as {row.ItemId}");
+                    }
+
+                    return Json(new JsonObject { ["data"] = new JsonObject { ["addProjectV2ItemById"] = new JsonObject { ["item"] = new JsonObject { ["id"] = row.ItemId } } } });
+                }
+
                 if (query.Contains("closeIssue", StringComparison.Ordinal))
                 {
                     var key = board.Keys.FirstOrDefault(k => NodeId("I", k.Repo, k.Number) == Field(variables, "issue"));
@@ -276,7 +307,7 @@ public static partial class GitHubStandIn
 
                 if (!query.Contains("projectV2(number:", StringComparison.Ordinal))
                 {
-                    return Json(new JsonObject { ["errors"] = new JsonArray(new JsonObject { ["message"] = "This stand-in knows the project read, updateProjectV2ItemFieldValue and closeIssue." }) });
+                    return Json(new JsonObject { ["errors"] = new JsonArray(new JsonObject { ["message"] = "This stand-in knows the project read, updateProjectV2ItemFieldValue, closeIssue and addProjectV2ItemById." }) });
                 }
 
                 var number = variables?["number"] is JsonValue n && n.TryGetValue<int>(out var asked) ? asked : 0;
@@ -319,6 +350,10 @@ public static partial class GitHubStandIn
                     {
                         ["organization"] = new JsonObject
                         {
+                            ["issueTypes"] = new JsonObject
+                            {
+                                ["nodes"] = new JsonArray([.. IssueTypes.Select(t => new JsonObject { ["name"] = t.Name, ["isEnabled"] = t.Enabled })]),
+                            },
                             ["projectV2"] = new JsonObject
                             {
                                 ["id"] = ProjectId,
@@ -350,6 +385,64 @@ public static partial class GitHubStandIn
                         },
                     },
                 });
+            }
+        });
+
+        // A new issue, opened by the token's account. Numbers go on from the highest the
+        // repository has, so a suite that opens one finds it after the seeded ones.
+        api.MapPost("/repos/{owner}/{repo}/issues", async (string owner, string repo, HttpContext ctx) =>
+        {
+            var body = await ReadAsync(ctx);
+            var title = Field(body, "title");
+            var type = Field(body, "type");
+
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return Problem(422, "Validation Failed");
+            }
+
+            if (type is not null && !IssueTypes.Any(t => t.Enabled && string.Equals(t.Name, type, StringComparison.OrdinalIgnoreCase)))
+            {
+                return Problem(422, "Validation Failed: type is not an issue type of the organisation");
+            }
+
+            lock (gate)
+            {
+                var name = $"{owner}/{repo}";
+                var number = Math.Max(100, issues.Keys.Where(k => k.Repo == name).Select(k => k.Number).DefaultIfEmpty(0).Max()) + 1;
+                var now = Now();
+                var issue = new Issue
+                {
+                    Repo = name,
+                    Number = number,
+                    Author = bot,
+                    Title = title,
+                    Body = Field(body, "body"),
+                    Type = type is null ? null : IssueTypes.First(t => string.Equals(t.Name, type, StringComparison.OrdinalIgnoreCase)).Name,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                };
+
+                issues[(name, number)] = issue;
+                Console.WriteLine($"GITHUB board: {name}#{number} opened");
+
+                return Results.Text(IssueJson(issue).ToJsonString(), "application/json", statusCode: 201);
+            }
+        });
+
+        api.MapGet("/repos/{owner}/{repo}/labels", (string owner, string repo) =>
+        {
+            lock (gate)
+            {
+                var name = $"{owner}/{repo}";
+                var used = issues.Values.Where(i => i.Repo == name).SelectMany(i => i.Labels)
+                    .Where(l => !RepositoryLabels.Any(r => string.Equals(r.Name, l, StringComparison.OrdinalIgnoreCase)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase);
+
+                return Json(new JsonArray([
+                    .. RepositoryLabels.Select(l => new JsonObject { ["name"] = l.Name, ["description"] = l.Description }),
+                    .. used.Select(l => new JsonObject { ["name"] = l, ["description"] = null }),
+                ]));
             }
         });
 
@@ -485,6 +578,9 @@ public static partial class GitHubStandIn
                             ["item"] = b.Value.ItemId,
                             ["repository"] = issue.Repo,
                             ["number"] = issue.Number,
+                            ["title"] = issue.Title,
+                            ["type"] = issue.Type,
+                            ["author"] = issue.Author.Login,
                             ["state"] = issue.State,
                             ["closedAs"] = b.Value.ClosedAs,
                             ["fields"] = new JsonObject([.. b.Value.Fields.Select(f => KeyValuePair.Create(f.Key, (JsonNode?)f.Value))]),

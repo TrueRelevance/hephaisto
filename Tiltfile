@@ -511,6 +511,10 @@ if agent:
     # GitHub an agent talks to; if the variable gets another name, change it there too.
     if github == 'stand-in':
         chart_values.append('charts/hephaisto/values-dev-github.yaml')
+        # Asking Claude about an issue runs as a coder Job, so only with the coder on - and with
+        # coder-sdk=fake it is the scripted answer of coder/fake-scripts/default.triage.json, $0.
+        if coder:
+            chart_set.append('github.planner.triage.enabled=true')
 
     # Live: github.com itself, through the coder's egress proxy, with the token of the Secret
     # hephaisto-github - made by hand and applied by nobody here. Layered after

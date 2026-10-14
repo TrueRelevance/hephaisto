@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hephaisto.Agent.CodeFix.Contract;
 using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Persistence.Repositories;
 using Hephaisto.Core;
@@ -23,6 +24,7 @@ public enum PlannerState
 
 /// <summary>The board as the planner presents it, at one moment.</summary>
 /// <param name="Assignees">The logins an issue can be assigned to: the agent's own account first, then the configured ones.</param>
+/// <param name="Repositories">Where a new issue can be opened, the one chosen unless somebody picks another first.</param>
 public sealed record PlannerSnapshot(
     PlannerState State,
     string? Problem,
@@ -32,9 +34,12 @@ public sealed record PlannerSnapshot(
     IReadOnlyList<PlannerGroup> Groups,
     IReadOnlyList<BoardItem> ClosedToday,
     IReadOnlyList<string> Assignees,
-    string? BotLogin)
+    string? BotLogin,
+    IReadOnlyList<string>? Repositories = null)
 {
     public static readonly PlannerSnapshot Off = new(PlannerState.Off, null, null, null, [], [], [], [], null);
+
+    public IReadOnlyList<string> NewIssueRepositories => Repositories ?? [];
 
     public PlannerEntry? Entry(string itemId) => Entries.FirstOrDefault(e => e.Item.ItemId == itemId);
 }
@@ -56,10 +61,19 @@ public enum PlannerActionOutcome
     Forbidden = 4,
 }
 
-public sealed record PlannerActionResult(PlannerActionOutcome Outcome, string Message, PlannerSnapshot Snapshot)
+/// <param name="ItemId">The item a new issue became. Only for an issue that was opened.</param>
+public sealed record PlannerActionResult(PlannerActionOutcome Outcome, string Message, PlannerSnapshot Snapshot, string? ItemId = null, BoardItem? Opened = null)
 {
     public bool Done => Outcome == PlannerActionOutcome.Done;
 }
+
+/// <summary>A new issue, as a person wrote it on the planner.</summary>
+/// <param name="Fields">Field name to option name, for the board's single-select fields.</param>
+public sealed record PlannerNewIssue(string Repository, string Title, string? Body, string? Type, IReadOnlyDictionary<string, string> Fields);
+
+/// <summary>Claude's newest analysis of an issue, as the comment the agent posted holds it.</summary>
+/// <param name="Body">The comment without its marker: markdown a model wrote about somebody else's text.</param>
+public sealed record PlannerAnalysis(string Body, DateTimeOffset At, string Url);
 
 /// <summary>
 /// The planner (v0.15.0): one project's issues, read when a person looks, and the writes one
@@ -97,6 +111,15 @@ public sealed class PlannerService(
     public const string AuditDay = "planner.day";
     public const string AuditAssign = "planner.assign";
     public const string AuditRefused = "planner.refused";
+    public const string AuditCreate = "planner.create";
+    public const string AuditTriage = "planner.triage";
+    public const string AuditTriaged = "planner.triaged";
+
+    /// <summary>What begins every comment the agent posts with Claude's analysis. Only one by the agent's own account counts.</summary>
+    public const string AnalysisMarker = "<!-- hephaisto:triage";
+
+    public const int MaxTitle = 256;
+    public const int MaxBody = 60_000;
 
     private static readonly JsonSerializerOptions AuditJson = new(JsonSerializerDefaults.Web);
 
@@ -274,6 +297,283 @@ public sealed class PlannerService(
             return (PlannerActionOutcome.Done, assign ? $"assigned to {account}" : $"{account} taken off", item with { Assignees = assignees });
         });
 
+    /// <summary>
+    /// Opens an issue, puts it on the board and sets the fields that were chosen - three requests,
+    /// each of which can fail after the one before it worked. The issue is never taken back: what
+    /// failed is said, with the issue's number, and the issue is on GitHub to be fixed by hand.
+    /// </summary>
+    public async Task<PlannerActionResult> OpenIssueAsync(PlannerNewIssue issue, string actor, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(issue);
+        var who = actor?.Trim() ?? string.Empty;
+        ArgumentException.ThrowIfNullOrWhiteSpace(who);
+
+        if (!Enabled)
+        {
+            return new(PlannerActionOutcome.Off, "the planner is off", PlannerSnapshot.Off);
+        }
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            var snapshot = kept is { Board: not null } ? kept : await ReadLockedAsync(refresh: false, ct).ConfigureAwait(false);
+
+            if (IncidentStateMachine.IsForbiddenGranter(who))
+            {
+                return new(PlannerActionOutcome.Forbidden, $"'{who}' may not decide here: what the planner does is a person's click.", snapshot);
+            }
+
+            if (snapshot.Board is not { } board)
+            {
+                return new(PlannerActionOutcome.NotFound, snapshot.Problem ?? "the board could not be read", snapshot);
+            }
+
+            var title = issue.Title?.Trim() ?? string.Empty;
+
+            if (title.Length == 0 || title.Length > MaxTitle)
+            {
+                return new(PlannerActionOutcome.NotFound, $"a title is one line of 1 to {MaxTitle} characters", snapshot);
+            }
+
+            if (issue.Body is { Length: > MaxBody })
+            {
+                return new(PlannerActionOutcome.NotFound, $"a description holds at most {MaxBody} characters", snapshot);
+            }
+
+            if (snapshot.NewIssueRepositories.FirstOrDefault(r => string.Equals(r, issue.Repository?.Trim(), StringComparison.OrdinalIgnoreCase)) is not { } repository)
+            {
+                return new(PlannerActionOutcome.NotFound, $"'{issue.Repository}' is not a repository the planner opens issues in", snapshot);
+            }
+
+            string? type = null;
+
+            if (!string.IsNullOrWhiteSpace(issue.Type))
+            {
+                type = board.Types.FirstOrDefault(t => string.Equals(t, issue.Type.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (type is null)
+                {
+                    return new(PlannerActionOutcome.NotFound, $"'{issue.Type}' is not an issue type of the organisation", snapshot);
+                }
+            }
+
+            var chosen = new List<(BoardField Field, BoardOption Option)>();
+
+            foreach (var (name, value) in issue.Fields)
+            {
+                if (board.Field(name) is not { } field
+                    || field.Options.FirstOrDefault(o => string.Equals(o.Name, value, StringComparison.OrdinalIgnoreCase)) is not { } option)
+                {
+                    return new(PlannerActionOutcome.NotFound, $"'{value}' is not an option of a field '{name}' of the board", snapshot);
+                }
+
+                chosen.Add((field, option));
+            }
+
+            await using var scope = scopes.CreateAsyncScope();
+
+            if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+            {
+                return new(PlannerActionOutcome.Off, "the planner is off", PlannerSnapshot.Off);
+            }
+
+            await AuditAsync(AuditCreate, who, $"issue '{title}' opened in {repository}", repository, null, null, null,
+                new { title, type, fields = chosen.ToDictionary(c => c.Field.Name, c => c.Option.Name) }, ct).ConfigureAwait(false);
+
+            var body = string.IsNullOrWhiteSpace(issue.Body) ? null : issue.Body;
+            var created = await client.CreateIssueAsync(repository, title, body, type, ct).ConfigureAwait(false);
+
+            if (!created.Ok)
+            {
+                return await RefusedAsync(who, repository, null, null, created.Describe(), snapshot, ct).ConfigureAwait(false);
+            }
+
+            var opened = created.Value!;
+            var reference = $"{repository}#{opened.Number}";
+            var added = await client.AddProjectItemAsync(board.Id, opened.NodeId, ct).ConfigureAwait(false);
+
+            if (!added.Ok)
+            {
+                return await RefusedAsync(who, repository, opened.Number, opened.Url,
+                    $"{reference} was opened, and GitHub would not put it on the board: {added.Describe()}", snapshot, ct).ConfigureAwait(false);
+            }
+
+            var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var failed = new List<string>();
+
+            foreach (var (field, option) in chosen)
+            {
+                var set = await client.SetProjectFieldAsync(board.Id, added.Value!, field.Id, option.Id, ct).ConfigureAwait(false);
+
+                if (set.Ok)
+                {
+                    fields[field.Name] = option.Name;
+                }
+                else
+                {
+                    failed.Add($"{field.Name} ({set.Describe()})");
+                }
+            }
+
+            var now = clock.UtcNow;
+            var item = new BoardItem(
+                added.Value!, opened.NodeId, repository, opened.Number, opened.Title, opened.Url, opened.Type ?? type,
+                opened.Author.Login, Open: true, now, now, ClosedAt: null, ParentUrl: null, SubIssues: 0, SubIssuesDone: 0,
+                fields, [.. opened.Labels.Select(l => new BoardLabel(l, now))], [], [], body);
+
+            snapshot = kept = Present(board with { Items = [.. board.Items.Where(i => i.ItemId != item.ItemId), item] }, snapshot.ReadAt ?? now, snapshot.Problem);
+            Changed?.Invoke();
+
+            if (failed.Count > 0)
+            {
+                var message = $"{reference} was opened and put on the board; GitHub would not set {string.Join(", ", failed)}";
+
+                logger.LogWarning("The planner opened {Issue} for {Actor}, and some fields were refused: {Detail}", reference, who, message);
+                await AuditAsync(AuditRefused, who, message, repository, opened.Number, opened.Url, item.ItemId, new { detail = message }, ct).ConfigureAwait(false);
+
+                return new(PlannerActionOutcome.Refused, message, snapshot, item.ItemId, item);
+            }
+
+            return new(PlannerActionOutcome.Done, $"{reference} opened", snapshot, item.ItemId, item);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// What Claude answered for an issue a person asked about: the labels it chose that the
+    /// repository has, put on, and its analysis as one comment. Labels are only ever added here,
+    /// never taken off, and none but the repository's own - GitHub would create any other.
+    /// </summary>
+    /// <param name="requestedBy">Who asked: the audit names them, since the agent's account is only the hand.</param>
+    public async Task<(bool Done, string Message)> ApplyTriageAsync(
+        TriageIssue issue, Hephaisto.Agent.CodeFix.Contract.TriageResult result, IReadOnlyList<GitHubLabel> repositoryLabels, string requestedBy, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(issue);
+        ArgumentNullException.ThrowIfNull(result);
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+        {
+            return (false, "the planner is off");
+        }
+
+        var labels = result.Labels
+            .Select(l => repositoryLabels.FirstOrDefault(r => string.Equals(r.Name, l?.Trim(), StringComparison.OrdinalIgnoreCase))?.Name)
+            .Where(l => l is not null && !string.Equals(l, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase))
+            .Select(l => l!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+
+        await AuditAsync(AuditTriaged, requestedBy,
+            $"Claude analysed {issue.Repository}#{issue.Number}{(labels.Count > 0 ? $" and labelled it {string.Join(", ", labels)}" : string.Empty)}",
+            issue.Repository, issue.Number, issue.Url, null,
+            new { attempt = result.AttemptId, labels, cost = result.CostUsd, billing = result.Billing }, ct).ConfigureAwait(false);
+
+        var refused = new List<string>();
+
+        foreach (var label in labels)
+        {
+            var added = await client.AddLabelAsync(issue.Repository, issue.Number, label, ct).ConfigureAwait(false);
+
+            if (!added.Ok)
+            {
+                refused.Add($"{label} ({added.Describe()})");
+            }
+        }
+
+        var comment = await client.CreateCommentAsync(issue.Repository, issue.Number, TriageComment.Render(issue, result, labels, requestedBy), ct).ConfigureAwait(false);
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (kept is { Board: { } board } && board.Items.FirstOrDefault(i => string.Equals(i.Repository, issue.Repository, StringComparison.OrdinalIgnoreCase) && i.Number == issue.Number) is { } item)
+            {
+                var now = clock.UtcNow;
+                var on = item.Labels.ToList();
+                on.AddRange(labels.Where(l => !refused.Any(r => r.StartsWith(l + " ", StringComparison.Ordinal)) && !on.Any(o => string.Equals(o.Name, l, StringComparison.OrdinalIgnoreCase))).Select(l => new BoardLabel(l, now)));
+                var changed = item with { Labels = on, Comments = item.Comments + (comment.Ok ? 1 : 0) };
+
+                kept = Present(board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] }, kept.ReadAt ?? now, kept.Problem);
+                Changed?.Invoke();
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        if (!comment.Ok || refused.Count > 0)
+        {
+            var message = string.Join("; ", new[]
+            {
+                refused.Count > 0 ? $"GitHub would not put on {string.Join(", ", refused)}" : null,
+                comment.Ok ? null : $"the analysis could not be posted: {comment.Describe()}",
+            }.Where(m => m is not null));
+
+            await AuditAsync(AuditRefused, requestedBy, $"{issue.Repository}#{issue.Number}: {message}", issue.Repository, issue.Number, issue.Url, null, new { detail = message }, ct).ConfigureAwait(false);
+
+            return (false, message);
+        }
+
+        return (true, labels.Count > 0 ? $"labelled {string.Join(", ", labels)}, and the analysis is on the issue" : "the analysis is on the issue; no label fitted");
+    }
+
+    /// <summary>
+    /// The newest comment with Claude's analysis of an issue: the newest one that begins with
+    /// <see cref="AnalysisMarker"/> AND was written by the agent's own account - anybody can type
+    /// the marker. Null when there is none, or when the comments cannot be read.
+    /// </summary>
+    public async Task<PlannerAnalysis?> AnalysisAsync(string repository, int number, CancellationToken ct)
+    {
+        if (!Enabled)
+        {
+            return null;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+        {
+            return null;
+        }
+
+        botLogin ??= await BotLoginAsync(client, ct).ConfigureAwait(false);
+
+        var comments = await client.ListCommentsAsync(repository, number, since: null, etag: null, ct).ConfigureAwait(false);
+
+        if (!comments.Ok || botLogin is null)
+        {
+            return null;
+        }
+
+        return comments.Value!
+            .Where(c => c.Body.StartsWith(AnalysisMarker, StringComparison.Ordinal) && string.Equals(c.Author.Login, botLogin, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new PlannerAnalysis(TriageComment.WithoutMarker(c.Body), c.CreatedAt, c.Url))
+            .FirstOrDefault();
+    }
+
+    /// <summary>An audit row for what the planner starts beside a click on an item: asking Claude.</summary>
+    public Task RecordAsync(string type, string actor, string summary, string repository, int number, string? url, object detail, CancellationToken ct) =>
+        AuditAsync(type, actor, summary, repository, number, url, null, detail, ct);
+
+    private async Task<PlannerActionResult> RefusedAsync(string actor, string repository, int? number, string? url, string message, PlannerSnapshot snapshot, CancellationToken ct)
+    {
+        logger.LogWarning("The planner's new issue by {Actor} in {Repository} was refused: {Detail}", actor, repository, message);
+
+        await AuditAsync(AuditRefused, actor, $"{repository}: GitHub refused, {message}", repository, number, url, null, new { detail = message }, ct).ConfigureAwait(false);
+
+        return new(PlannerActionOutcome.Refused, message, snapshot);
+    }
+
     public static string DayWord(PlannerDay day) => day switch
     {
         PlannerDay.Today => "today",
@@ -409,8 +709,18 @@ public sealed class PlannerService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // Where a new issue goes: the configured repositories, or the board's own, the one with
+        // the most issues first.
+        var repositories = planner.Repositories.Count > 0
+            ? planner.Repositories.Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            : [.. board.Items
+                .GroupBy(i => i.Repository, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Key)];
+
         return new PlannerSnapshot(
-            PlannerState.Read, problem, readAt, board, entries, PlannerQueue.Group(board, entries), PlannerQueue.ClosedToday(board, now), assignees, botLogin);
+            PlannerState.Read, problem, readAt, board, entries, PlannerQueue.Group(board, entries), PlannerQueue.ClosedToday(board, now), assignees, botLogin, repositories);
     }
 
     /// <summary>The account the token belongs to, unless the configuration names another: the one "assign to Hephaisto" means.</summary>
@@ -426,7 +736,10 @@ public sealed class PlannerService(
         return user.Ok ? user.Value!.Login : null;
     }
 
-    private async Task AuditAsync(string type, string actor, string summary, BoardItem item, object detail, CancellationToken ct)
+    private Task AuditAsync(string type, string actor, string summary, BoardItem item, object detail, CancellationToken ct) =>
+        AuditAsync(type, actor, summary, item.Repository, item.Number, item.Url, item.ItemId, detail, ct);
+
+    private async Task AuditAsync(string type, string actor, string summary, string repository, int? number, string? url, string? itemId, object detail, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
 
@@ -438,7 +751,7 @@ public sealed class PlannerService(
                 Actor = actor,
                 Summary = summary,
                 Detail = JsonSerializer.Serialize(
-                    new { repository = item.Repository, number = item.Number, url = item.Url, item = item.ItemId, change = detail }, AuditJson),
+                    new { repository, number, url, item = itemId, change = detail }, AuditJson),
                 TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString(),
                 SpanId = System.Diagnostics.Activity.Current?.SpanId.ToString(),
             },

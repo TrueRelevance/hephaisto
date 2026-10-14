@@ -1483,6 +1483,15 @@ public sealed partial class WorkItemStageTests(PostgresFixture pg)
         public Task<GitHubResult<bool>> RemoveAssigneeAsync(string repository, int number, string login, CancellationToken ct) =>
             throw new NotSupportedException("the poller assigns nobody");
 
+        public Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct) =>
+            throw new NotSupportedException("the poller opens no issue");
+
+        public Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct) =>
+            throw new NotSupportedException("the poller reads no project");
+
+        public Task<GitHubResult<IReadOnlyList<GitHubLabel>>> ListLabelsAsync(string repository, CancellationToken ct) =>
+            throw new NotSupportedException("the poller reads no label list");
+
         private sealed class Stored
         {
             public required int Number { get; init; }

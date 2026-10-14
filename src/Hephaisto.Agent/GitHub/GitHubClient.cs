@@ -120,6 +120,9 @@ public sealed record GitHubPullRequest(
 /// <param name="DefaultBranch">The branch a pull request targets unless told otherwise. Null when GitHub did not say.</param>
 public sealed record GitHubRepository(string FullName, string? DefaultBranch);
 
+/// <summary>One label of a repository, as its owner named and described it.</summary>
+public sealed record GitHubLabel(string Name, string? Description);
+
 /// <summary>
 /// One <c>assigned</c> event of an issue's timeline: who was made an assignee, by whom, and when
 /// by GitHub's clock - whole seconds.
@@ -128,8 +131,8 @@ public sealed record GitHubAssignment(GitHubAccount Assignee, string? Actor, Dat
 
 /// <summary>
 /// What the agent asks of GitHub. Eleven calls for issues as work, none of which deletes or
-/// closes; and seven for the planner (v0.15.0), each of whose writes is one person's click in the
-/// console - there, and only there, an issue is closed.
+/// closes; and ten for the planner (v0.15.0), each of whose writes is one person's click in the
+/// console - there, and only there, an issue is opened or closed.
 /// </summary>
 public interface IGitHubClient
 {
@@ -224,6 +227,18 @@ public interface IGitHubClient
     Task<GitHubResult<bool>> AddAssigneeAsync(string repository, int number, string login, CancellationToken ct);
 
     Task<GitHubResult<bool>> RemoveAssigneeAsync(string repository, int number, string login, CancellationToken ct);
+
+    /// <summary>
+    /// Opens an issue as the token's account. <paramref name="type"/> is the name of one of the
+    /// organisation's issue types, or null; GitHub refuses a name it does not know.
+    /// </summary>
+    Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct);
+
+    /// <summary>Puts an issue, by its node id, on a project. Answers the new item's id; for an issue already on it, the existing one's.</summary>
+    Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct);
+
+    /// <summary>A repository's labels, one page of <see cref="GitHubClient.PageSize"/>.</summary>
+    Task<GitHubResult<IReadOnlyList<GitHubLabel>>> ListLabelsAsync(string repository, CancellationToken ct);
 }
 
 /// <summary>
@@ -313,6 +328,15 @@ public sealed partial class GitHubClient(
         return SendAsync<IReadOnlyList<GitHubComment>>(
             HttpMethod.Get, path, null, etag, (json, _) => [.. json.EnumerateArray().Select(Comment)], ct);
     }
+
+    public Task<GitHubResult<IReadOnlyList<GitHubLabel>>> ListLabelsAsync(string repository, CancellationToken ct) =>
+        SendAsync<IReadOnlyList<GitHubLabel>>(
+            HttpMethod.Get,
+            $"repos/{repository}/labels?per_page={PageSize}",
+            null,
+            null,
+            (json, _) => [.. json.EnumerateArray().Select(l => new GitHubLabel(Text(l, "name") ?? string.Empty, Text(l, "description") is { Length: > 0 } d ? d : null)).Where(l => l.Name.Length > 0)],
+            ct);
 
     public Task<GitHubResult<GitHubComment>> CreateCommentAsync(string repository, int number, string body, CancellationToken ct) =>
         SendAsync(HttpMethod.Post, $"repos/{repository}/issues/{Number(number)}/comments", new { body }, null, (json, _) => Comment(json), ct);

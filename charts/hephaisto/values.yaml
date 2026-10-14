@@ -1006,6 +1006,27 @@ github:
     #   - octocat
     assignees: []
 
+    # Where a new issue can be opened from the planner, as owner/repo; the first is chosen
+    # unless somebody picks another. Empty: the repositories of the board's issues, the one
+    # with the most first.
+    #
+    # repositories:
+    #   - example/planning
+    repositories: []
+
+    # Claude labels an issue and writes an analysis and a plan of it, when a person asks - a
+    # button on the planner, or a tick when an issue is opened there. It runs as a coder Job
+    # (needs codeFix.enabled): the coder's image, namespace, Secret, egress proxy, model and
+    # dev-context. Labels are only ever added, and only the repository's own; the analysis is
+    # posted as a comment on the issue.
+    triage:
+      enabled: false
+      maxCostUsd: 2
+      maxTurns: 40
+      # hh:mm:ss, between 2 minutes and 2 hours.
+      deadline: "00:15:00"
+      maxConcurrentJobs: 2
+
 # -----------------------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------------------

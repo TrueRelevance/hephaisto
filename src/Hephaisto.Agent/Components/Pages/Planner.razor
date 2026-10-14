@@ -4,6 +4,7 @@
 @using Hephaisto.Agent.Planner
 @using Hephaisto.Core.Planning
 @inject PlannerService Service
+@inject TriageRunner Triage
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject IAuthorizationService Authorization
@@ -12,8 +13,8 @@
 
 @*
     The planner (v0.15.0): the open issues of one GitHub project. Three views of the same board -
-    one item at a time to plan the day, the day's plan, and everything that is open under its
-    top-level issue.
+    one item at a time to plan the day, the day's plan with a detail view per issue, and
+    everything that is open under its top-level issue - and a form that opens a new issue.
 
     The board is read when the page opens and when somebody presses "refresh" - never on a timer:
     a read is a request to GitHub, and the order must not change under a person who is walking
@@ -46,6 +47,8 @@ else
                     @onclick="() => Go(ViewToday)">today @ForToday.Count</button>
             <button type="button" class="@Seg(ViewAll)" aria-pressed="@Pressed(ViewName == ViewAll)" data-testid="planner-view-all"
                     @onclick="() => Go(ViewAll)">all open @_snapshot.Entries.Count</button>
+            <button type="button" class="@Seg(ViewNew)" aria-pressed="@Pressed(ViewName == ViewNew)" data-testid="planner-view-new"
+                    @onclick="() => Go(ViewNew)">new issue</button>
         </span>
 
         @if (ViewName == ViewPlan)
@@ -268,6 +271,40 @@ else
                 <div class="hp-stat" data-testid="planner-stat" data-stat="undecided"><span class="hp-stat-label">not decided</span><span class="hp-stat-value">@_snapshot.Entries.Count(e => e.Day == PlannerDay.Undecided)</span><span class="hp-muted"><a href="planner">go on planning</a></span></div>
             </div>
 
+            @if (!string.IsNullOrEmpty(Detail))
+            {
+                var detailEntry = _snapshot.Entry(Detail);
+                var detailClosed = detailEntry is null && _closed.TryGetValue(Detail, out var wasClosed) ? wasClosed : default;
+                var detailShown = detailEntry ?? detailClosed.Entry ?? (_seen.TryGetValue(Detail, out var seen) ? seen : null);
+                var detailId = Detail;
+
+                <section class="hp-section hp-planner-detail" data-testid="planner-detail" data-item="@detailId">
+                    <div class="hp-planner-walk">
+                        <h2>issue details</h2>
+                        <a href="planner?view=today" data-testid="planner-detail-close">back to the list</a>
+                    </div>
+                    @if (detailShown is null)
+                    {
+                        <p class="hp-empty" data-testid="planner-detail-gone">This item is not among the board's open issues.</p>
+                    }
+                    else
+                    {
+                        <div class="hp-planner">
+                            <PlannerItemCard @key="detailId" Entry="detailShown" Board="board" Open="@(detailEntry is not null)" ClosedHow="@detailClosed.How"
+                                             Parent="@ParentOf(detailShown)" Assignees="_snapshot.Assignees" BotLogin="@_snapshot.BotLogin" Now="_now"
+                                             Busy="_busy" LockedBecause="@LockedBecause"
+                                             DescriptionOpen="true" OnToggleDescription="ToggleDescriptionAsync"
+                                             OnDay="day => DayAsync(detailId, day, thenNext: false)"
+                                             OnClose="notPlanned => CloseAsync(detailId, notPlanned, thenNext: false)"
+                                             OnField="choice => FieldAsync(detailId, choice.Field, choice.Option)"
+                                             OnAssign="choice => AssignAsync(detailId, choice.Login, choice.Assign)" />
+                            <PlannerClaudePanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
+                                                Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
+                        </div>
+                    }
+                </section>
+            }
+
             <section class="hp-section">
                 <h2>for today <span class="hp-count">@ForToday.Count</span></h2>
                 @if (ForToday.Count == 0)
@@ -318,6 +355,7 @@ else
                                     <td class="c-time">@(item.Field(PlannerQueue.StatusField) ?? "--")</td>
                                     <td>@Pulls(item)</td>
                                     <td class="c-act">
+                                        <a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-today-detail" aria-current="@(Detail == item.ItemId ? "true" : null)">details</a>
                                         <button type="button" class="@(e.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone ? "hp-submit" : null)"
                                                 data-testid="planner-today-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
                                         <button type="button" data-testid="planner-today-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
@@ -367,11 +405,125 @@ else
                                 <tr @key="e.Item.ItemId" class="is-away" data-testid="planner-away-row" data-item="@e.Item.ItemId" data-reference="@e.Item.Reference">
                                     <td class="c-prio"><span class="mono">@(e.Item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
                                     <td><a class="mono" href="@WalkHref(e)">@e.Item.Reference</a> @e.Item.Title</td>
-                                    <td class="c-act"><button type="button" data-testid="planner-away-back" disabled="@RowLocked" @onclick="() => DayAsync(e.Item.ItemId, PlannerDay.Today, false)">back to today</button></td>
+                                    <td class="c-act"><a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-away-detail">details</a> <button type="button" data-testid="planner-away-back" disabled="@RowLocked" @onclick="() => DayAsync(e.Item.ItemId, PlannerDay.Today, false)">back to today</button></td>
                                 </tr>
                             }
                         </tbody>
                     </table>
+                }
+            </section>
+        }
+        else if (ViewName == ViewNew)
+        {
+            <section class="hp-section hp-planner-new" data-testid="planner-new">
+                <p class="hp-muted">
+                    Opened on GitHub by the agent's account, put on the board with the fields chosen here, and recorded under your name.
+                    @if (Triage.Enabled)
+                    {
+                        <text>With "ask Claude" ticked, Claude then labels it with the repository's own labels and posts an analysis and a plan as a comment.</text>
+                    }
+                </p>
+
+                <div class="hp-field">
+                    <span class="hp-label">repository</span>
+                    @if (_snapshot.NewIssueRepositories.Count == 0)
+                    {
+                        <span class="hp-warn" data-testid="planner-new-norepo"><span class="glyph">?</span> no repository: set github.planner.repositories, or put an issue on the board</span>
+                    }
+                    @foreach (var repository in _snapshot.NewIssueRepositories)
+                    {
+                        var on = string.Equals(repository, NewRepository, StringComparison.OrdinalIgnoreCase);
+                        <button type="button" class="@(on ? "hp-thumb on" : null)" aria-pressed="@Pressed(on)" data-testid="planner-new-repo" data-repo="@repository"
+                                data-current="@(on ? "true" : "false")" disabled="@_busy" @onclick="() => _newRepository = repository">
+                            @if (on)
+                            {
+                                <span class="glyph">*</span>
+                            }
+                            @repository
+                        </button>
+                    }
+                </div>
+
+                <label class="hp-field hp-planner-new-title">
+                    <span class="hp-label">title</span>
+                    <input type="text" maxlength="@PlannerService.MaxTitle" @bind="_newTitle" @bind:event="oninput" disabled="@_busy"
+                           placeholder="what is to be done, in one line" data-testid="planner-new-title" />
+                </label>
+
+                <label class="hp-field hp-planner-new-body">
+                    <span class="hp-label">description</span>
+                    <textarea rows="8" maxlength="@PlannerService.MaxBody" @bind="_newBody" @bind:event="oninput" disabled="@_busy"
+                              placeholder="markdown: why, what, and how it is known to be done" data-testid="planner-new-body"></textarea>
+                </label>
+
+                @if (board.Types.Count > 0)
+                {
+                    <div class="hp-field">
+                        <span class="hp-label">type</span>
+                        @foreach (var type in board.Types)
+                        {
+                            var on = string.Equals(type, _newType, StringComparison.OrdinalIgnoreCase);
+                            <button type="button" class="@(on ? "hp-thumb on" : null)" aria-pressed="@Pressed(on)" data-testid="planner-new-type" data-type="@type"
+                                    data-current="@(on ? "true" : "false")" disabled="@_busy" @onclick="() => _newType = on ? null : type">
+                                @if (on)
+                                {
+                                    <span class="glyph">*</span>
+                                }
+                                @type
+                            </button>
+                        }
+                    </div>
+                }
+
+                @foreach (var field in board.Fields)
+                {
+                    var current = _newFields.TryGetValue(field.Name, out var chosen) ? chosen : null;
+                    <div class="hp-field" data-testid="planner-new-field" data-field="@field.Name">
+                        <span class="hp-label">@field.Name</span>
+                        @foreach (var option in field.Options)
+                        {
+                            var on = string.Equals(option.Name, current, StringComparison.OrdinalIgnoreCase);
+                            <button type="button" class="@(on ? "hp-thumb on" : null)" aria-pressed="@Pressed(on)" data-testid="planner-new-option"
+                                    data-field="@field.Name" data-option="@option.Name" data-current="@(on ? "true" : "false")" disabled="@_busy"
+                                    @onclick="() => ChooseNew(field.Name, option.Name, on)">
+                                @if (on)
+                                {
+                                    <span class="glyph">*</span>
+                                }
+                                @option.Name
+                            </button>
+                        }
+                    </div>
+                }
+
+                <div class="hp-cf-decide">
+                    @if (Triage.Enabled)
+                    {
+                        <label class="hp-planner-new-claude">
+                            <input type="checkbox" @bind="_newTriage" disabled="@_busy" data-testid="planner-new-triage" />
+                            ask Claude to label it and write an analysis
+                        </label>
+                    }
+                    <button type="button" class="hp-submit" data-testid="planner-new-submit" title="@LockedBecause"
+                            disabled="@(_busy || LockedBecause is not null || string.IsNullOrWhiteSpace(_newTitle) || NewRepository is null)"
+                            @onclick="CreateAsync">open issue</button>
+                    @if (LockedBecause is { } newLocked)
+                    {
+                        <span class="hp-muted">@newLocked</span>
+                    }
+                </div>
+
+                @if (_opened is { } opened)
+                {
+                    <p class="hp-yes" data-testid="planner-new-opened" data-reference="@opened.Reference" data-item="@opened.ItemId">
+                        <span class="glyph">+</span>
+                        <span class="mono">@opened.Reference</span> is open.
+                        <a href="@($"planner?view=today&detail={Uri.EscapeDataString(opened.ItemId)}")" data-testid="planner-new-details">see its details</a>
+                        @if (Display.HttpUrl(opened.Url) is { } openedUrl)
+                        {
+                            <text> &middot; </text><a href="@openedUrl" target="_blank" rel="noopener">open on GitHub</a>
+                        }
+                    </p>
                 }
             </section>
         }
@@ -509,6 +661,7 @@ else
     private const string ViewPlan = "plan";
     private const string ViewToday = "today";
     private const string ViewAll = "all";
+    private const string ViewNew = "new";
 
     private const string WalkAll = "all";
     private const string WalkTop = "top";
@@ -571,10 +724,28 @@ else
     [SupplyParameterFromQuery(Name = "item")]
     public string? Item { get; set; }
 
+    /// <summary>The item the today view shows in detail, by its id.</summary>
+    [SupplyParameterFromQuery(Name = "detail")]
+    public string? Detail { get; set; }
+
     [Inject]
     private AuthenticationStateProvider? AuthProvider { get; set; }
 
-    private string ViewName => View is ViewToday or ViewAll ? View : ViewPlan;
+    private string _newTitle = string.Empty;
+    private string _newBody = string.Empty;
+    private string? _newRepository;
+    private string? _newType;
+    private bool _newTriage = true;
+    private readonly Dictionary<string, string> _newFields = new(StringComparer.OrdinalIgnoreCase);
+    private (string Reference, string ItemId, string Url)? _opened;
+
+    /// <summary>The repository a new issue goes to: the one picked, else the first offered.</summary>
+    private string? NewRepository =>
+        _newRepository is { } picked && _snapshot.NewIssueRepositories.Contains(picked, StringComparer.OrdinalIgnoreCase)
+            ? picked
+            : _snapshot.NewIssueRepositories.FirstOrDefault();
+
+    private string ViewName => View is ViewToday or ViewAll or ViewNew ? View : ViewPlan;
 
     private IReadOnlyList<PlannerEntry> ForToday =>
         [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Today).OrderBy(e => _snapshot.Board is { } b ? PlannerQueue.PriorityRank(b, e.Item) : 0)];
@@ -586,6 +757,7 @@ else
         _ when _snapshot.State != PlannerState.Read => string.Empty,
         ViewToday => Day,
         ViewAll => $"{_snapshot.Entries.Count} open",
+        ViewNew => "new issue",
         _ when _order.Count == 0 => Day,
         _ => $"{Day} · {_index + 1} of {_order.Count}",
     };
@@ -888,6 +1060,89 @@ else
         entry.Item.ParentUrl is { } url ? _snapshot.Entries.FirstOrDefault(e => string.Equals(e.Item.Url, url, StringComparison.OrdinalIgnoreCase)) : null;
 
     private static string WalkHref(PlannerEntry entry) => $"planner?item={Uri.EscapeDataString(entry.Item.ItemId)}";
+
+    private static string DetailHref(PlannerEntry entry) => $"planner?view=today&detail={Uri.EscapeDataString(entry.Item.ItemId)}";
+
+    private void ChooseNew(string field, string option, bool current)
+    {
+        if (current)
+        {
+            _newFields.Remove(field);
+        }
+        else
+        {
+            _newFields[field] = option;
+        }
+    }
+
+    /// <summary>Opens the issue, and asks Claude about it when that was ticked. The form keeps the repository and the type for the next one.</summary>
+    private async Task CreateAsync()
+    {
+        if (_busy || NewRepository is not { } repository)
+        {
+            return;
+        }
+
+        if (LockedBecause is { } locked)
+        {
+            _message = (false, locked);
+            return;
+        }
+
+        var actor = _viewer.Actor(_actor)!;
+
+        _busy = true;
+        _opened = null;
+
+        try
+        {
+            var result = await Service.OpenIssueAsync(
+                new PlannerNewIssue(repository, _newTitle, _newBody, _newType, new Dictionary<string, string>(_newFields)), actor, _cts?.Token ?? CancellationToken.None);
+
+            if (result.Snapshot.State != PlannerState.Off)
+            {
+                _snapshot = result.Snapshot;
+            }
+
+            _now = DateTimeOffset.UtcNow;
+
+            if (result.Opened is { } opened)
+            {
+                if (_snapshot.Entry(opened.ItemId) is { } entry)
+                {
+                    _seen[opened.ItemId] = entry;
+                }
+                _opened = (opened.Reference, opened.ItemId, opened.Url);
+                _newTitle = string.Empty;
+                _newBody = string.Empty;
+                _newFields.Clear();
+
+                var text = $"{result.Message}.";
+
+                if (_newTriage && Triage.Enabled)
+                {
+                    var asked = await Triage.StartAsync(opened.Repository, opened.Number, actor, _cts?.Token ?? CancellationToken.None);
+                    text += $" {asked.Message}.";
+                }
+
+                _message = (result.Done, text);
+                await RememberAsync();
+            }
+            else
+            {
+                _message = (false, $"not opened. {result.Message}.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _busy = false;
+    }
 
     private static string PriorityClass(Board board, PlannerEntry entry) =>
         entry.Item.Field(PlannerQueue.PriorityField) is null ? "hp-faint" : Display.PlannerPriorityClass(PlannerQueue.PriorityRank(board, entry.Item));

@@ -51,7 +51,19 @@ type Planner = {
   fields: { id: string; name: string; options: { id: string; name: string }[] }[];
   assignees: string[]; items: Item[];
   closedToday: { itemId: string; repository: string; number: number }[];
+  repositories: string[]; issueTypes: string[]; triage: boolean;
 };
+
+/** What the stand-in's control says of an issue beyond the board's own fields. */
+async function standInIssue(request: APIRequestContext, reference: string): Promise<{ title: string; type: string | null; author: string }> {
+  const found = (await (await request.get(`${STANDIN}/github/control/project`)).json()).items
+    .find((i: { repository: string; number: number }) => ref(i) === reference);
+  expect(found, `${reference} is not on the stand-in's board`).toBeTruthy();
+  return found;
+}
+
+/** The label the scripted triage answers: the first of the repository's own (coder/fake-scripts/default.triage.json). */
+const FAKE_LABEL = 'bug';
 
 /** What the other side says about one issue. */
 type Truth = { state: string; closedAs: string | null; fields: Record<string, string>; labels: string[]; assignees: string[] };
@@ -583,6 +595,155 @@ test.describe('planner', () => {
         expect(after.closedToday.map(ref)).toContain(ref(target));
       });
     }
+
+    test('a new issue is opened with the fields chosen, put on the board, and Claude labels it and posts its analysis', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the live tier makes its issues itself; a new issue on github.com is opened by planner-live.sh');
+
+      const board = await planner(page.request);
+      expect(board.repositories.length, 'the stand-in tier offers repositories for a new issue').toBeGreaterThan(1);
+
+      await open(page, '/planner?view=new');
+      const form = page.getByTestId('planner-new');
+      await expect(form).toBeVisible();
+
+      // The first repository is chosen until another is picked.
+      await expect(form.locator(`[data-testid="planner-new-repo"][data-repo="${board.repositories[0]}"]`)).toHaveAttribute('data-current', 'true');
+
+      const target = board.repositories[board.repositories.length - 1];
+      const title = `Receipts in dark mode ${Date.now()}`;
+
+      // Over the circuit: typing is heard once the submit button wakes up.
+      await settle(async () => {
+        await page.getByTestId('planner-new-title').fill(title);
+        await expect(page.getByTestId('planner-new-submit')).toBeEnabled({ timeout: 3_000 });
+      });
+
+      await page.getByTestId('planner-new-body').fill('## Why\n\nThe receipt is white at night. cc @somebody');
+      await form.locator(`[data-testid="planner-new-repo"][data-repo="${target}"]`).click();
+      await expect(form.locator(`[data-testid="planner-new-repo"][data-repo="${target}"]`)).toHaveAttribute('data-current', 'true');
+
+      const type = board.issueTypes.find(t => t === 'Feature') ?? board.issueTypes[0];
+      await form.locator(`[data-testid="planner-new-type"][data-type="${type}"]`).click();
+      await form.locator('[data-testid="planner-new-option"][data-field="Priority"][data-option="P2"]').click();
+
+      // A second click on a chosen option takes it back.
+      const web = form.locator('[data-testid="planner-new-option"][data-field="Area"][data-option="Web"]');
+      await web.click();
+      await expect(web).toHaveAttribute('data-current', 'true');
+      await web.click();
+      await expect(web).toHaveAttribute('data-current', 'false');
+      await form.locator('[data-testid="planner-new-option"][data-field="Area"][data-option="Infra"]').click();
+
+      if (board.triage) {
+        await expect(page.getByTestId('planner-new-triage')).toBeChecked();
+      }
+
+      await page.getByTestId('planner-new-submit').click();
+
+      const opened = page.getByTestId('planner-new-opened');
+      await expect(opened).toBeVisible();
+      const reference = (await opened.getAttribute('data-reference'))!;
+      expect(reference.startsWith(`${target}#`)).toBeTruthy();
+      await said(page, `${reference} opened`);
+
+      if (board.triage) {
+        await said(page, `Claude is reading ${reference}`);
+      }
+
+      // The form is empty again, and keeps the repository for the next one.
+      await expect(page.getByTestId('planner-new-title')).toHaveValue('');
+      await expect(form.locator(`[data-testid="planner-new-repo"][data-repo="${target}"]`)).toHaveAttribute('data-current', 'true');
+
+      // On the other side: opened by the agent's account, with its type, on the board with its fields.
+      expect(await standInIssue(page.request, reference)).toMatchObject({ title, type });
+      expect(await truth(page.request, reference)).toMatchObject({ state: 'open', fields: { Priority: 'P2', Area: 'Infra' } });
+      expect((await planner(page.request)).items.map(ref)).toContain(reference);
+
+      if (!board.triage) {
+        return;
+      }
+
+      // Claude's label goes on, from the scripted coder Job in the cluster.
+      await expect.poll(async () => (await truth(page.request, reference)).labels, { timeout: 120_000 }).toContain(FAKE_LABEL);
+
+      // Its details: the card, and Claude's analysis read back from the comment.
+      await page.getByTestId('planner-new-details').click();
+      const detail = page.getByTestId('planner-detail');
+      await expect(detail.getByTestId('planner-item')).toHaveAttribute('data-reference', reference);
+
+      const claude = detail.getByTestId('planner-claude');
+      await expect(claude.getByTestId('planner-claude-analysis')).toContainText('FAKE SDK triage', { timeout: 60_000 });
+      await expect(claude.getByTestId('planner-claude-analysis')).toContainText(`Labels put on: \`${FAKE_LABEL}\``);
+      await expect(claude.getByTestId('planner-execute-line')).toHaveText(`Execute github issue ${reference}`);
+    });
+
+    test('the today view shows an issue in detail with every button, Claude is asked from there, and the line for Claude Code is copied', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: asking Claude on github.com is not part of the live tier');
+
+      const board = await planner(page.request, true);
+      const target = board.items.find(i => i.day === 'Today');
+      test.skip(!target, 'PRECONDITION: nothing is planned for today on this board');
+
+      await open(page, '/planner?view=today');
+      const row = page.locator(`[data-testid="planner-today-row"][data-item="${target!.itemId}"]`);
+      await row.getByTestId('planner-today-detail').click();
+
+      await expect(page).toHaveURL(new RegExp(`detail=${encodeURIComponent(target!.itemId)}`));
+      const detail = page.getByTestId('planner-detail');
+      const card = detail.getByTestId('planner-item');
+      await expect(card).toHaveAttribute('data-reference', ref(target!));
+      await expect(card.getByTestId('planner-item-description').or(card.getByTestId('planner-item-description-none'))).toBeVisible();
+
+      // The walk's buttons, in the detail view: a field is set and the board says so.
+      await expect(card.getByTestId('planner-day').first()).toBeEnabled();
+      await card.locator('[data-testid="planner-option"][data-field="Area"][data-option="Web"]').click();
+      await said(page, `${ref(target!)}: Area set to Web`);
+      await expect.poll(async () => (await truth(page.request, ref(target!))).fields.Area, { timeout: 30_000 }).toBe('Web');
+
+      // The line for Claude Code, and its copy button.
+      const claude = detail.getByTestId('planner-claude');
+      await expect(claude.getByTestId('planner-execute-line')).toHaveText(`Execute github issue ${ref(target!)}`);
+      await claude.getByTestId('planner-execute-copy').click();
+      await expect(claude.getByTestId('planner-execute-copy')).toHaveText(/copied|copy it by hand/);
+
+      if (!board.triage) {
+        await expect(claude.getByTestId('planner-claude-ask')).toHaveCount(0);
+        return;
+      }
+
+      // Asked from here, Claude answers into the same panel without a reload.
+      await expect(claude.getByTestId('planner-claude-none')).toBeVisible();
+      await claude.getByTestId('planner-claude-ask').click();
+      await expect(claude.getByTestId('planner-claude-message')).toContainText(`Claude is reading ${ref(target!)}`);
+      await expect(claude.getByTestId('planner-claude-analysis')).toContainText('FAKE SDK triage', { timeout: 120_000 });
+      await expect(claude.getByTestId('planner-claude-done')).toContainText(`labelled ${FAKE_LABEL}`);
+      await expect(claude.getByTestId('planner-claude-ask')).toHaveText('ask Claude again');
+      await expect.poll(async () => (await truth(page.request, ref(target!))).labels, { timeout: 30_000 }).toContain(FAKE_LABEL);
+
+      await detail.getByTestId('planner-detail-close').click();
+      await expect(page.getByTestId('planner-detail')).toHaveCount(0);
+    });
+
+    test('a new issue the board cannot take, and a model asking, are refused by the API without a trace on GitHub', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in tier only');
+
+      const before = (await (await page.request.get(`${STANDIN}/github/control/project`)).json()).items.length;
+      const post = (body: object) => page.request.post('/api/planner/issues', { data: { title: 'refused', decidedBy: NAME, triage: false, ...body } });
+
+      const elsewhere = await post({ repository: 'acme/elsewhere' });
+      expect(elsewhere.status()).toBe(404);
+      expect((await elsewhere.json()).message).toContain('not a repository the planner opens issues in');
+
+      const saga = await post({ repository: (await planner(page.request)).repositories[0], type: 'Saga' });
+      expect(saga.status()).toBe(404);
+      expect((await saga.json()).message).toContain('not an issue type');
+
+      expect((await post({ repository: 'acme/api', decidedBy: undefined })).status()).toBe(400);
+      expect((await (await page.request.get(`${STANDIN}/github/control/project`)).json()).items.length).toBe(before);
+
+      const model = await page.request.post('/api/planner/triage', { data: { repository: 'acme/api', number: 431, decidedBy: 'model' } });
+      expect([409]).toContain(model.status());
+    });
 
     test('without a name nothing can be pressed, and the page says why', async ({ browser }) => {
       // A context of its own: the others carry the remembered name.

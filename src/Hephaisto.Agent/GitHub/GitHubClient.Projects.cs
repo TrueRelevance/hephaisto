@@ -37,6 +37,7 @@ public sealed partial class GitHubClient
     private const string ProjectQuery = """
         query($owner: String!, $number: Int!, $after: String) {
           organization(login: $owner) {
+            issueTypes(first: 25) { nodes { name isEnabled } }
             projectV2(number: $number) {
               id title url
               fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } }
@@ -77,6 +78,12 @@ public sealed partial class GitHubClient
           updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field, value: {singleSelectOptionId: $option}}) {
             projectV2Item { id }
           }
+        }
+        """;
+
+    private const string AddItemMutation = """
+        mutation($project: ID!, $content: ID!) {
+          addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
         }
         """;
 
@@ -140,6 +147,27 @@ public sealed partial class GitHubClient
             new { issue = issueId, reason = notPlanned ? "NOT_PLANNED" : "COMPLETED" },
             "closeIssue",
             "issue",
+            ct);
+
+    public async Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct)
+    {
+        var added = await GraphQlAsync(
+            AddItemMutation,
+            new { project = projectId, content = contentId },
+            data => WrittenId(data, "addProjectV2ItemById", "item"),
+            strict: true,
+            ct).ConfigureAwait(false);
+
+        return new(added.Outcome, added.Value, added.Detail, RetryAt: added.RetryAt);
+    }
+
+    public Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct) =>
+        SendAsync(
+            HttpMethod.Post,
+            $"repos/{repository}/issues",
+            type is null ? new { title, body } : (object)new { title, body, type },
+            null,
+            (json, _) => Issue(json),
             ct);
 
     public Task<GitHubResult<bool>> AddLabelAsync(string repository, int number, string label, CancellationToken ct) =>
@@ -302,7 +330,16 @@ public sealed partial class GitHubClient
                 ? Text(pageInfo, "endCursor")
                 : null;
 
-        return new(new Board(Text(project, "id") ?? string.Empty, Text(project, "title") ?? string.Empty, Text(project, "url") ?? string.Empty, fields, []), items, next);
+        // The organisation's issue types, for a new issue. A token that may not read them reads
+        // the board all the same, and a new issue then has no type to choose.
+        var types = Nodes(organization, "issueTypes")
+            .Where(t => !t.TryGetProperty("isEnabled", out var enabled) || enabled.ValueKind != JsonValueKind.False)
+            .Select(t => Text(t, "name"))
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t!)
+            .ToList();
+
+        return new(new Board(Text(project, "id") ?? string.Empty, Text(project, "title") ?? string.Empty, Text(project, "url") ?? string.Empty, fields, [], types), items, next);
     }
 
     /// <summary>

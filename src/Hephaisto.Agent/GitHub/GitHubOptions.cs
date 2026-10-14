@@ -187,6 +187,16 @@ public sealed partial class GitHubPlannerOptions
     /// </summary>
     public List<string> Assignees { get; set; } = [];
 
+    /// <summary>
+    /// Where a new issue can be opened from the planner, as <c>owner/repo</c>; the first is chosen
+    /// unless somebody picks another. Empty: the repositories of the board's issues, the one with
+    /// the most first.
+    /// </summary>
+    public List<string> Repositories { get; set; } = [];
+
+    /// <summary>Claude labels an issue and writes an analysis of it, when a person asks (v0.15.0).</summary>
+    public GitHubPlannerTriageOptions Triage { get; set; } = new();
+
     public IReadOnlyList<string> Problems()
     {
         if (!Enabled)
@@ -221,9 +231,74 @@ public sealed partial class GitHubPlannerOptions
             problems.Add($"GitHub:Planner:Assignees entry '{assignee}' is not a GitHub login.");
         }
 
+        foreach (var repository in Repositories.Where(r => !Repository().IsMatch(r)))
+        {
+            problems.Add($"GitHub:Planner:Repositories entry '{repository}' is not owner/repo.");
+        }
+
+        problems.AddRange(Triage.Problems());
+
         return problems;
     }
 
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9-]*$")]
     private static partial Regex Login();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")]
+    private static partial Regex Repository();
+}
+
+/// <summary>
+/// Triage (v0.15.0): a person on the planner asks Claude to label an issue and to write what
+/// working on it means. Bound from <c>GitHub:Planner:Triage:*</c>.
+/// </summary>
+/// <remarks>
+/// It runs as a coder Job - the coder's image, namespace, Secret, egress proxy, model and
+/// dev-context, all from <c>CodeFix:*</c> - and costs what one read-only Claude run costs. Nothing
+/// starts it but a click.
+/// </remarks>
+public sealed class GitHubPlannerTriageOptions
+{
+    public bool Enabled { get; set; }
+
+    public decimal MaxCostUsd { get; set; } = 2m;
+
+    public int MaxTurns { get; set; } = 40;
+
+    public TimeSpan Deadline { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>At most this many triage Jobs at once; a click beyond it is refused and says so.</summary>
+    public int MaxConcurrentJobs { get; set; } = 2;
+
+    public IReadOnlyList<string> Problems()
+    {
+        if (!Enabled)
+        {
+            return [];
+        }
+
+        var problems = new List<string>();
+
+        if (MaxCostUsd <= 0)
+        {
+            problems.Add("GitHub:Planner:Triage:MaxCostUsd must be more than 0.");
+        }
+
+        if (MaxTurns is < 1 or > 500)
+        {
+            problems.Add("GitHub:Planner:Triage:MaxTurns must be between 1 and 500.");
+        }
+
+        if (Deadline < TimeSpan.FromMinutes(2) || Deadline > TimeSpan.FromHours(2))
+        {
+            problems.Add("GitHub:Planner:Triage:Deadline must be between 2 minutes and 2 hours.");
+        }
+
+        if (MaxConcurrentJobs < 1)
+        {
+            problems.Add("GitHub:Planner:Triage:MaxConcurrentJobs must be at least 1.");
+        }
+
+        return problems;
+    }
 }

@@ -362,6 +362,86 @@ public sealed class GitHubClientProjectTests
         handler.Requests.Single().Body.Should().Be("""{"assignees":["flo"]}""");
     }
 
+    // --- a new issue (v0.15.0) ------------------------------------------------------------------
+
+    [Fact]
+    public async Task A_new_issue_is_posted_with_its_type_by_name_and_without_one_when_there_is_none()
+    {
+        var (client, handler, _) = Build(_ => new HttpResponseMessage(HttpStatusCode.Created)
+        {
+            Content = new StringContent(
+                """{"number":500,"node_id":"I_500","title":"Dark mode","body":"why","state":"open","html_url":"https://github.com/acme/web/issues/500","user":{"login":"hephaisto-bot","id":1},"assignees":[],"labels":[],"type":{"name":"Bug"}}""",
+                Encoding.UTF8, "application/json"),
+        });
+
+        var typed = await client.CreateIssueAsync("acme/web", "Dark mode", "why", "Bug", Ct);
+        await client.CreateIssueAsync("acme/web", "Dark mode", null, null, Ct);
+
+        typed.Ok.Should().BeTrue(typed.Detail);
+        typed.Value!.Number.Should().Be(500);
+        typed.Value.NodeId.Should().Be("I_500");
+        typed.Value.Type.Should().Be("Bug");
+
+        handler.Requests[0].Method.Should().Be(HttpMethod.Post);
+        handler.Requests[0].Uri.Should().Be("https://api.github.example/repos/acme/web/issues");
+        handler.Requests[0].Body.Should().Be("""{"title":"Dark mode","body":"why","type":"Bug"}""");
+        handler.Requests[1].Body.Should().Be("""{"title":"Dark mode","body":null}""", "a type GitHub is not told of is no type");
+    }
+
+    [Fact]
+    public async Task An_issue_is_put_on_a_project_by_two_node_ids_and_the_new_item_is_answered()
+    {
+        var (client, handler, _) = Build(_ => Json("""{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_500"}}}}"""));
+
+        var added = await client.AddProjectItemAsync("PVT_1", "I_500", Ct);
+
+        added.Ok.Should().BeTrue();
+        added.Value.Should().Be("PVTI_500");
+
+        using var body = JsonDocument.Parse(handler.Requests.Single().Body);
+        body.RootElement.GetProperty("query").GetString().Should().Contain("addProjectV2ItemById");
+        body.RootElement.GetProperty("variables").GetProperty("project").GetString().Should().Be("PVT_1");
+        body.RootElement.GetProperty("variables").GetProperty("content").GetString().Should().Be("I_500");
+    }
+
+    [Fact]
+    public async Task Putting_an_issue_on_a_project_the_token_may_not_write_wrote_nothing()
+    {
+        var (client, _, _) = Build(_ => Json(
+            """{"data":{"addProjectV2ItemById":null},"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token"}]}"""));
+
+        var added = await client.AddProjectItemAsync("PVT_1", "I_500", Ct);
+
+        added.Outcome.Should().Be(GitHubOutcome.Unauthorized);
+        added.Value.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_repositorys_labels_are_read_with_their_descriptions_and_an_empty_one_is_none()
+    {
+        var (client, handler, _) = Build(_ => Json("""[{"name":"bug","description":"Something isn't working"},{"name":"area:api","description":""},{"name":""}]"""));
+
+        var labels = await client.ListLabelsAsync("acme/api", Ct);
+
+        labels.Value.Should().Equal(new GitHubLabel("bug", "Something isn't working"), new GitHubLabel("area:api", null));
+        handler.Requests.Single().Uri.Should().Be("https://api.github.example/repos/acme/api/labels?per_page=100");
+    }
+
+    [Fact]
+    public async Task The_organisations_enabled_issue_types_come_with_the_board_and_none_when_the_token_may_not_read_them()
+    {
+        var withTypes = Page(OneIssue, next: null).Replace(
+            "{\"data\":{\"organization\":{",
+            "{\"data\":{\"organization\":{\"issueTypes\":{\"nodes\":[{\"name\":\"Task\",\"isEnabled\":true},{\"name\":\"Legacy\",\"isEnabled\":false},{\"name\":\"Bug\",\"isEnabled\":true}]},",
+            StringComparison.Ordinal);
+
+        var (client, _, _) = Build(_ => Json(withTypes));
+        (await client.GetProjectAsync("acme", 3, Ct)).Value!.Types.Should().Equal("Task", "Bug");
+
+        var (without, _, _) = Build(_ => Json(Page(OneIssue, next: null)));
+        (await without.GetProjectAsync("acme", 3, Ct)).Value!.Types.Should().BeEmpty();
+    }
+
     // --- GitHub's shapes ----------------------------------------------------------------------
 
     private const string OneIssue = """

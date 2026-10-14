@@ -1,0 +1,197 @@
+@using Hephaisto.Agent.Planner
+@inject PlannerService Service
+@inject TriageRunner Triage
+@inject IJSRuntime Js
+@implements IDisposable
+@preservewhitespace true
+
+@*
+    What Claude said about one issue (v0.15.0), beside the planner's item card in the today view:
+    the newest analysis the agent posted on the issue, whether Claude is at it right now, a button
+    to ask, and the line that hands the issue to Claude Code.
+
+    The analysis is a model's text about somebody else's text, and it is shown as its markdown
+    source - never rendered - as the issue's description is.
+*@
+
+<section class="hp-planner-claude" data-testid="planner-claude" data-reference="@Reference">
+    <div class="hp-planner-ids">
+        <h3>Claude's analysis</h3>
+
+        @if (_run is { State: TriageState.Running } running)
+        {
+            <span class="hp-state st-running" data-testid="planner-claude-running">
+                <span class="glyph">~</span> Claude is reading it, since @Display.TimeOnly(running.StartedAt) (asked by @running.RequestedBy)
+            </span>
+        }
+        else if (_run is { State: TriageState.Failed } failed)
+        {
+            <span class="hp-error" data-testid="planner-claude-failed" title="@failed.Message"><span class="glyph">!!</span> @Display.Truncate(failed.Message ?? "it failed", 160)</span>
+        }
+        else if (_run is { State: TriageState.Done } done && done.Message is { } doneMessage)
+        {
+            <span class="hp-yes" data-testid="planner-claude-done"><span class="glyph">+</span> @doneMessage</span>
+        }
+
+        @if (Triage.Enabled)
+        {
+            <button type="button" data-testid="planner-claude-ask" disabled="@(Locked || _run is { State: TriageState.Running })" title="@LockedBecause"
+                    @onclick="AskAsync">@(_analysis is null ? "ask Claude" : "ask Claude again")</button>
+        }
+    </div>
+
+    @if (_message is { } message)
+    {
+        <p class="@(message.Ok ? "hp-yes" : "hp-error")" data-testid="planner-claude-message"><span class="glyph">@(message.Ok ? "+" : "!!")</span> @message.Text</p>
+    }
+
+    @if (_loading)
+    {
+        <p class="hp-muted">reading the issue's comments…</p>
+    }
+    else if (_analysis is { } analysis)
+    {
+        <p class="hp-muted" data-testid="planner-claude-at">
+            posted @Display.Ago(analysis.At, DateTimeOffset.UtcNow)
+            @if (Display.HttpUrl(analysis.Url) is { } url)
+            {
+                <text> &middot; </text><a href="@url" target="_blank" rel="noopener">the comment on GitHub</a>
+            }
+        </p>
+        <div class="hp-excerpt hp-planner-body" data-testid="planner-claude-analysis">@analysis.Body</div>
+    }
+    else
+    {
+        <p class="hp-muted" data-testid="planner-claude-none">
+            @if (Triage.Enabled)
+            {
+                <text>Claude has not analysed this issue yet. Ask, and it labels the issue with the repository's own labels and posts its analysis and plan as a comment.</text>
+            }
+            else
+            {
+                <text>Nobody asked Claude about this issue from here. Asking is off on this install: <span class="mono">github.planner.triage.enabled</span>.</text>
+            }
+        </p>
+    }
+
+    <div class="hp-planner-execute" data-testid="planner-execute">
+        <span class="hp-label">with Claude Code</span>
+        <code class="mono" data-testid="planner-execute-line">@Line</code>
+        <button type="button" data-testid="planner-execute-copy" @onclick="CopyAsync">@(_copied switch { true => "copied", false => "copy it by hand", _ => "copy" })</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Repository { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public int Number { get; set; }
+
+    /// <summary>Who is asking: the page's actor, signed in or named.</summary>
+    [Parameter]
+    public string Actor { get; set; } = string.Empty;
+
+    /// <summary>Why asking is not possible for this person, or null.</summary>
+    [Parameter]
+    public string? LockedBecause { get; set; }
+
+    private PlannerAnalysis? _analysis;
+    private TriageRun? _run;
+    private bool _loading = true;
+    private bool? _copied;
+    private (bool Ok, string Text)? _message;
+    private string? _loadedFor;
+    private CancellationTokenSource? _cts;
+
+    private string Reference => $"{Repository}#{Number}";
+
+    private string Line => PlannerEndpoints.ExecuteLine(Repository, Number);
+
+    private bool Locked => LockedBecause is not null || string.IsNullOrWhiteSpace(Actor);
+
+    protected override void OnInitialized() => Triage.Ended += OnEnded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Reference)
+        {
+            return;
+        }
+
+        _loadedFor = Reference;
+        _copied = null;
+        _message = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+
+        _loading = true;
+        _run = Triage.Run(Repository, Number);
+
+        try
+        {
+            _analysis = await Service.AnalysisAsync(Repository, Number, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        _loading = false;
+    }
+
+    private async Task AskAsync()
+    {
+        if (Locked)
+        {
+            return;
+        }
+
+        var start = await Triage.StartAsync(Repository, Number, Actor.Trim(), CancellationToken.None);
+
+        _run = start.Run ?? _run;
+        _message = (start.Outcome == TriageStartOutcome.Started, start.Message);
+    }
+
+    private async Task CopyAsync()
+    {
+        try
+        {
+            _copied = await Js.InvokeAsync<bool>("hephaisto.copy", Line);
+        }
+        catch (JSException)
+        {
+            _copied = false;
+        }
+    }
+
+    /// <summary>A run ended - on the runner's thread, so back onto the circuit's.</summary>
+    private void OnEnded(TriageRun run)
+    {
+        if (!string.Equals(run.Repository, Repository, StringComparison.OrdinalIgnoreCase) || run.Number != Number)
+        {
+            return;
+        }
+
+        _ = InvokeAsync(async () =>
+        {
+            _message = null;
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Triage.Ended -= OnEnded;
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

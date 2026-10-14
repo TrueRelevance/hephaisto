@@ -20,6 +20,7 @@ public sealed class PlannerRoutesTests
 
         // Only so that the handlers' parameter is known to be a service; nothing is resolved.
         builder.Services.AddSingleton<PlannerService>(_ => throw new NotSupportedException());
+        builder.Services.AddSingleton<TriageRunner>(_ => throw new NotSupportedException());
 
         var app = builder.Build();
 
@@ -33,12 +34,12 @@ public sealed class PlannerRoutesTests
     private static string? Policy(RouteEndpoint e) => e.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).SingleOrDefault();
 
     [Fact]
-    public void Reading_the_planner_is_one_get_and_needs_no_approver()
+    public void Reading_the_planner_is_two_gets_and_needs_no_approver()
     {
         var gets = Routes().Where(e => Verb(e) == "GET").ToList();
 
-        gets.Select(e => e.RoutePattern.RawText).Should().Equal("/api/planner");
-        Policy(gets.Single()).Should().BeNull("the console's read policy is the group's, as for every other read");
+        gets.Select(e => e.RoutePattern.RawText).Should().Equal("/api/planner", "/api/planner/analysis");
+        gets.Should().OnlyContain(e => Policy(e) == null, "the console's read policy is the group's, as for every other read");
     }
 
     [Fact]
@@ -52,6 +53,8 @@ public sealed class PlannerRoutesTests
             "/api/planner/items/{itemId}/close",
             "/api/planner/items/{itemId}/day",
             "/api/planner/items/{itemId}/assignee",
+            "/api/planner/issues",
+            "/api/planner/triage",
         ]);
 
         writes.Should().OnlyContain(e => Verb(e) == "POST" && Policy(e) == AuthenticationExtensions.ApprovePolicy);

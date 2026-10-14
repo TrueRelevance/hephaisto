@@ -766,6 +766,11 @@ refuses "the planner without an owner"         "${GH[@]}" --set github.planner.e
 refuses "the planner without a number"         "${GH[@]}" --set github.planner.enabled=true --set github.planner.owner=example
 refuses "a planner owner given as a URL"       "${PLANNER[@]}" --set github.planner.owner=https://github.com/example
 refuses "a planner number that is a name"      "${PLANNER[@]}" --set github.planner.number=planning
+renders "the planner's repositories for a new issue" "${PLANNER[@]}" --set 'github.planner.repositories[0]=example/planning'
+refuses "a planner repository given as a URL"  "${PLANNER[@]}" --set 'github.planner.repositories[0]=https://github.com/example/planning'
+refuses "asking Claude without the coder"      "${PLANNER[@]}" --set github.planner.triage.enabled=true
+renders "asking Claude with the coder"         "${PLANNER[@]}" "${CF[@]}" --set github.planner.triage.enabled=true
+refuses "a triage deadline that is not hh:mm:ss" "${PLANNER[@]}" --set github.planner.triage.deadline=15m
 refuses "a quiet period of no days"            "${PLANNER[@]}" --set github.planner.staleAfterDays=0
 refuses "an assignee that is not a login"      "${PLANNER[@]}" --set 'github.planner.assignees[0]=some one'
 refuses "a planner key nobody declared"        "${PLANNER[@]}" --set github.planner.project=3

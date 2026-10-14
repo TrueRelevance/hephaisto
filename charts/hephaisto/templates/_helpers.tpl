@@ -433,6 +433,9 @@ is the earlier, cheaper place to hear it - except the last, which only the chart
 {{- if not $planner.number -}}
   {{- fail "github.planner.number is required when github.planner.enabled is true: the project's number, the <number> of github.com/orgs/<owner>/projects/<number>." -}}
 {{- end -}}
+{{- if and ($planner.triage | default dict).enabled (not $.Values.codeFix.enabled) -}}
+  {{- fail "codeFix.enabled is required when github.planner.triage.enabled is true: Claude analyses an issue in a coder Job, with the coder's image, namespace, Secret and dev-context." -}}
+{{- end -}}
 {{- end -}}
 {{- if $gh.enabled -}}
 {{- if not .Values.secrets.github -}}

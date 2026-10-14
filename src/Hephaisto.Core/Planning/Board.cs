@@ -66,13 +66,17 @@ public sealed record BoardItem(
 }
 
 /// <summary>A GitHub project as the planner sees it: its single-select fields and its issues.</summary>
+/// <param name="IssueTypes">The issue types of the project's organisation that are enabled, for a new issue. Empty when the token may not read them.</param>
 public sealed record Board(
     string Id,
     string Title,
     string Url,
     IReadOnlyList<BoardField> Fields,
-    IReadOnlyList<BoardItem> Items)
+    IReadOnlyList<BoardItem> Items,
+    IReadOnlyList<string>? IssueTypes = null)
 {
+    public IReadOnlyList<string> Types => IssueTypes ?? [];
+
     public BoardField? Field(string name) =>
         Fields.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
 }

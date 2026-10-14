@@ -66,14 +66,15 @@ public sealed class GitHubClientTests
     public void Nothing_but_the_planner_calls_what_closes_or_takes_away()
     {
         // The poller acts by itself, on every pass. A call that closes an issue or removes a
-        // label may only be reached from a person's click, which is the planner's service.
+        // label may only be reached from a person's click, which is the planner's service - and
+        // so may one that opens an issue or puts one on a board.
         var src = Path.Combine(RepoRoot(), "src", "Hephaisto.Agent");
 
         var callers = Directory.EnumerateFiles(src, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                 && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(f => System.Text.RegularExpressions.Regex.IsMatch(
-                File.ReadAllText(f), @"\.(CloseIssueAsync|RemoveLabelAsync|RemoveAssigneeAsync|SetProjectFieldAsync|AddLabelAsync|AddAssigneeAsync)\("))
+                File.ReadAllText(f), @"\.(CloseIssueAsync|RemoveLabelAsync|RemoveAssigneeAsync|SetProjectFieldAsync|AddLabelAsync|AddAssigneeAsync|CreateIssueAsync|AddProjectItemAsync)\("))
             .Select(f => Path.GetFileName(f))
             .ToList();
 

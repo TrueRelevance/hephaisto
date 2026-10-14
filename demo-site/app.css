@@ -1849,6 +1849,85 @@ details > summary {
     white-space: nowrap;
 }
 
+/* What Claude said about the issue in the detail view: beside the card, where the walk has its
+   queue, with the line that hands the issue to Claude Code at its foot. */
+.hp-planner-claude {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
+    padding: 0.2rem 0.7rem 0.7rem;
+}
+
+.hp-planner-claude h3 {
+    margin: 0.5rem 0;
+}
+
+.hp-planner-claude .hp-planner-body {
+    max-height: 34rem;
+    font-size: var(--text-md);
+}
+
+.hp-planner-execute {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.7rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--border);
+}
+
+.hp-planner-execute code {
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    overflow-wrap: anywhere;
+}
+
+.hp-planner-details {
+    margin-right: 0.4rem;
+}
+
+.hp-planner-detail .hp-planner-walk h2 {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+/* The new issue: one column of choices, the title and the description as wide as the page. */
+.hp-planner-new .hp-field {
+    flex-wrap: wrap;
+}
+
+.hp-planner-new .hp-label {
+    min-width: 6rem;
+}
+
+.hp-planner-new-title input,
+.hp-planner-new-body textarea {
+    flex: 1;
+    min-width: 0;
+}
+
+.hp-planner-new-body textarea {
+    font-family: inherit;
+}
+
+.hp-planner-new-claude {
+    display: inline-flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+/* The tick and the button on one line: a submit as wide as the page reads as a banner. */
+.hp-planner-new .hp-cf-decide {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.8rem;
+}
+
 /* A row's day, in every table of the planner: an accent edge for today, faint for put away
    and for done. The word is in the row as well - the edge alone would be colour alone. */
 .hp-table tr.is-today td:first-child {

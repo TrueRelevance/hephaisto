@@ -7,6 +7,9 @@ namespace Hephaisto.Agent.Planner;
 /// <summary>What <c>GET /api/planner</c> answers: the board, and its open issues in the planner's order.</summary>
 /// <param name="State"><c>Off</c>, <c>Read</c> or <c>Unreadable</c>.</param>
 /// <param name="Problem">Why the newest read failed. With <c>Read</c>, the items are an older board's.</param>
+/// <param name="Repositories">Where a new issue can be opened; the first is the default.</param>
+/// <param name="IssueTypes">The organisation's issue types a new issue can have.</param>
+/// <param name="Triage">Whether Claude can be asked to label and analyse an issue.</param>
 public sealed record PlannerView(
     PlannerState State,
     string? Problem,
@@ -16,7 +19,10 @@ public sealed record PlannerView(
     IReadOnlyList<BoardField> Fields,
     IReadOnlyList<string> Assignees,
     IReadOnlyList<PlannerItemView> Items,
-    IReadOnlyList<PlannerClosedView> ClosedToday);
+    IReadOnlyList<PlannerClosedView> ClosedToday,
+    IReadOnlyList<string> Repositories,
+    IReadOnlyList<string> IssueTypes,
+    bool Triage);
 
 /// <param name="Reason">Why the item asks for a decision, or <c>None</c>.</param>
 /// <param name="Day"><c>Today</c>, <c>NotToday</c> or <c>Undecided</c>.</param>
@@ -60,6 +66,27 @@ public sealed record PlannerAssigneeRequest(string? Login, bool Assign, string? 
 /// <param name="Item">The item as it is now. Null once it is closed: it is no longer among the open ones.</param>
 public sealed record PlannerActionResponse(PlannerActionOutcome Outcome, string Message, PlannerItemView? Item);
 
+/// <param name="Fields">Field name to option name, for the board's single-select fields.</param>
+/// <param name="Triage">Ask Claude to label and analyse the issue once it is open.</param>
+public sealed record PlannerNewIssueRequest(
+    string? Repository, string? Title, string? Body, string? Type, IReadOnlyDictionary<string, string>? Fields, bool Triage, string? DecidedBy);
+
+/// <param name="Triage">What asking Claude answered, when it was asked.</param>
+public sealed record PlannerNewIssueResponse(PlannerActionOutcome Outcome, string Message, PlannerItemView? Item, string? Url, TriageStartResponse? Triage);
+
+public sealed record PlannerTriageRequest(string? Repository, int Number, string? DecidedBy);
+
+public sealed record TriageStartResponse(TriageStartOutcome Outcome, string Message, TriageRunView? Run);
+
+/// <param name="State"><c>Running</c>, <c>Done</c> or <c>Failed</c>.</param>
+public sealed record TriageRunView(string Repository, int Number, TriageState State, string RequestedBy, DateTimeOffset StartedAt, DateTimeOffset? EndedAt, string? Message, string JobName);
+
+/// <summary>What <c>GET /api/planner/analysis</c> answers for one issue.</summary>
+/// <param name="Run">The newest time Claude was asked about it, as far as this process knows.</param>
+/// <param name="Analysis">The newest analysis the agent posted on the issue.</param>
+/// <param name="Execute">The line to hand the issue to Claude Code with.</param>
+public sealed record PlannerAnalysisView(string Repository, int Number, TriageRunView? Run, PlannerAnalysis? Analysis, string Execute);
+
 /// <summary>
 /// <c>/api/planner</c> (v0.15.0). Reading is behind the console's read policy. Every write is a
 /// POST behind the approver policy - the door closing an incident has - and names a person.
@@ -101,14 +128,117 @@ public static class PlannerEndpoints
             .WithName("SetPlannerAssignee")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
+        app.MapPost("/api/planner/issues", CreateAsync)
+            .WithName("CreatePlannerIssue")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        app.MapPost("/api/planner/triage", TriageAsync)
+            .WithName("StartPlannerTriage")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        app.MapGet("/api/planner/analysis", AnalysisAsync).WithName("ReadPlannerAnalysis");
+
         return app;
     }
 
-    /// <summary><c>?refresh=true</c> asks GitHub now; otherwise the answer may be up to half a minute old.</summary>
-    private static async Task<Ok<PlannerView>> ReadAsync(bool? refresh, PlannerService planner, CancellationToken ct) =>
-        TypedResults.Ok(View(await planner.ReadAsync(refresh == true, ct)));
+    /// <summary>The line a person pastes into Claude Code to work on an issue.</summary>
+    public static string ExecuteLine(string repository, int number) => $"Execute github issue {repository}#{number}";
 
-    public static PlannerView View(PlannerSnapshot snapshot) => new(
+    public static TriageRunView View(TriageRun run) =>
+        new(run.Repository, run.Number, run.State, run.RequestedBy, run.StartedAt, run.EndedAt, run.Message, run.JobName);
+
+    public static TriageStartResponse View(TriageStart start) => new(start.Outcome, start.Message, start.Run is { } run ? View(run) : null);
+
+    private static async Task<Results<Ok<PlannerNewIssueResponse>, NotFound<PlannerNewIssueResponse>, Conflict<PlannerNewIssueResponse>, ValidationProblem>> CreateAsync(
+        PlannerNewIssueRequest body, HttpContext http, PlannerService planner, TriageRunner triage, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Repository) || string.IsNullOrWhiteSpace(body.Title))
+        {
+            return Missing("repository", "title");
+        }
+
+        var actor = ActorResolution.Resolve(http.User, body.DecidedBy);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return NobodyNamed();
+        }
+
+        var result = await planner.OpenIssueAsync(
+            new PlannerNewIssue(body.Repository, body.Title, body.Body, body.Type, body.Fields ?? new Dictionary<string, string>()), actor, ct);
+
+        TriageStartResponse? asked = null;
+
+        if (result.Opened is { } opened && body.Triage)
+        {
+            asked = View(await triage.StartAsync(opened.Repository, opened.Number, actor, ct));
+        }
+
+        var response = new PlannerNewIssueResponse(
+            result.Outcome, result.Message, result.ItemId is { } id && result.Snapshot.Entry(id) is { } entry ? View(entry) : null, result.Opened?.Url, asked);
+
+        return result.Outcome switch
+        {
+            PlannerActionOutcome.Done => TypedResults.Ok(response),
+            PlannerActionOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.Conflict(response),
+        };
+    }
+
+    private static async Task<Results<Ok<TriageStartResponse>, NotFound<TriageStartResponse>, Conflict<TriageStartResponse>, ValidationProblem>> TriageAsync(
+        PlannerTriageRequest body, HttpContext http, TriageRunner triage, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Repository) || body.Number <= 0)
+        {
+            return Missing("repository", "number");
+        }
+
+        var actor = ActorResolution.Resolve(http.User, body.DecidedBy);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return NobodyNamed();
+        }
+
+        var start = View(await triage.StartAsync(body.Repository.Trim(), body.Number, actor, ct));
+
+        return start.Outcome switch
+        {
+            TriageStartOutcome.Started => TypedResults.Ok(start),
+            TriageStartOutcome.NotFound => TypedResults.NotFound(start),
+            _ => TypedResults.Conflict(start),
+        };
+    }
+
+    private static async Task<Results<Ok<PlannerAnalysisView>, ValidationProblem>> AnalysisAsync(
+        string? repository, int? number, PlannerService planner, TriageRunner triage, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(repository) || number is not > 0)
+        {
+            return Missing("repository", "number");
+        }
+
+        var repo = repository.Trim();
+
+        return TypedResults.Ok(new PlannerAnalysisView(
+            repo,
+            number.Value,
+            triage.Run(repo, number.Value) is { } run ? View(run) : null,
+            await planner.AnalysisAsync(repo, number.Value, ct),
+            ExecuteLine(repo, number.Value)));
+    }
+
+    private static ValidationProblem NobodyNamed() =>
+        TypedResults.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["decidedBy"] = ["decidedBy is required when nobody is signed in; the audit trail names a person, not a request."],
+        });
+
+    /// <summary><c>?refresh=true</c> asks GitHub now; otherwise the answer may be up to half a minute old.</summary>
+    private static async Task<Ok<PlannerView>> ReadAsync(bool? refresh, PlannerService planner, TriageRunner triage, CancellationToken ct) =>
+        TypedResults.Ok(View(await planner.ReadAsync(refresh == true, ct), triage.Enabled));
+
+    public static PlannerView View(PlannerSnapshot snapshot, bool triage = false) => new(
         snapshot.State,
         snapshot.Problem,
         snapshot.ReadAt,
@@ -117,7 +247,10 @@ public static class PlannerEndpoints
         snapshot.Board?.Fields ?? [],
         snapshot.Assignees,
         [.. snapshot.Entries.Select(View)],
-        [.. snapshot.ClosedToday.Select(i => new PlannerClosedView(i.ItemId, i.Repository, i.Number, i.Title, i.Url, i.ClosedAt))]);
+        [.. snapshot.ClosedToday.Select(i => new PlannerClosedView(i.ItemId, i.Repository, i.Number, i.Title, i.Url, i.ClosedAt))],
+        snapshot.NewIssueRepositories,
+        snapshot.Board?.Types ?? [],
+        triage);
 
     public static PlannerItemView View(PlannerEntry entry) => new(
         entry.Item.ItemId,
