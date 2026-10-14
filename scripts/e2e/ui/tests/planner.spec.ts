@@ -686,6 +686,10 @@ test.describe('planner', () => {
 
       await open(page, '/planner?view=today');
       const row = page.locator(`[data-testid="planner-today-row"][data-item="${target!.itemId}"]`);
+
+      // The circuit first: a link followed before the page is interactive changes the address
+      // and nothing else, since the live component has not taken over the page yet.
+      await expect(row.getByTestId('planner-today-close')).toBeEnabled();
       await row.getByTestId('planner-today-detail').click();
 
       await expect(page).toHaveURL(new RegExp(`detail=${encodeURIComponent(target!.itemId)}`));
