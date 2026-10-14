@@ -49,7 +49,10 @@ export function triageOutputSchema(): Record<string, unknown> {
     required: [...AGENT_TRIAGE_FIELDS],
     properties: {
       ...Object.fromEntries(AGENT_TRIAGE_FIELDS.map((k) => [k, props[k]])),
-      outcome: { enum: ['triaged', 'failed'], description: 'triaged: you read the issue and answer the rest. failed: you could not, and summary says why.' },
+      outcome: {
+        enum: ['triaged', 'failed'],
+        description: 'triaged: you read the issue and answer the rest - also when dev-context does not know its repository. failed: only when the issue makes no sense at all; summary says why.',
+      },
     },
   };
 }

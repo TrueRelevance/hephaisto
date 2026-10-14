@@ -26,6 +26,12 @@ Choose among these and no others. A name that is not in this list is dropped.
 
 ## Your task
 
+Answer `triaged` whenever you could read the issue - also when dev-context says nothing about its
+repository or its subject. The repository may be a planning repository, a new one, or one the
+notes do not cover yet: then work from the issue itself and say in `analysis` what you could not
+place. `failed` is only for an issue you could not make sense of at all, and its `summary` says
+why.
+
 1. **Labels.** The ones that describe the issue - what kind of work it is, which area or service
    it concerns. Choose none rather than a doubtful one. Never `today` or `not today`: those are
    the planner's.
