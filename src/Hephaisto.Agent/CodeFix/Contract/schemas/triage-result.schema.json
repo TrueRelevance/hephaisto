@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TrueRelevance/dev-context/schemas/triage-result.schema.json",
+  "title": "TriageResult",
+  "description": "What a triage Job answers, as the last framed block of its log: the labels it chose, and an analysis and plan of the issue a person reads before working on it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "attempt_id", "phase", "outcome", "labels", "summary", "analysis", "steps", "questions", "cost_usd", "billing", "turns", "session_id", "context_sha", "error", "denied_tool_calls"],
+  "properties": {
+    "contract_version": { "const": "1" },
+    "attempt_id": { "type": "string", "format": "uuid" },
+    "phase": { "const": "triage" },
+    "outcome": {
+      "enum": ["triaged", "budget_exhausted", "max_turns", "rate_limited", "failed"],
+      "description": "triaged = the model answered with labels and an analysis that passed the schema."
+    },
+    "labels": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "description": "Names from the request's labels. Hephaisto puts on only those the repository has.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+    },
+    "summary": { "type": "string", "maxLength": 500, "description": "One or two sentences: what the issue asks for." },
+    "analysis": { "type": "string", "maxLength": 8000, "description": "Markdown: where the change lies, what it touches, what is risky, what is unclear." },
+    "steps": {
+      "type": "array",
+      "maxItems": 15,
+      "description": "The plan, in the order a person would work it.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 1000 }
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "What only a person can decide, each with what the plan assumed meanwhile.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 500 }
+    },
+    "cost_usd": { "type": "number", "minimum": 0, "description": "The SDK's total_cost_usd; notional on a subscription." },
+    "billing": { "enum": ["subscription", "api", "fake"], "description": "Which credential paid: CLAUDE_CODE_OAUTH_TOKEN = subscription, ANTHROPIC_API_KEY = api, the fake SDK = fake." },
+    "turns": { "type": "integer", "minimum": 0 },
+    "session_id": { "type": ["string", "null"], "maxLength": 128 },
+    "context_sha": { "type": ["string", "null"], "maxLength": 64 },
+    "error": { "type": ["string", "null"], "maxLength": 4000 },
+    "denied_tool_calls": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "input", "reason"],
+        "properties": {
+          "tool": { "type": "string", "maxLength": 64 },
+          "input": { "type": "string", "maxLength": 500 },
+          "reason": { "type": "string", "maxLength": 500 }
+        }
+      }
+    }
+  }
+}

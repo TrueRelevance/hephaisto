@@ -1,0 +1,23 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000a1",
+  "phase": "triage",
+  "budget": {
+    "max_cost_usd": 2,
+    "deadline_seconds": 900,
+    "max_turns": 30
+  },
+  "context": {
+    "repository_url": "https://github.com/TrueRelevance/dev-context",
+    "ref": "main"
+  },
+  "issue": {
+    "repository": "TrueRelevance/planning",
+    "number": 31,
+    "url": "https://github.com/TrueRelevance/planning/issues/31",
+    "title": "Matching: the replan histogram skips empty windows",
+    "type": "Task",
+    "author": "Flou21",
+    "body": "A segment with no hit in a window is replanned from scratch."
+  }
+}

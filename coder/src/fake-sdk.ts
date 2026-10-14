@@ -66,7 +66,7 @@ type Step = z.infer<typeof StepZ>;
 export interface FakeContext {
   scriptDir: string;
   repoName: string;
-  phase: 'plan' | 'implement' | 'investigate';
+  phase: 'plan' | 'implement' | 'investigate' | 'triage';
   /** Substituted into every string of the script as {{name}}. */
   vars: Record<string, string>;
   /** investigate: script file names to try, in order, instead of <repoName>.<phase>.json / default.<phase>.json. */

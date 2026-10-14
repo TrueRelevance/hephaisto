@@ -32,7 +32,7 @@ export const PrepareHandoffZ = z
     handoff_version: z.literal(HANDOFF_VERSION),
     role: z.literal('prepare'),
     attempt_id: z.string().max(64),
-    phase: z.enum(['plan', 'implement', 'investigate']),
+    phase: z.enum(['plan', 'implement', 'investigate', 'triage']),
     /** When prepare started. The Job's deadline has been running since then, so the later roles count from here. */
     started_at_ms: z.number().int().min(0),
     /** An early result - already_exists, or a failure. The role that prints prints it, and nothing else runs. */

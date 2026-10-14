@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESULT_MAX_BYTES } from './config.js';
 import { log } from './log.js';
-import { type AnyResult, type Billing, type CodeFixPhase, type ImplementResult, type InvestigateResult, type Phase, type PlanResult, rawSchema, validate } from './schemas.js';
+import { type AnyResult, type Billing, type CodeFixPhase, type ImplementResult, type InvestigateResult, type Phase, type PlanResult, type TriageResult, rawSchema, validate } from './schemas.js';
 
 // The runner's only output that matters. Hephaisto reads the last 1 MiB of the pod log, takes
 // the LAST begin/end pair, and checks bytes + sha256 before it deserialises anything, so the
@@ -103,6 +103,7 @@ function resolveRef(ref: string, current: Schema): Schema {
       'codefix-implement-result.schema.json': rawSchema('implement'),
       'codefix-request.schema.json': rawSchema('request'),
       'investigate-result.schema.json': rawSchema('investigate'),
+      'triage-result.schema.json': rawSchema('triage'),
     };
     base = byFile[file] ?? current;
   }
@@ -141,10 +142,31 @@ export function clampToSchema(value: unknown, schema: Schema, root: Schema, fact
 }
 
 export function minimalFailed(phase: 'investigate', attemptId: string, error: string, billing?: Billing): InvestigateResult;
+export function minimalFailed(phase: 'triage', attemptId: string, error: string, billing?: Billing): TriageResult;
 export function minimalFailed(phase: CodeFixPhase, attemptId: string, error: string): PlanResult | ImplementResult;
 export function minimalFailed(phase: Phase, attemptId: string, error: string, billing?: Billing): AnyResult;
 export function minimalFailed(phase: Phase, attemptId: string, error: string, billing: Billing = 'api'): AnyResult {
   const err = truncateString(error, 4000, false);
+  if (phase === 'triage') {
+    return {
+      contract_version: '1',
+      attempt_id: attemptId,
+      phase: 'triage',
+      outcome: 'failed',
+      labels: [],
+      summary: '',
+      analysis: '',
+      steps: [],
+      questions: [],
+      cost_usd: 0,
+      billing,
+      turns: 0,
+      session_id: null,
+      context_sha: null,
+      error: err,
+      denied_tool_calls: [],
+    };
+  }
   if (phase === 'investigate') {
     return {
       contract_version: '1',

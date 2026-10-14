@@ -53,6 +53,15 @@ public static partial class CodeFixResultParser
     public static CodeFixParse<InvestigateResult> ParseInvestigate(string? log, Guid attemptId) =>
         Parse<InvestigateResult>(log, attemptId, "investigate", r => (r.AttemptId, r.Phase));
 
+    /// <summary>A triage Job's answer (v0.15.0), under exactly the same framing rules.</summary>
+    public static CodeFixParse<TriageResult> ParseTriage(string? log, Guid attemptId) =>
+        Parse<TriageResult>(log, attemptId, "triage", r => (r.AttemptId, r.Phase));
+
+    public static readonly IReadOnlySet<string> TriageOutcomes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "triaged", "budget_exhausted", "max_turns", "rate_limited", "failed",
+    };
+
     public static readonly IReadOnlySet<string> InvestigateOutcomes = new HashSet<string>(StringComparer.Ordinal)
     {
         "concluded", "no_conclusion", "budget_exhausted", "max_turns", "rate_limited", "no_credential", "failed",

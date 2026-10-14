@@ -1,0 +1,26 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000a1",
+  "phase": "triage",
+  "outcome": "triaged",
+  "labels": [
+    "area:matching"
+  ],
+  "summary": "The histogram window plan treats an empty window as unknown, so the next replan starts from scratch.",
+  "analysis": "The window plan lives in CaitMatchingService; the shared types are in Cait.",
+  "steps": [
+    "Record an empty window as zero hits.",
+    "Cover it with a unit test on the planner."
+  ],
+  "questions": [
+    "Should a window older than a week count at all? The plan keeps it."
+  ],
+  "cost_usd": 0.42,
+  "billing": "subscription",
+  "turns": 9,
+  "session_id": "4f7c1c1e-0000-4000-8000-000000000001",
+  "context_sha": "0123456789abcdef0123456789abcdef01234567",
+  "error": null,
+  "denied_tool_calls": [],
+  "priority": "P1"
+}

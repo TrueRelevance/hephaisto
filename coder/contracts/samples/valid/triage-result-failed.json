@@ -1,0 +1,18 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000a1",
+  "phase": "triage",
+  "outcome": "failed",
+  "labels": [],
+  "summary": "",
+  "analysis": "",
+  "steps": [],
+  "questions": [],
+  "cost_usd": 0,
+  "billing": "api",
+  "turns": 0,
+  "session_id": null,
+  "context_sha": null,
+  "error": "the context could not be cloned",
+  "denied_tool_calls": []
+}

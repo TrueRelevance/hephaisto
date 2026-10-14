@@ -5,8 +5,9 @@ import { billingOf, fakeScriptCandidates, prepareInvestigate, runInvestigate } f
 import { addRedaction, log, redact, setLogPrefix } from './log.js';
 import { type PhaseDeps, coderImplement, coderPlan, prepareImplement, preparePlan } from './phases.js';
 import { runPublish } from './publish.js';
+import { prepareTriage, runTriage } from './triage.js';
 import { NIL_UUID, emitPrBody, emitResult, hasEmitted, minimalFailed, validUuid } from './result.js';
-import { type AnyResult, type CodeFixRequest, type InvestigateRequest, type InvestigateResult, type Phase, SCHEMA_FILES, validate } from './schemas.js';
+import { type AnyResult, type CodeFixRequest, type InvestigateRequest, type InvestigateResult, type Phase, SCHEMA_FILES, type TriageRequest, validate } from './schemas.js';
 import { loadQuery } from './sdk.js';
 
 // Entry point. One invariant above all others: exactly ONE framed result is the last thing on
@@ -17,7 +18,8 @@ import { loadQuery } from './sdk.js';
 // Since #116 a Job is the same image started in up to three roles (config.ts ROLES), and only
 // one of them prints:
 //
-//   plan, investigate   prepare (init) -> coder             coder prints
+//   plan, investigate,  prepare (init) -> coder             coder prints
+//   triage
 //   implement           prepare (init) -> coder (init) -> publish   publish prints
 //
 // A role that does not print hands its result to the next through a handoff file and exits 0,
@@ -55,7 +57,7 @@ function identityFrom(raw: unknown): Identity {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
     attemptId: typeof o.attempt_id === 'string' && validUuid(o.attempt_id) ? o.attempt_id : NIL_UUID,
-    phase: o.phase === 'implement' ? 'implement' : o.phase === 'investigate' ? 'investigate' : 'plan',
+    phase: o.phase === 'implement' ? 'implement' : o.phase === 'investigate' ? 'investigate' : o.phase === 'triage' ? 'triage' : 'plan',
   };
 }
 
@@ -186,10 +188,11 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
   identity = identityFrom(raw);
   printing = prints(role, identity.phase);
   const investigating = identity.phase === 'investigate';
+  const triaging = identity.phase === 'triage';
   // A code-fix request is one of two documents, told apart by the version it states: 1 is for an
   // incident, 2 for a work item. Each is held to its own schema, so a refusal names one file and
   // one member - never "matches neither of two shapes".
-  const schema = investigating ? 'investigateRequest' : (raw as { contract_version?: unknown } | null)?.contract_version === '2' ? 'requestV2' : 'request';
+  const schema = investigating ? 'investigateRequest' : triaging ? 'triageRequest' : (raw as { contract_version?: unknown } | null)?.contract_version === '2' ? 'requestV2' : 'request';
   const v = validate(schema, raw);
   if (!v.ok) {
     log.error(`request does not match ${SCHEMA_FILES[schema]}: ${v.errors.join('; ')}`);
@@ -238,6 +241,7 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
     }, Math.max(0, deadline - Date.now()));
     try {
       if (investigating) return await prepareInvestigate(raw as InvestigateRequest, { env: e, paths, abort, startedAt });
+      if (triaging) return await prepareTriage(raw as TriageRequest, { env: e, paths, abort, startedAt });
       const req = raw as CodeFixRequest;
       const deps = { env: e, paths, deadline, abort, startedAt };
       return req.phase === 'plan' ? await preparePlan(req, deps) : await prepareImplement(req, deps);
@@ -283,6 +287,27 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
       log.info(`outcome ${result.outcome}${result.error ? `: ${result.error}` : ''} (cost $${result.cost_usd.toFixed(4)}, ${result.billing})`);
       return result;
     }
+    if (triaging) {
+      const result = await runTriage(
+        raw as TriageRequest,
+        {
+          env: e,
+          paths,
+          deadline,
+          abort,
+          makeQuery: (vars) =>
+            loadQuery(e.sdkMode, {
+              scriptDir: e.fakeScriptDir,
+              repoName: (raw as TriageRequest).issue.repository.split('/')[1] ?? '',
+              phase: 'triage',
+              vars,
+            }),
+        },
+        h,
+      );
+      log.info(`outcome ${result.outcome}${result.error ? `: ${result.error}` : ''} (cost $${result.cost_usd.toFixed(4)}, ${result.billing})`);
+      return result;
+    }
     const req = raw as CodeFixRequest;
     const deps: PhaseDeps = {
       env: e,
@@ -321,7 +346,7 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
   const terminal = (h: PrepareHandoff): AnyResult => {
     const t = { ...(h.terminal as unknown as AnyResult), attempt_id: identity.attemptId, phase: identity.phase } as AnyResult;
     // prepare holds no model credential, so it cannot say who would have paid; this role can
-    return identity.phase === 'investigate' ? ({ ...t, billing: billingOf(runnerEnv) } as AnyResult) : t;
+    return identity.phase === 'investigate' || identity.phase === 'triage' ? ({ ...t, billing: billingOf(runnerEnv) } as AnyResult) : t;
   };
 
   try {

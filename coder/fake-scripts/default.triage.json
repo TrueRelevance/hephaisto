@@ -1,0 +1,19 @@
+{
+  "description": "Default FAKE SDK triage: looks at dev-context and answers one label the repository has, a summary and a two-step plan. No model runs; it exists to exercise the plumbing end to end.",
+  "steps": [
+    { "tool": "Glob", "input": { "pattern": "*" } },
+    {
+      "result": {
+        "cost_usd": 0,
+        "structured_output": {
+          "outcome": "triaged",
+          "labels": ["{{fake_label}}"],
+          "summary": "FAKE SDK triage (no model ran) of {{issue_ref}}.",
+          "analysis": "Produced by CODEFIX_SDK=fake: nothing was analysed.\n\n- The label is the first one the repository offers.",
+          "steps": ["Read the issue.", "Do what it asks."],
+          "questions": ["Is this a real issue? The plan assumes it is a test."]
+        }
+      }
+    }
+  ]
+}

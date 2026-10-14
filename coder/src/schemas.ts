@@ -20,6 +20,8 @@ export const SCHEMA_FILES = {
   repos: 'repos.schema.json',
   investigateRequest: 'investigate-request.schema.json',
   investigate: 'investigate-result.schema.json',
+  triageRequest: 'triage-request.schema.json',
+  triage: 'triage-result.schema.json',
 } as const;
 export type SchemaName = keyof typeof SCHEMA_FILES;
 
@@ -55,6 +57,8 @@ const validators: Record<SchemaName, ValidateFunction> = {
   repos: compiled('repos'),
   investigateRequest: compiled('investigateRequest'),
   investigate: compiled('investigate'),
+  triageRequest: compiled('triageRequest'),
+  triage: compiled('triage'),
 };
 
 export interface Validation {
@@ -380,6 +384,59 @@ export const InvestigateResultZ = z
   })
   .strict();
 
+// ---- triage (v0.15.0): the same runner, a Job that labels and analyses one GitHub issue for the planner
+
+export const TriageRequestZ = z
+  .object({
+    contract_version: z.literal('1'),
+    attempt_id: z.guid(),
+    phase: z.literal('triage'),
+    budget: z
+      .object({
+        max_cost_usd: z.number().min(0).max(1000),
+        deadline_seconds: z.number().int().min(60).max(86400),
+        max_turns: z.number().int().min(1).max(500),
+      })
+      .strict(),
+    context: z.object({ repository_url: z.string().min(1).max(512), ref: z.string().min(1).max(255) }).strict(),
+    issue: z
+      .object({
+        repository: z.string().max(200).regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+        number: z.number().int().min(1),
+        url: z.string().min(1).max(512),
+        title: z.string().min(1).max(512),
+        type: z.string().max(100).nullable(),
+        author: z.string().min(1).max(100),
+        body: z.string().max(20000).nullable(),
+      })
+      .strict(),
+    labels: z.array(z.object({ name: z.string().min(1).max(100), description: z.string().max(500).nullable() }).strict()).max(200),
+  })
+  .strict();
+
+export const TriageOutcomeZ = z.enum(['triaged', 'budget_exhausted', 'max_turns', 'rate_limited', 'failed']);
+
+export const TriageResultZ = z
+  .object({
+    contract_version: z.literal('1'),
+    attempt_id: z.guid(),
+    phase: z.literal('triage'),
+    outcome: TriageOutcomeZ,
+    labels: z.array(z.string().min(1).max(100)).max(10),
+    summary: z.string().max(500),
+    analysis: z.string().max(8000),
+    steps: z.array(z.string().min(1).max(1000)).max(15),
+    questions: z.array(z.string().min(1).max(500)).max(5),
+    cost_usd: z.number().min(0),
+    billing: BillingZ,
+    turns: z.number().int().min(0),
+    session_id: z.string().max(128).nullable(),
+    context_sha: z.string().max(64).nullable(),
+    error: z.string().max(4000).nullable(),
+    denied_tool_calls: z.array(DenialZ).max(50),
+  })
+  .strict();
+
 export type IncidentRequest = z.infer<typeof RequestZ>;
 export type WorkItemRequest = z.infer<typeof WorkItemRequestZ>;
 /** What a code-fix Job is asked to do: for an incident (version 1) or for a work item (version 2). Ask subject.ts which. */
@@ -396,6 +453,9 @@ export type InvestigateResult = z.infer<typeof InvestigateResultZ>;
 export type InvestigateOutcome = z.infer<typeof InvestigateOutcomeZ>;
 export type Billing = z.infer<typeof BillingZ>;
 export type CodeRef = z.infer<typeof CodeRefZ>;
+export type TriageRequest = z.infer<typeof TriageRequestZ>;
+export type TriageResult = z.infer<typeof TriageResultZ>;
+export type TriageOutcome = z.infer<typeof TriageOutcomeZ>;
 /** Every phase the runner can report; each one names its result schema. */
-export type Phase = CodeFixPhase | 'investigate';
-export type AnyResult = PlanResult | ImplementResult | InvestigateResult;
+export type Phase = CodeFixPhase | 'investigate' | 'triage';
+export type AnyResult = PlanResult | ImplementResult | InvestigateResult | TriageResult;

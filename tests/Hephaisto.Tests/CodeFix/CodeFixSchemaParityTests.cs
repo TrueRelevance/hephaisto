@@ -46,6 +46,9 @@ public sealed class CodeFixSchemaParityTests
         { "investigate-request-no-source.json", typeof(InvestigateRequest) },
         { "investigate-result.json", typeof(InvestigateResult) },
         { "investigate-result-failed.json", typeof(InvestigateResult) },
+        { "triage-request.json", typeof(TriageRequest) },
+        { "triage-result.json", typeof(TriageResult) },
+        { "triage-result-failed.json", typeof(TriageResult) },
     };
 
     [Theory]
@@ -77,6 +80,8 @@ public sealed class CodeFixSchemaParityTests
     [InlineData("../valid/request-plan.json", typeof(CodeFixWorkItemRequest))]
     [InlineData("investigate-result-unknown-member.json", typeof(InvestigateResult))]
     [InlineData("investigate-request-missing-max-turns.json", typeof(InvestigateRequest))]
+    [InlineData("triage-result-unknown-member.json", typeof(TriageResult))]
+    [InlineData("triage-request-missing-labels.json", typeof(TriageRequest))]
     public void StructurallyInvalidSamples_AreRefused(string sample, Type type)
     {
         var json = File.ReadAllText(Path.Combine(Dir, "samples", "invalid", sample));
@@ -138,6 +143,8 @@ public sealed class CodeFixSchemaParityTests
                      ("codefix-implement-result.schema.json", typeof(CodeFixImplementResult)),
                      ("investigate-request.schema.json", typeof(InvestigateRequest)),
                      ("investigate-result.schema.json", typeof(InvestigateResult)),
+                     ("triage-request.schema.json", typeof(TriageRequest)),
+                     ("triage-result.schema.json", typeof(TriageResult)),
                  })
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(Dir, schema)));
