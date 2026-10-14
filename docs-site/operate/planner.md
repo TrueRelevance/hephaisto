@@ -59,6 +59,19 @@ else, by the options of the field named **Priority** (the first option first) an
 of the field named **Status** from the last to the first. A board without fields of those names is
 walked by repository and number.
 
+*Walk through* chooses what the walk holds and in which order:
+
+| Walk | Holds | Order |
+|---|---|---|
+| every open item | all open issues | the planner's, as above |
+| needs a decision, then the top priorities | those with a reason, and the two highest priorities | the planner's |
+| needs a decision only | those with a reason | the planner's |
+| newest first | all open issues | by when the issue was opened, the newest first |
+| newest first, not planned yet | those with neither `today` nor `not today` | the same |
+
+A newest walk begins at the newest issue whenever it is chosen; the others stay on the issue in
+front of the person. `/planner?walk=newest` (or `newest-unplanned`) opens the page on it.
+
 ## What a click does on GitHub
 
 | Button | On GitHub |

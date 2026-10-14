@@ -29,6 +29,7 @@ public sealed record PlannerView(
 /// <param name="Fields">The board's single-select fields that have a value: field name to option name.</param>
 /// <param name="Body">The issue's description, as markdown source. Somebody else's text; null when there is none.</param>
 /// <param name="Labels">Every label of the issue, the two of the day among them.</param>
+/// <param name="CreatedAt">When the issue was opened: what the newest walks go by.</param>
 public sealed record PlannerItemView(
     string ItemId,
     string Repository,
@@ -49,7 +50,8 @@ public sealed record PlannerItemView(
     DateTimeOffset LastActivity,
     string? Body,
     int Comments,
-    IReadOnlyList<string> Labels);
+    IReadOnlyList<string> Labels,
+    DateTimeOffset CreatedAt);
 
 public sealed record PlannerClosedView(string ItemId, string Repository, int Number, string Title, string Url, DateTimeOffset? ClosedAt);
 
@@ -272,7 +274,8 @@ public static class PlannerEndpoints
         entry.LastActivity,
         entry.Item.Body,
         entry.Item.Comments,
-        [.. entry.Item.Labels.Select(l => l.Name)]);
+        [.. entry.Item.Labels.Select(l => l.Name)],
+        entry.Item.CreatedAt);
 
     private static PlannerDay? Day(string? word) => word?.Trim().ToLowerInvariant() switch
     {

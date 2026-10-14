@@ -99,7 +99,10 @@ public static partial class GitHubStandIn
                     Body = body,
                     Comments = comments,
                     Type = type,
-                    CreatedAt = now.AddDays(-9),
+                    // Opened one after the other, in the order of their numbers, a few weeks ago:
+                    // the newest walks have an order to follow, and every issue is older than
+                    // its last change.
+                    CreatedAt = now.AddDays(-30).AddHours(number),
                     UpdatedAt = now.AddDays(-updatedDaysAgo),
                 };
 

@@ -59,6 +59,8 @@ else
                     <option value="@WalkAll">every open item</option>
                     <option value="@WalkTop">needs a decision, then the top priorities</option>
                     <option value="@WalkDecision">needs a decision only</option>
+                    <option value="@WalkNewest">newest first</option>
+                    <option value="@WalkNewestUnplanned">newest first, not planned yet</option>
                 </select>
             </label>
         }
@@ -667,6 +669,12 @@ else
     private const string WalkTop = "top";
     private const string WalkDecision = "decision";
 
+    // By when the issue was opened, the newest first - what came in since the last look.
+    private const string WalkNewest = "newest";
+    private const string WalkNewestUnplanned = "newest-unplanned";
+
+    private static readonly string[] Walks = [WalkAll, WalkTop, WalkDecision, WalkNewest, WalkNewestUnplanned];
+
     private const string FilterEmpty = "(empty)";
 
     /// <summary>Rows of each list of the walk's rail. It is a glance, not the list.</summary>
@@ -724,6 +732,10 @@ else
     [SupplyParameterFromQuery(Name = "item")]
     public string? Item { get; set; }
 
+    /// <summary>The walk the page opens with: <c>?walk=newest</c>, say. Unknown is every open item.</summary>
+    [SupplyParameterFromQuery(Name = "walk")]
+    public string? WalkParameter { get; set; }
+
     /// <summary>The item the today view shows in detail, by its id.</summary>
     [SupplyParameterFromQuery(Name = "detail")]
     public string? Detail { get; set; }
@@ -775,6 +787,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _cts = new CancellationTokenSource();
+        _walk = WalkOf(WalkParameter);
         _viewer = await ConsoleViewer.ResolveAsync(AuthProvider, Authorization);
 
         await LoadAsync(refresh: false);
@@ -863,14 +876,26 @@ else
             _seen[entry.Item.ItemId] = entry;
         }
 
-        _order = [.. _snapshot.Entries
+        var walked = _snapshot.Entries
             .Where(e => _walk switch
             {
                 WalkDecision => e.NeedsDecision,
                 WalkTop => e.NeedsDecision || (board is not null && PlannerQueue.PriorityRank(board, e.Item) < 2),
+                WalkNewestUnplanned => e.Day == PlannerDay.Undecided,
                 _ => true,
-            })
-            .Select(e => e.Item.ItemId)];
+            });
+
+        // The newest walks are by when the issue was opened, and then by reference, so two opened
+        // in the same second keep one order. The others keep the planner's own.
+        if (Newest(_walk))
+        {
+            walked = walked
+                .OrderByDescending(e => e.Item.CreatedAt)
+                .ThenBy(e => e.Item.Repository, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(e => e.Item.Number);
+        }
+
+        _order = [.. walked.Select(e => e.Item.ItemId)];
 
         var at = keep is null ? -1 : _order.IndexOf(keep);
         _index = at >= 0 ? at : Math.Clamp(_index, 0, Math.Max(0, _order.Count - 1));
@@ -905,9 +930,21 @@ else
 
     private void OnWalkChanged(ChangeEventArgs e)
     {
-        _walk = e.Value?.ToString() is WalkTop or WalkDecision ? e.Value!.ToString()! : WalkAll;
-        Order(keep: _order.Count > 0 ? _order[_index] : null);
+        _walk = WalkOf(e.Value?.ToString());
+
+        // A newest walk begins at the newest issue: that is what it is chosen for. The others
+        // stay on the issue in front of the person.
+        Order(keep: Newest(_walk) || _order.Count == 0 ? null : _order[_index]);
+
+        if (Newest(_walk))
+        {
+            _index = 0;
+        }
     }
+
+    private static string WalkOf(string? value) => Walks.FirstOrDefault(w => w == value) ?? WalkAll;
+
+    private static bool Newest(string walk) => walk is WalkNewest or WalkNewestUnplanned;
 
     private void OnFilterChanged(string field, ChangeEventArgs e)
     {

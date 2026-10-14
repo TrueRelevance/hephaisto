@@ -55,6 +55,9 @@ turn it on - the project, the token, the values - is one page:
   to read and no repository - that answers labels, a summary, an analysis, steps and questions.
   The agent puts on the labels the repository has (never another, never `today` or `not today`)
   and posts the rest as one comment; `planner.triage` and `planner.triaged` record who asked.
+- **Newest first.** Two more walks through the board: every open issue by when it was opened,
+  the newest first, and the same for those not planned yet - what came in since the last look.
+  `/planner?walk=newest` links to it; `GET /api/planner` gives each item its `createdAt`.
 - **Today, in detail.** Every issue of the day opens beside its row with its description, its
   labels and the same buttons as *plan the day*, Claude's newest analysis read back from the
   issue, and the line that hands the issue to Claude Code, `Execute github issue owner/repo#n`,

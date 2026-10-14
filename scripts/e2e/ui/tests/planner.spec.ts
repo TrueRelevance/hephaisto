@@ -43,8 +43,12 @@ type Item = {
   reason: string; emptyFields: string[]; day: string; carriedOver: boolean;
   fields: Record<string, string>; assignees: string[]; parentUrl: string | null;
   subIssues: number; subIssuesDone: number; pullRequests: Pull[];
-  body: string | null; comments: number; labels: string[];
+  body: string | null; comments: number; labels: string[]; createdAt: string;
 };
+
+/** The newest walks' order: by when the issue was opened, newest first, then by reference. */
+const byNewest = (a: Item, b: Item) =>
+  Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.repository.localeCompare(b.repository) || b.number - a.number;
 
 type Planner = {
   state: string; problem: string | null; title: string | null;
@@ -216,6 +220,46 @@ test.describe('planner', () => {
 
       await page.getByTestId('planner-previous').click();
       await expect(card).toHaveAttribute('data-reference', ref(walked[walked.length - 2]));
+    });
+
+    test('the newest walks go by when an issue was opened, the newest first, and can be linked', async ({ page }) => {
+      const board = await planner(page.request, true);
+      const newest = [...board.items].sort(byNewest);
+      const unplanned = newest.filter(i => i.day === 'Undecided');
+      expect(newest.length, 'a board to walk').toBeGreaterThan(2);
+
+      await open(page, '/planner');
+      const card = page.getByTestId('planner-item');
+      await expect(card.getByTestId('planner-day').first()).toBeEnabled();
+
+      // Over the circuit: the choice is heard once the newest issue is in front of the person.
+      await settle(async () => {
+        await page.getByTestId('planner-walk').selectOption('newest');
+        await expect(card).toHaveAttribute('data-reference', ref(newest[0]), { timeout: 3_000 });
+      });
+
+      for (let i = 0; i < Math.min(5, newest.length); i++) {
+        await expect(card).toHaveAttribute('data-reference', ref(newest[i]));
+        await expect(page.getByTestId('planner-count')).toContainText(`${i + 1} of ${newest.length}`);
+
+        if (i + 1 < Math.min(5, newest.length)) {
+          await page.getByTestId('planner-next').click();
+        }
+      }
+
+      // Only what has no day yet, again from the newest - wherever the walk before it stood.
+      await page.getByTestId('planner-walk').selectOption('newest-unplanned');
+
+      if (unplanned.length > 0) {
+        await expect(card).toHaveAttribute('data-reference', ref(unplanned[0]));
+        await expect(page.getByTestId('planner-count')).toContainText(`1 of ${unplanned.length}`);
+        await expect(card).toHaveAttribute('data-day', 'Undecided');
+      }
+
+      // And the walk is in the address it can be opened with.
+      await open(page, '/planner?walk=newest');
+      await expect(page.getByTestId('planner-walk')).toHaveValue('newest');
+      await expect(page.getByTestId('planner-item')).toHaveAttribute('data-reference', ref(newest[0]));
     });
 
     test('each item says why it is there, and its title is text', async ({ page }) => {
