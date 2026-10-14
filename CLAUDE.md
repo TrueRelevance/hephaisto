@@ -624,7 +624,7 @@ minutes - so a red live run is read request by request before it is believed.
 
 `github.planner`: `/planner` in the console walks ONE project's open issues with a person
 (`src/Hephaisto.Core/Planning/`, `src/Hephaisto.Agent/Planner/`, `Components/Pages/Planner.razor`,
-`GitHub/GitHubClient.Projects.cs`; #300). Nine things to know before touching it:
+`GitHub/GitHubClient.Projects.cs`; #300). Eleven things to know before touching it:
 
 - **Nothing in it runs by itself.** No timer, no pass: a read is a page load or the API, a write
   is a click. So the agent's mode does not gate it, and `PlannerService.cs` is the ONLY file that
@@ -650,6 +650,15 @@ minutes - so a red live run is read request by request before it is believed.
   an error beside a usable answer is an answer; a write with any error wrote nothing.
 - **Razor drops the spaces around a conditional block.** Pieces that sit on one line go into
   `hp-planner-ids`, not next to each other with a space between them.
+- **A new issue is three requests, and none is taken back.** `PlannerService.OpenIssueAsync` opens
+  it, puts it on the project, sets the fields; a failure after the first says which issue was
+  opened. The service method is `OpenIssueAsync` and not `CreateIssueAsync` on purpose: the write
+  guard's regex matches the client's call by name.
+- **Asking Claude is a coder Job of phase `triage`** (`Planner/TriageRunner.cs`,
+  `TriageJobSpec.cs`, `coder/src/triage.ts`, contract `triage-*.schema.json` in dev-context). The
+  run is in memory, the answer on GitHub: labels the repository has, and one comment that starts
+  with `PlannerService.AnalysisMarker`, believed only from the agent's own account. Applying it
+  goes through `PlannerService.ApplyTriageAsync` - the runner calls no write itself.
 - **GitHub loses items, and a board acts by itself.** An issue added to a project sometimes gets
   an item and is never listed; `auto-close issue` closes an issue whose status reaches the last
   column. Both are in `scripts/e2e/planner-live.sh` and its spec, which is why they look the way
@@ -657,7 +666,8 @@ minutes - so a red live run is read request by request before it is believed.
 
 Locally: `"github": "stand-in"` turns the planner on against the stand-in's seeded board
 (`infra/e2e/notification-receiver/GitHubStandIn.Project.cs`;
-`curl http://$H:8110/github/control/project`), and
+`curl http://$H:8110/github/control/project`) - with `"coder": true` also asking Claude, as the
+scripted `coder/fake-scripts/default.triage.json` when `"coder-sdk": "fake"` - and
 `HEPHAISTO_URL=http://$H:8100 GITHUB_STANDIN_URL=http://$H:8110 scripts/e2e/ui/run.sh planner.spec.ts`
 is how a change to it is accepted. After changing the stand-in, rebuild its image in the VM and
 restart `deploy/teams-stand-in`. `scripts/e2e/planner-live.sh` is the same suite against

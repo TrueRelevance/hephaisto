@@ -1261,6 +1261,103 @@ See [the runbook](https://example.invalid/runbook), cc @somebody, related to #12
       </section>
     </section>
 
+    <section class="g-sec">
+      <h2>New issue and issue detail</h2>
+      <p class="g-note">
+        v0.15.0: a new issue, and one issue of the day in detail. The form is the feedback form&rsquo;s
+        rows of toggles &mdash; the repository, the type and every field of the board, the chosen one
+        marked with <code>*</code> &mdash; under a title and a description. The detail view is the
+        walk&rsquo;s card with Claude&rsquo;s analysis where the walk has its queue: the analysis is a
+        model&rsquo;s text and shown as its source, never rendered, and the line that hands the issue
+        to Claude Code sits at the panel&rsquo;s foot with its copy button.
+      </p>
+
+      <section class="hp-section hp-planner-new" data-testid="planner-new">
+        <div class="hp-field">
+          <span class="hp-label">repository</span>
+          <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> acme/planning</button>
+          <button type="button" aria-pressed="false">acme/api</button>
+          <button type="button" aria-pressed="false">acme/web</button>
+        </div>
+        <label class="hp-field hp-planner-new-title">
+          <span class="hp-label">title</span>
+          <input type="text" value="Receipts in dark mode" />
+        </label>
+        <label class="hp-field hp-planner-new-body">
+          <span class="hp-label">description</span>
+          <textarea rows="4">## Why
+
+The receipt is white at night.</textarea>
+        </label>
+        <div class="hp-field">
+          <span class="hp-label">type</span>
+          <button type="button" aria-pressed="false">Task</button>
+          <button type="button" aria-pressed="false">Bug</button>
+          <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> Feature</button>
+          <button type="button" aria-pressed="false">Epic</button>
+        </div>
+        <div class="hp-field">
+          <span class="hp-label">Priority</span>
+          <button type="button" aria-pressed="false">P0</button>
+          <button type="button" aria-pressed="false">P1</button>
+          <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> P2</button>
+        </div>
+        <div class="hp-cf-decide">
+          <label class="hp-planner-new-claude"><input type="checkbox" checked /> ask Claude to label it and write an analysis</label>
+          <button type="button" class="hp-submit">open issue</button>
+        </div>
+        <p class="hp-yes"><span class="glyph">+</span> <span class="mono">acme/planning#31</span> is open. <a href="#">see its details</a> &middot; <a href="#">open on GitHub</a></p>
+      </section>
+
+      <div class="hp-planner" style="margin-top:1.2rem">
+        <article class="hp-codefix" data-testid="planner-item">
+          <header class="hp-inv-header">
+            <span class="hp-state st-closed"><span class="glyph">.</span> nothing to decide</span>
+            <span class="mono">acme/planning#31</span>
+            <span class="hp-chip">Feature</span>
+            <span class="mono sev-info">P2</span>
+            <span class="hp-muted">opened by <span class="mono">hephaisto-bot</span> just now</span>
+            <a class="hp-planner-out" href="#">open on GitHub</a>
+          </header>
+          <h2 class="hp-planner-title">Receipts in dark mode</h2>
+          <div class="hp-planner-more">
+            <div class="hp-planner-ids">
+              <button type="button" aria-expanded="true">hide description</button>
+              <span class="hp-muted">1 comment</span>
+              <span class="hp-chip">enhancement</span>
+            </div>
+          </div>
+          <div class="hp-cf-decide">
+            <div class="hp-field hp-planner-day">
+              <span class="hp-label">this day</span>
+              <button type="button" class="hp-thumb on" aria-pressed="true"><span class="glyph">*</span> today</button>
+              <button type="button" aria-pressed="false">not today</button>
+            </div>
+          </div>
+        </article>
+
+        <section class="hp-planner-claude">
+          <div class="hp-planner-ids">
+            <h3>Claude's analysis</h3>
+            <span class="hp-yes"><span class="glyph">+</span> labelled enhancement, and the analysis is on the issue</span>
+            <button type="button">ask Claude again</button>
+          </div>
+          <p class="hp-muted">posted 2 minutes ago &middot; <a href="#">the comment on GitHub</a></p>
+          <div class="hp-excerpt hp-planner-body">### Claude's analysis
+
+**Summary.** The receipt view has no dark palette; the tokens exist.
+
+1. Map the receipt's colours onto the console tokens.
+2. Check the print stylesheet still forces light.</div>
+          <div class="hp-planner-execute">
+            <span class="hp-label">with Claude Code</span>
+            <code class="mono">Execute github issue acme/planning#31</code>
+            <button type="button">copy</button>
+          </div>
+        </section>
+      </div>
+    </section>
+
 </main>
 </div>
 </body>

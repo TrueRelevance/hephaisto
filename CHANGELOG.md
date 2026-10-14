@@ -44,8 +44,26 @@ turn it on - the project, the token, the values - is one page:
 - **The day is two labels on the issue**, `today` and `not today`. `today` stays until somebody
   takes it off; from an earlier day it is shown as carried over. `not today` counts only on the
   day it was set, so what was put away comes back the next morning by itself.
+- **A new issue, written in the console.** *New issue* opens one in a repository picked by a
+  button (`github.planner.repositories`, the first by default; without the list, the board's own),
+  with its title, its description, one of the organisation's issue types and any field of the
+  board. The agent's account opens it, puts it on the project and sets the fields; the audit row
+  is `planner.create`.
+- **Claude labels an issue and writes an analysis and a plan of it**, when a person asks: a tick
+  on a new issue, or *ask Claude* on an issue's details (`github.planner.triage.enabled`). It is a
+  coder Job of a new phase, `triage` - the coder's image, Secret, egress proxy and model, dev-context
+  to read and no repository - that answers labels, a summary, an analysis, steps and questions.
+  The agent puts on the labels the repository has (never another, never `today` or `not today`)
+  and posts the rest as one comment; `planner.triage` and `planner.triaged` record who asked.
+- **Today, in detail.** Every issue of the day opens beside its row with its description, its
+  labels and the same buttons as *plan the day*, Claude's newest analysis read back from the
+  issue, and the line that hands the issue to Claude Code, `Execute github issue owner/repo#n`,
+  with a copy button.
 - **`GET /api/planner`** and four writes behind the approver policy:
-  `POST /api/planner/items/{itemId}/field`, `/close`, `/day`, `/assignee`.
+  `POST /api/planner/items/{itemId}/field`, `/close`, `/day`, `/assignee`; since rc3 also
+  `POST /api/planner/issues`, `POST /api/planner/triage` and `GET /api/planner/analysis`.
+- **The triage contract**, version 1: `triage-request.schema.json` and `triage-result.schema.json`
+  in dev-context, vendored like the code-fix contract.
 - **The agent's GitHub client speaks GraphQL**, for the project only: a project is nowhere else.
   The token, the egress proxy, the rate-limit hold and "it retries nothing" are the REST calls'.
 
@@ -64,9 +82,19 @@ turn it on - the project, the token, the values - is one page:
   without the second a click on an issue of that repository is refused and says so.
 - Assigning an issue to the agent's own account from the planner hands it over, in a repository
   the install lists - that is what `github.enabled` means, and the planner offers the button.
+- **A new issue needs the token to open issues** in the repositories it is opened in (classic
+  `repo`; fine-grained "Issues: read and write") and to add items to the project (the same
+  "Projects: read and write" as above).
+- **Asking Claude needs `codeFix.enabled`** - the chart refuses `github.planner.triage.enabled`
+  without it - and a coder image of this release: an older image does not know the `triage`
+  phase and answers every such Job with a failure. It runs on the coder's model credential; with
+  a subscription token its cost is notional, and `maxCostUsd` (default $2) caps a run.
 
 ### Known limits
 - One project, of an organisation; single-select fields; issues only.
+- A run of Claude's is kept in the agent's memory, its answer on GitHub. A restart forgets a run
+  that was still going: its Job ends by its deadline, nothing is put on the issue, and the button
+  asks again. The analysis shown is read from the issue's first hundred comments.
 - GitHub sometimes gives an issue that was added to a project an item and never lists it - on
   the planner and on the board alike. Taking it off the project and adding it again lists it.
 

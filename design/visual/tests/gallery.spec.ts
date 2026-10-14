@@ -72,6 +72,8 @@ test.describe('the design language', () => {
     // v0.15.0: the planner - the switch between its views, the walk with one issue's card and
     // the day beside it, and a group of the board view with a planned and a put-away row.
     ['planner', 'Planner'],
+    // v0.15.0, rc3: a new issue's form, and an issue of the day in detail beside Claude's analysis.
+    ['planner-detail', 'New issue and issue detail'],
   ] as const;
 
   /**

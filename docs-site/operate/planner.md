@@ -11,7 +11,7 @@ It needs [GitHub issues as work](./github-issues) to be enabled, because it uses
 token. It reads the board when somebody opens the page — never on a timer — and every write is one
 click of a person who holds the console's approver role.
 
-## Three views of one board
+## Three views of one board, and a new issue
 
 **Plan the day.** One issue: why it is here, what its author wrote, the facts a person decides by,
 and a button for everything that can be done about it. *Today*, *not today* and closing go on to
@@ -23,7 +23,16 @@ is shown as text, never rendered — with its comment count and its labels. *Hid
 it away for the whole walk, and the browser remembers that.
 
 **Today.** What is planned, by priority, with *close* and *not today* on each row; what was closed
-today; what was put away, each with *back to today*.
+today; what was put away, each with *back to today*. *Details* on a row opens the issue beside the
+list: its description, its labels, the same buttons as *plan the day*, Claude's newest analysis of
+it, and the line that hands it to Claude Code - `Execute github issue owner/repo#n` - with a copy
+button. The address carries the issue (`/planner?view=today&detail=<item>`), so it can be linked.
+
+**New issue.** A title, a description in markdown, a button per repository it may be opened in, one
+per issue type of the organisation and one per option of every field of the board. *Open issue*
+opens it as the agent's account, puts it on the project and sets the fields chosen; with *ask
+Claude* ticked, Claude is asked about it next. The form keeps the repository and the type for the
+next issue.
 
 **All open.** Everything that is open, grouped under its top-level issue with that issue's
 progress, sub-issues one step in under their parent, a *today / not today* switch on every row and
@@ -66,6 +75,45 @@ row `planner.field`, `planner.close`, `planner.day` or `planner.assign` is writt
 is called, and a refusal is a second row, `planner.refused`. Nothing here can be clicked by
 somebody without the approver role, or — where sign-in is off — without a name.
 
+### A new issue
+
+| Step | On GitHub |
+|---|---|
+| **open issue** | opens the issue in the chosen repository, with the chosen type |
+| | adds it to the project |
+| | sets each field that was chosen |
+
+Three requests, and none is taken back: when a later one is refused, the page says which issue
+was opened and what is missing, and the issue is on GitHub to be finished by hand. The audit row
+is `planner.create`.
+
+The repositories are `github.planner.repositories`, the first chosen by default. Without the list
+they are the repositories of the board's issues, the one with the most first. The types are the
+organisation's enabled issue types; a token that may not read them leaves the type out.
+
+### Asking Claude
+
+*Ask Claude* on an issue's details, or the tick on a new issue, starts one **coder Job** of phase
+`triage`. It runs Claude Code read-only in dev-context - the team's notes and memory, which is
+what places an issue in a service - with the issue's title, author and description and the labels
+its repository has. It answers labels, a summary, an analysis, steps and open questions.
+
+What the agent does with the answer:
+
+| | On GitHub |
+|---|---|
+| labels | puts on those of Claude's labels the repository has - never another, never `today` or `not today`; nothing is taken off |
+| the rest | posts one comment: *Claude's analysis*, the plan, the questions, and the line for Claude Code |
+
+The comment is what the details show, read back from the issue: the newest that begins with
+Hephaisto's marker **and** was written by the agent's account - anybody can type the marker. A
+model wrote it about somebody else's text, so it is shown as its source, never rendered, and on
+GitHub it mentions nobody and links nothing.
+
+The audit trail names the person who asked: `planner.triage` when the Job starts,
+`planner.triaged` when its answer is applied. At most `maxConcurrentJobs` run at once and one per
+issue; a click beyond that says so.
+
 ### The day is two labels
 
 `today` stays on an issue until somebody takes it off or closes the issue. An issue that was
@@ -106,10 +154,27 @@ github:
     staleAfterDays: 5        # the quiet period for an open pull request
     assignees:               # logins besides the agent's own account
       - octocat
+    repositories:            # where a new issue is opened; the first is the default
+      - example/planning
+    triage:                  # Claude labels and analyses an issue when asked
+      enabled: true          # needs codeFix.enabled
+      maxCostUsd: 2
+      maxTurns: 40
+      deadline: "00:15:00"
+      maxConcurrentJobs: 2
+
+codeFix:
+  enabled: true              # the image, Secret, egress proxy, model and dev-context of the Job
 ```
 
 The chart refuses `planner.enabled` without `github.enabled`, without an owner or without a
-number, and the agent refuses the same at startup.
+number, and `planner.triage.enabled` without `codeFix.enabled`; the agent refuses the first three
+at startup, and a click on *ask Claude* says so when the coder has no image or no dev-context.
+
+Asking Claude costs one read-only Claude Code run on the coder's model credential: notional with
+a subscription token (`CLAUDE_CODE_OAUTH_TOKEN`), metered with an API key, and capped by
+`maxCostUsd` either way. The coder image must be of this release - an older one does not know the
+`triage` phase and answers every such Job with a failure.
 
 ## What the token needs
 
@@ -120,6 +185,8 @@ repositories the agent was never asked to work in.
 |---|---|---|
 | read the project, set its fields | `project` | organisation permission **Projects: read and write** |
 | close, label, assign | `repo` | **Issues: read and write** on every repository whose issues are on the board |
+| open a new issue | `repo` | **Issues: read and write** on every repository in `repositories` |
+| put it on the project | `project` | organisation permission **Projects: read and write** |
 
 The classic column is what was measured against github.com (`scripts/e2e/planner-live.sh`, every
 button, read back from GitHub). The fine-grained column is GitHub's documentation and was **not**
@@ -141,7 +208,15 @@ says that it is old. `?refresh=true` asks GitHub now; otherwise the answer may b
 old.
 
 The writes are `POST /api/planner/items/{itemId}/field`, `/close`, `/day` and `/assignee`, behind
-the approver policy, with `decidedBy` in the body where nobody is signed in.
+the approver policy, with `decidedBy` in the body where nobody is signed in. A new issue is
+`POST /api/planner/issues` (`repository`, `title`, `body`, `type`, `fields`, `triage`), asking
+Claude `POST /api/planner/triage` (`repository`, `number`), and what Claude said
+`GET /api/planner/analysis?repository=&number=` - the run as far as the agent knows it, the
+newest analysis on the issue, and the line for Claude Code.
+
+```sh
+kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in progress
+```
 
 ## Limits, and what is not built
 
@@ -156,5 +231,9 @@ the approver policy, with `decidedBy` in the body where nobody is signed in.
   earlier day and an old `not today` to have expired — which is what they are.
 - **A thousand items.** A larger project is read up to that, and the log says so.
 - **No MCP tool** reads or drives the planner.
+- **A run of Claude's lives in the agent's memory**, its answer on GitHub. A restart forgets a run
+  that was still going: the Job ends by its deadline, nothing is put on the issue, and *ask Claude*
+  asks again. The analysis shown is read from the issue's first hundred comments.
+- **Claude labels, and does not set fields.** Priority, area and status are the person's buttons.
 - **A quiet issue without a pull request is not noticed.** "In progress and nothing happens" would
   need to know which column means in progress.
