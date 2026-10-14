@@ -17,7 +17,18 @@ scenario() {
     overview=$(mcp_json "$(mcp_call "$PAGER_MCP_TOKEN_READER" get_incident "$(jq -cn --arg id "$id" '{id:$id}')")")
     want "get_incident returns that incident" "$(jq -r '.incident.id' <<<"$overview")" = "$id"
     want "it names its alert" "$(jq -r '.incident.alertName' <<<"$overview")" = "$n"
-    want "its state is the API's" "$(jq -r '.incident.state' <<<"$overview")" = "$(pager_state "$id")"
+    # The incident is still moving (Investigating, then Escalated) while it is read, so the state
+    # the tool says is compared with the API's read just before it AND just after it: one of the
+    # two is the moment the tool saw. Read again a few times when both moved on in between.
+    local before mcp after agreed=""
+    for i in 1 2 3 4 5; do
+        before=$(pager_state "$id")
+        mcp=$(mcp_json "$(mcp_call "$PAGER_MCP_TOKEN_READER" get_incident "$(jq -cn --arg id "$id" '{id:$id}')")" | jq -r '.incident.state')
+        after=$(pager_state "$id")
+        if [ "$mcp" = "$before" ] || [ "$mcp" = "$after" ]; then agreed=$mcp; break; fi
+        sleep 1
+    done
+    want "its state is the API's" "${agreed:-$mcp}" = "${agreed:-$after}"
     want "it says what to call next" "$(jq '.next | length' <<<"$overview")" -ge 1
 
     short=$(tr -d '-' <<<"$id" | cut -c1-12)
