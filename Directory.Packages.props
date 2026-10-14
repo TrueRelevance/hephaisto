@@ -81,8 +81,8 @@
          AwesomeAssertions is the Apache-2.0 community fork of FluentAssertions 7 -
          API- and namespace-compatible, so FluentAssertions syntax and docs apply
          verbatim without FluentAssertions 8.x's paid Xceed licence. -->
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
   </ItemGroup>
