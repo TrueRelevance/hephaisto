@@ -33,6 +33,12 @@ public static class WorkItemEndpoints
             .WithName("DenyWorkItemCodeFix")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
+        // What /replan on the issue does (v0.15.0): the newest attempt's plan given up, a new one asked for.
+        codefix.MapPost("/{attemptId:guid}/replan", (Guid id, Guid attemptId, CodeFixDecisionRequest body, HttpContext http, WorkItemActions actions, CancellationToken ct)
+                => CodeFixEndpoints.DecideAsync(body, http, (actor, source, _, _) => actions.ReplanAsync(id, attemptId, actor, source, commentId: null, ct)))
+            .WithName("ReplanWorkItemCodeFix")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
         return app;
     }
 

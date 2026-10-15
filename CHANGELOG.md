@@ -66,6 +66,11 @@ turn it on - the project, the token, the values - is one page:
   opens in detail too.
 - **Comments in the detail view**: the issue's comments as text, and a box to write one, posted by
   the agent's account and signed with the person's name (`planner.comment`).
+- **A work item's plan is decided from the planner**: approve plan, reject plan (the box is the
+  reason) and replan (the box is the answer, posted first and given to the new plan) beside the
+  comment box, through the same doors as the console and the API; and
+  `POST /api/workitems/{id}/codefix/{attemptId}/replan`. A comment written in the planner reaches
+  a replan as that person's.
 - **Markdown is rendered**: an issue's description, its comments, Claude's analysis and a pull
   request's description, with none of the author's HTML, a link only to http(s) or mailto, and no
   image loaded - an image becomes a link to it. Issue references (`#12`, `owner/repo#12`, an

@@ -123,6 +123,29 @@ public sealed class WorkItemQueries(HephaistoDbContext db)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+    /// <summary>
+    /// The newest work item of one issue, with its newest attempt - what the planner's detail
+    /// view offers its plan's buttons for. Null when Hephaisto was never handed the issue.
+    /// </summary>
+    public async Task<WorkItemWithAttempt?> FindAsync(string repository, int number, CancellationToken ct)
+    {
+        var item = await db.WorkItems.AsNoTracking()
+            .Where(w => w.Repository == repository && w.Number == number)
+            .OrderByDescending(w => w.TakenAt)
+            .ThenByDescending(w => w.Id)
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
+
+        if (item is null)
+        {
+            return null;
+        }
+
+        var attempts = await AttemptsAsync(item.Id, ct).ConfigureAwait(false);
+
+        return new WorkItemWithAttempt(View(item), attempts.Count > 0 ? attempts[^1] : null, attempts.Count > 1 ? [.. attempts.Take(attempts.Count - 1)] : []);
+    }
+
     public async Task<WorkItemView?> GetAsync(Guid id, CancellationToken ct) =>
         await db.WorkItems.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct).ConfigureAwait(false) is { } item
             ? View(item)

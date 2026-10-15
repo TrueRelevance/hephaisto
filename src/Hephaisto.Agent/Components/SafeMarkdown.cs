@@ -59,7 +59,7 @@ public static partial class SafeMarkdown
         }
 
         var text = markdown.Length <= MaxLength ? markdown : string.Concat(markdown.AsSpan(0, MaxLength), "\n\n…");
-        text = SmallPrint().Replace(text, string.Empty);
+        text = SmallPrint().Replace(HtmlComment().Replace(text, string.Empty), string.Empty);
         var document = Markdown.Parse(text, Pipeline);
 
         foreach (var link in document.Descendants<LinkInline>().ToList())
@@ -208,6 +208,10 @@ public static partial class SafeMarkdown
 
     [GeneratedRegex(@"^https://github\.com/(?<repo>[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+?)(?:\.git)?/?$", RegexOptions.IgnoreCase)]
     private static partial Regex RepositoryUrl();
+
+    // An HTML comment is invisible on GitHub - Hephaisto's own markers are ones - so it is here too.
+    [GeneratedRegex(@"<!--[\s\S]*?-->")]
+    private static partial Regex HtmlComment();
 
     [GeneratedRegex(@"</?(?:sub|sup)>", RegexOptions.IgnoreCase)]
     private static partial Regex SmallPrint();

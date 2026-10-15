@@ -1145,7 +1145,7 @@ else
                                          OnSchedule="when => PlanLaterAsync(detailId, when, thenNext: false)"
                                          IssueLink="Service.DetailHrefFor" />
                         <PlannerCommentsPanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
-                                              Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
+                                              Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" Authenticated="_viewer.Authenticated" />
                     </div>
                     <PlannerClaudePanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
                                         Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />

@@ -57,6 +57,20 @@ Every detail view shows the issue's **comments**, rendered the same way, and a b
 It is posted by the agent's account and ends with *Written by &lt;name&gt; in Hephaisto's planner*;
 the audit row is `planner.comment`.
 
+When Hephaisto was handed the issue as work ([GitHub issues as work](./github-issues)), the box has
+the three things an approver says on the issue as buttons beside *post comment*:
+
+| Button | Is | With what is written in the box |
+|---|---|---|
+| **approve plan** | `/approve` | - |
+| **reject plan** | `/reject` | the reason |
+| **replan** | `/replan` | the answer: posted on the issue first, and given to the new plan |
+
+They go through the same doors as the code-fix page and the API, with the same refusals: approve
+and reject only while a plan waits, replan not while a Job runs or once a pull request is open. A
+comment written in the planner is given to a replan as that person's: it begins with a hidden
+marker only the agent's account can write, and the planner writes it only for an approver.
+
 **All open.** Everything that is open, grouped under its top-level issue with that issue's
 progress, sub-issues one step in under their parent, a *today / not today* switch on every row and
 a filter per field of the board.
@@ -268,6 +282,7 @@ newest analysis on the issue, and the line for Claude Code. A later day is
 `POST /api/planner/items/{itemId}/schedule` (`when`: `tomorrow`, `next week`, `backlog`); a new
 issue takes `day` with any of those or `today` / `not today`. `GET /api/planner/search?q=&state=`
 searches the board, `GET` and `POST /api/planner/comments` read and write an issue's comments.
+`POST /api/workitems/{id}/codefix/{attemptId}/replan` asks for a new plan, beside `/approve` and `/deny`.
 
 ```sh
 kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in progress

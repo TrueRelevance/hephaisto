@@ -610,7 +610,7 @@ public sealed class PlannerServiceTests
         var (outcome, _, comment) = await planner.CommentAsync("acme/api", 431, "  Looked at it: the cache key misses the currency.  ", "flo", Ct);
 
         outcome.Should().Be(PlannerActionOutcome.Done);
-        comment!.Body.Should().Be("Looked at it: the cache key misses the currency.\n\n<sub>Written by flo in Hephaisto's planner.</sub>");
+        comment!.Body.Should().Be("<!-- hephaisto:planner-comment:flo -->\nLooked at it: the cache key misses the currency.\n\n<sub>Written by flo in Hephaisto's planner.</sub>");
         audit.Rows.Should().ContainSingle(r => r.Type == PlannerService.AuditComment).Which.Actor.Should().Be("flo");
         (await planner.CommentsAsync("acme/api", 431, Ct))!.Should().ContainSingle();
 

@@ -814,6 +814,67 @@ test.describe('planner', () => {
       expect(posted.at(-1).body).toContain(`Written by ${NAME} in Hephaisto's planner.`);
     });
 
+    test('a work item\'s plan is replanned with an answer written in the planner, then rejected, from the comment box', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in tier, with the coder on');
+      test.setTimeout(600_000);
+
+      const board = await planner(page.request);
+      test.skip(!board.triage, 'PRECONDITION: the coder is off on this install, so no issue is planned');
+
+      // An issue in the repository work is taken from, handed to Hephaisto the way a person
+      // does it on GitHub.
+      const repo = 'Flou21/hephaisto-fixture-dotnet';
+      const opened = await page.request.post('/api/planner/issues', {
+        data: { repository: repo, title: `[planner-e2e] replan ${Date.now()}`, body: 'Endpoints.Primary throws when the section is missing.', triage: false, decidedBy: NAME },
+      });
+      expect(opened.ok(), await opened.text()).toBeTruthy();
+      const item = (await opened.json()).item as Item;
+      expect((await page.request.post(`${STANDIN}/github/control/repos/${repo}/issues/${item.number}/assign`, { data: { login: 'flou21' } })).ok()).toBeTruthy();
+
+      await open(page, `/planner?view=today&detail=${encodeURIComponent(item.itemId)}`);
+      const work = page.getByTestId('planner-detail').getByTestId('planner-work');
+
+      // The plan arrives; the buttons are the issue's commands.
+      await expect(async () => {
+        await page.reload();
+        await expect(work).toHaveAttribute('data-state', 'PlanReady', { timeout: 3_000 });
+      }).toPass({ timeout: 240_000 });
+      const first = await work.getAttribute('data-attempt');
+      const comments = page.getByTestId('planner-detail').getByTestId('planner-comments');
+      await expect(comments.getByTestId('planner-work-approve')).toBeEnabled();
+      await expect(comments.getByTestId('planner-work-reject')).toBeEnabled();
+
+      // Replan, with an answer written here: it is posted, and the new plan was given it.
+      await settle(async () => {
+        await comments.getByTestId('planner-comment-draft').fill('Treat a missing section as empty.');
+        await expect(comments.getByTestId('planner-work-replan')).toBeEnabled({ timeout: 3_000 });
+      });
+      await comments.getByTestId('planner-work-replan').click();
+      await expect(comments.getByTestId('planner-comment-message')).toContainText('replan:');
+      await expect(comments.getByTestId('planner-comment-message')).toHaveClass(/hp-yes/);
+
+      await expect(async () => {
+        await page.reload();
+        await expect(work).not.toHaveAttribute('data-attempt', first!, { timeout: 3_000 });
+        await expect(work).toHaveAttribute('data-state', 'PlanReady', { timeout: 3_000 });
+      }).toPass({ timeout: 240_000 });
+
+      // The plan's comment follows its state by a moment.
+      const onIssue = async () => (await (await page.request.get(`${STANDIN}/github/control/comments`)).json())
+        .filter((c: { repository: string; number: number }) => c.repository === repo && c.number === item.number)
+        .map((c: { body: string }) => c.body) as string[];
+      expect((await onIssue()).some(b => b.includes('Treat a missing section as empty.') && b.includes(`Written by ${NAME}`)), 'the answer is on the issue').toBeTruthy();
+      await expect.poll(async () => (await onIssue()).some(b => b.includes('Replanned with 1 comment(s)')),
+        { message: 'the new plan was given the answer, and nothing else of the agent\'s', timeout: 60_000 }).toBe(true);
+
+      // Rejected, with the reason written here.
+      await comments.getByTestId('planner-comment-draft').fill('Not this way.');
+      await comments.getByTestId('planner-work-reject').click();
+      await expect(comments.getByTestId('planner-comment-message')).toContainText('reject:');
+      await expect(work).toHaveAttribute('data-state', 'Denied');
+      await expect(comments.getByTestId('planner-work-approve')).toBeDisabled();
+    });
+
     test('an epic\'s references and its sub-issues lead to their pages', async ({ page }) => {
       test.skip(LIVE, 'PRECONDITION: the stand-in seeds the epic');
 
@@ -843,10 +904,13 @@ test.describe('planner', () => {
       }
       expect(await subs.count()).toBeGreaterThanOrEqual(children.length);
 
+      // The circuit first, as for every link of the detail view that is followed.
+      await expect(card.getByTestId('planner-day').first()).toBeEnabled();
       await card.locator('[data-testid="planner-item-subissue"][data-reference="acme/planning#21"] a').click();
       await expect(page.getByTestId('planner-detail').getByTestId('planner-item')).toHaveAttribute('data-reference', 'acme/planning#21');
 
       // And the way back up: the parent is a link too.
+      await expect(page.getByTestId('planner-detail').getByTestId('planner-day').first()).toBeEnabled();
       await page.getByTestId('planner-detail').getByTestId('planner-item-parent-link').click();
       await expect(page.getByTestId('planner-detail').getByTestId('planner-item')).toHaveAttribute('data-reference', 'acme/planning#17');
     });

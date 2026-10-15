@@ -265,15 +265,31 @@ public sealed partial class GitHubIssuePoller
             return (null, $"{repository}#{item.Number}: its comments could not be read for a new plan: {list.Describe()}");
         }
 
-        return ([.. comments
+        return (Conversation(comments, bot, item.AuthorId, approvers, since), null);
+    }
+
+    /// <summary>
+    /// The comments a replanning Job is given, from a page of an issue's comments: the author's,
+    /// the approvers', and one written in the planner (v0.15.0) - posted by the agent's account
+    /// for a person with the approver role, and passed on as that person's, without the marker
+    /// and the signature. Every other comment of the agent's account is left out.
+    /// </summary>
+    internal static IReadOnlyList<CodeFixWorkItemComment> Conversation(
+        IReadOnlyList<GitHubComment> comments, string bot, long authorId, IReadOnlySet<long> approvers, DateTimeOffset since) =>
+        [.. comments
             // `since` is by when a comment was last changed: an older one that was edited is not part of this hand-over.
             .Where(c => c.CreatedAt >= since)
-            .Where(c => !string.Equals(c.Author.Login, bot, StringComparison.OrdinalIgnoreCase))
-            .Where(c => c.Author.Id > 0 && (c.Author.Id == item.AuthorId || approvers.Contains(c.Author.Id)))
             .Where(c => !string.IsNullOrWhiteSpace(c.Body))
             .OrderBy(c => c.Id)
-            .Select(c => new CodeFixWorkItemComment(c.Author.Login, c.Body))], null);
-    }
+            .Select(c => string.Equals(c.Author.Login, bot, StringComparison.OrdinalIgnoreCase)
+                ? Planner.PlannerComment.TryRead(c.Body, out var person, out var text) && text.Length > 0
+                    ? new CodeFixWorkItemComment($"{person} (in the planner)", text)
+                    : null
+                : c.Author.Id > 0 && (c.Author.Id == authorId || approvers.Contains(c.Author.Id))
+                    ? new CodeFixWorkItemComment(c.Author.Login, c.Body)
+                    : null)
+            .Where(c => c is not null)
+            .Select(c => c!)];
 
     private async Task CancelAttemptAsync(Guid attemptId, CancellationToken ct)
     {

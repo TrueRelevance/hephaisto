@@ -23,6 +23,7 @@ public sealed class WorkItemRoutesTests
         builder.Services.AddScoped<CodeFixCoordinator>(_ => throw new NotSupportedException());
         builder.Services.AddScoped<CodeFixQueries>(_ => throw new NotSupportedException());
         builder.Services.AddScoped<WorkItemQueries>(_ => throw new NotSupportedException());
+        builder.Services.AddScoped<WorkItemActions>(_ => throw new NotSupportedException());
 
         var app = builder.Build();
 
@@ -58,7 +59,8 @@ public sealed class WorkItemRoutesTests
 
         workItems.Where(e => Verb(e) == "GET").Select(e => e.RoutePattern.RawText).Should().BeEquivalentTo(["/api/workitems", "/api/workitems/{id:guid}"]);
         workItems.Where(e => Verb(e) == "GET").Should().OnlyContain(e => Policy(e) == null);
-        workItems.Where(e => Verb(e) != "GET").Should().HaveCount(2).And.OnlyContain(e => Policy(e) == AuthenticationExtensions.ApprovePolicy);
+        workItems.Where(e => Verb(e) != "GET").Should().HaveCount(3).And.OnlyContain(e => Policy(e) == AuthenticationExtensions.ApprovePolicy);
+        workItems.Should().ContainSingle(e => e.RoutePattern.RawText == "/api/workitems/{id:guid}/codefix/{attemptId:guid}/replan", "/replan, from the console");
     }
 
     [Fact]

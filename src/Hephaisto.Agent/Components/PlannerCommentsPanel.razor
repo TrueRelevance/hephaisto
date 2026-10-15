@@ -1,6 +1,11 @@
+@using Hephaisto.Agent.CodeFix
 @using Hephaisto.Agent.GitHub
 @using Hephaisto.Agent.Planner
+@using Hephaisto.Agent.WorkItems
+@using Hephaisto.Core.CodeFix
+@using Hephaisto.Core.Domain
 @inject PlannerService Service
+@inject IServiceScopeFactory Scopes
 @implements IDisposable
 @preservewhitespace true
 
@@ -8,8 +13,14 @@
     The comments of one issue in the planner's detail view (v0.15.0), and a box to write one.
 
     Every comment is somebody else's text - or a model's - and is rendered by SafeMarkdown: no
-    HTML of its own, a link only to http(s), no image loaded. A comment written here is posted by the agent's account and ends by naming
-    the person who wrote it; the audit trail names them too.
+    HTML of its own, a link only to http(s), no image loaded. A comment written here is posted
+    by the agent's account and ends by naming the person who wrote it; the audit trail names
+    them too.
+
+    When Hephaisto was handed the issue as work, the three things an approver can say on the
+    issue - /approve, /reject, /replan - are buttons here, through the same doors the console's
+    code-fix page and the API use. A replan takes what was written in the box with it, as the
+    answer: it is posted first, and passed on to the new plan as this person's.
 *@
 
 <section class="hp-planner-comments" data-testid="planner-comments" data-reference="@Reference">
@@ -46,12 +57,37 @@
     }
 
     <div class="hp-planner-comment-new">
+        @if (_work is { Attempt: { } attempt } work)
+        {
+            <div class="hp-planner-ids hp-planner-work" data-testid="planner-work" data-state="@attempt.State" data-work-item="@work.Item.Id" data-attempt="@attempt.Id">
+                <span class="hp-label">Hephaisto's work</span>
+                <span class="hp-state @Display.CodeFixClass(attempt.State)" data-testid="planner-work-state"><span class="glyph">@Display.CodeFixGlyph(attempt.State)</span> @Display.CodeFixWord(attempt.State)</span>
+                <a href="codefixes/@attempt.Id" data-testid="planner-work-link">its code fix</a>
+                @if (work.Item.ReplanRequestedBy is { } asked)
+                {
+                    <span class="hp-muted" data-testid="planner-work-replan-asked">a new plan was asked for by @asked</span>
+                }
+            </div>
+        }
+
         <textarea rows="4" maxlength="@PlannerService.MaxComment" @bind="_draft" @bind:event="oninput" disabled="@_posting"
                   placeholder="write a comment - markdown; it is posted by the agent's account and signed with your name"
                   data-testid="planner-comment-draft"></textarea>
         <div class="hp-planner-ids">
             <button type="button" class="hp-submit" data-testid="planner-comment-post" title="@LockedBecause"
                     disabled="@(_posting || Locked || string.IsNullOrWhiteSpace(_draft))" @onclick="PostAsync">post comment</button>
+            @if (_work is { Attempt: { } current } && _work.Item.State == WorkItemState.Taken)
+            {
+                var waiting = current.State == CodeFixState.PlanReady;
+                var running = current.State.IsRunning() || current.State is CodeFixState.Eligible or CodeFixState.PrOpened;
+
+                <button type="button" data-testid="planner-work-approve" disabled="@(_posting || Locked || !waiting)" title="/approve on the issue"
+                        @onclick="() => DecideAsync(approve: true)">approve plan</button>
+                <button type="button" data-testid="planner-work-reject" disabled="@(_posting || Locked || !waiting)" title="/reject on the issue; what is written above is the reason"
+                        @onclick="() => DecideAsync(approve: false)">reject plan</button>
+                <button type="button" data-testid="planner-work-replan" disabled="@(_posting || Locked || running)" title="/replan on the issue; what is written above goes with it as the answer"
+                        @onclick="ReplanAsync">replan</button>
+            }
             @if (LockedBecause is { } locked)
             {
                 <span class="hp-muted">@locked</span>
@@ -78,6 +114,12 @@
     /// <summary>Why writing is not possible for this person, or null.</summary>
     [Parameter]
     public string? LockedBecause { get; set; }
+
+    /// <summary>Signed in through OIDC: what deciding a plan in Pr mode asks for.</summary>
+    [Parameter]
+    public bool Authenticated { get; set; }
+
+    private WorkItemWithAttempt? _work;
 
     private IReadOnlyList<GitHubComment>? _comments;
     private bool _loading = true;
@@ -111,6 +153,7 @@
         try
         {
             _comments = await Service.CommentsAsync(Repository, Number, _cts.Token);
+            _work = await Scopes.WorkItemsAsync(q => q.FindAsync(Repository, Number, _cts.Token));
         }
         catch (OperationCanceledException)
         {
@@ -140,6 +183,81 @@
                 _draft = string.Empty;
                 _comments = [.. _comments ?? [], comment];
             }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _posting = false;
+    }
+
+    /// <summary>What /approve and /reject do on the issue. A rejection's reason is what is written in the box.</summary>
+    private async Task DecideAsync(bool approve)
+    {
+        if (_posting || Locked || _work is not { Attempt: { } attempt } work)
+        {
+            return;
+        }
+
+        _posting = true;
+
+        try
+        {
+            var reason = approve || string.IsNullOrWhiteSpace(_draft) ? null : _draft.Trim();
+            var result = await Scopes.CoordinateAsync(c => c.DecideForWorkItemAsync(
+                work.Item.Id, attempt.Id, approve, Actor.Trim(), ApprovalSource.Ui, Authenticated, reason, _cts.Token));
+
+            _message = (result.Outcome == CodeFixDecisionOutcome.Done, approve ? $"approve: {result.Message}" : $"reject: {result.Message}");
+
+            if (result.Outcome == CodeFixDecisionOutcome.Done && !approve)
+            {
+                _draft = string.Empty;
+            }
+
+            await LoadAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _posting = false;
+    }
+
+    /// <summary>What /replan does on the issue, with what is written in the box as the answer: posted first, then asked.</summary>
+    private async Task ReplanAsync()
+    {
+        if (_posting || Locked || _work is not { Attempt: { } attempt } work)
+        {
+            return;
+        }
+
+        _posting = true;
+
+        try
+        {
+            long? commentId = null;
+
+            if (!string.IsNullOrWhiteSpace(_draft))
+            {
+                var (_, message, comment) = await Service.CommentAsync(Repository, Number, _draft, Actor.Trim(), _cts.Token);
+
+                if (comment is null)
+                {
+                    _message = (false, $"replan: the answer could not be posted, so nothing was asked: {message}");
+                    _posting = false;
+                    return;
+                }
+
+                commentId = comment.Id;
+                _draft = string.Empty;
+            }
+
+            await using var scope = Scopes.CreateAsyncScope();
+            var result = await scope.ServiceProvider.GetRequiredService<WorkItemActions>()
+                .ReplanAsync(work.Item.Id, attempt.Id, Actor.Trim(), ApprovalSource.Ui, commentId, _cts.Token);
+
+            _message = (result.Outcome == CodeFixDecisionOutcome.Done, $"replan: {result.Message}");
+            await LoadAsync();
         }
         catch (OperationCanceledException)
         {

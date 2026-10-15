@@ -750,8 +750,7 @@ public sealed class PlannerService(
 
         await AuditAsync(AuditComment, who, $"{item.Reference}: a comment", item, new { length = text.Length }, ct).ConfigureAwait(false);
 
-        var posted = await client.CreateCommentAsync(item.Repository, item.Number,
-            $"{text}\n\n<sub>Written by {Hephaisto.Agent.WorkItems.IssueComments.Neutralise(who, 100).TrimEnd('.')} in Hephaisto's planner.</sub>", ct).ConfigureAwait(false);
+        var posted = await client.CreateCommentAsync(item.Repository, item.Number, PlannerComment.Body(text, who), ct).ConfigureAwait(false);
 
         if (!posted.Ok)
         {

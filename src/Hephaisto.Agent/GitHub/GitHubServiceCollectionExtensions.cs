@@ -38,6 +38,7 @@ public static class GitHubServiceCollectionExtensions
         services.TryAddSingleton<GitHubMetrics>();
         services.TryAddSingleton<GitHubRateLimit>();
         services.AddScoped<WorkItemQueries>();
+        services.AddScoped<WorkItemActions>();
 
         // The planner (v0.15.0), registered always for the reason the reads above are: its page
         // and /api/planner say "off" on an install that never enabled it.
