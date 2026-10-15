@@ -10,8 +10,8 @@
     the newest analysis the agent posted on the issue, whether Claude is at it right now, a button
     to ask, and the line that hands the issue to Claude Code.
 
-    The analysis is a model's text about somebody else's text, and it is shown as its markdown
-    source - never rendered - as the issue's description is.
+    The analysis is a model's text about somebody else's text, rendered by SafeMarkdown as the
+    issue's description is: no HTML of its own, a link only to http(s), no image loaded.
 *@
 
 <section class="hp-planner-claude" data-testid="planner-claude" data-reference="@Reference">
@@ -58,7 +58,7 @@
                 <text> &middot; </text><a href="@url" target="_blank" rel="noopener">the comment on GitHub</a>
             }
         </p>
-        <div class="hp-excerpt hp-planner-body" data-testid="planner-claude-analysis">@analysis.Body</div>
+        <div class="hp-excerpt hp-planner-body hp-markdown" data-testid="planner-claude-analysis">@SafeMarkdown.Render(analysis.Body, Repository, Service.DetailHrefFor)</div>
     }
     else
     {

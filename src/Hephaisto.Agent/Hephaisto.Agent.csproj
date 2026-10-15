@@ -21,6 +21,7 @@
   <ItemGroup>
     <PackageReference Include="KubernetesClient" />
     <PackageReference Include="Google.GenAI" />
+    <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="ModelContextProtocol" />

@@ -638,9 +638,11 @@ minutes - so a red live run is read request by request before it is believed.
   reason and its place in the queue, and the issue a person looks at must not move away. Today,
   not today and closing go on to the next issue; a closed issue's card is one step back, from
   `_closed`.
-- **The description is the board read's, and it is text.** `body` comes with the project query,
-  cut at `GitHubClient.MaxIssueBody`; GraphQL sends `""` where REST sends null. It is shown as
-  its markdown source and never rendered - the spec counts the elements inside it: none.
+- **The description is the board read's, and its markdown goes through `SafeMarkdown`.** `body`
+  comes with the project query, cut at `GitHubClient.MaxIssueBody`; GraphQL sends `""` where REST
+  sends null. `Components/SafeMarkdown.cs` (Markdig) renders it - and comments, Claude's analysis,
+  a PR body - with HTML disabled, links only to http(s)/mailto and images turned into links. Never
+  hand somebody else's text to a `MarkupString` any other way.
 - **The rules are facts, not column names** (`PlannerQueue`): no rule may know "In review". The
   only names it knows are the fields `Status` and `Priority`, for the order.
 - **The day is two labels and their age**, from the newest `labeled` event of the issue's

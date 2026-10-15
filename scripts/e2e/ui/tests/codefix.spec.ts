@@ -310,13 +310,16 @@ test.describe('one code fix', () => {
       }
     }
 
-    // The pull request's description, as the runner sent it: a model wrote parts of it. One
-    // <pre> whose text is exactly the stored description, with nothing in it turned into a link
-    // or any other element.
+    // The pull request's description, as the runner sent it: a model wrote parts of it. Its
+    // markdown is rendered, with no HTML of its own, no image fetched and a link only to http(s).
     if (d.attempt.prBody) {
       const body = page.getByTestId('codefix-pr-body');
-      expect(await body.evaluate(e => e.textContent)).toBe(d.attempt.prBody);
-      await expect(body.locator('*')).toHaveCount(0);
+      await expect(body).toBeVisible();
+      await expect(body.locator('script, img, iframe, object, embed, style')).toHaveCount(0);
+      for (const link of await body.locator('a').all()) {
+        expect(await link.getAttribute('href')).toMatch(/^(https?:|mailto:)/);
+        expect(await link.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+      }
       await expect(page.getByTestId('codefix-pr-link')).toHaveAttribute('href', d.attempt.prUrl!);
     } else {
       await expect(page.getByTestId('codefix-pr-body')).toHaveCount(0);

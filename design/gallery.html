@@ -1106,14 +1106,14 @@ Closes acme/api#412
               <span class="hp-muted">4 comments</span>
               <span class="hp-chip">customer</span>
             </div>
-            <div class="hp-excerpt hp-planner-body">## What happens
-
-After a price change the cart shows the old total until the entry expires.
-
-1. Change a price
-2. &lt;b&gt;Reload&lt;/b&gt; the cart
-
-See [the runbook](https://example.invalid/runbook), cc @somebody, related to #12.</div>
+            <div class="hp-excerpt hp-planner-body hp-markdown"><h2>What happens</h2>
+<p>After a price change the cart shows the old total until the entry expires.</p>
+<ol>
+<li>Change a price</li>
+<li>&lt;b&gt;Reload&lt;/b&gt; the <code>cart</code></li>
+</ol>
+<p>See <a href="#" target="_blank" rel="noopener noreferrer nofollow">the runbook</a>, cc @somebody, related to #12.</p>
+<blockquote><p>A quote from the support ticket.</p></blockquote></div>
           </div>
           <dl class="hp-kv">
             <dt>this day</dt>
@@ -1268,7 +1268,7 @@ See [the runbook](https://example.invalid/runbook), cc @somebody, related to #12
         rows of toggles &mdash; the repository, the type and every field of the board, the chosen one
         marked with <code>*</code> &mdash; under a title and a description. The detail view is the
         walk&rsquo;s card with Claude&rsquo;s analysis where the walk has its queue: the analysis is a
-        model&rsquo;s text and shown as its source, never rendered, and the line that hands the issue
+        model&rsquo;s text, rendered as markdown with no HTML of its own and no image loaded, and the line that hands the issue
         to Claude Code sits at the panel&rsquo;s foot with its copy button.
       </p>
 
@@ -1343,12 +1343,12 @@ The receipt is white at night.</textarea>
             <button type="button">ask Claude again</button>
           </div>
           <p class="hp-muted">posted 2 minutes ago &middot; <a href="#">the comment on GitHub</a></p>
-          <div class="hp-excerpt hp-planner-body">### Claude's analysis
-
-**Summary.** The receipt view has no dark palette; the tokens exist.
-
-1. Map the receipt's colours onto the console tokens.
-2. Check the print stylesheet still forces light.</div>
+          <div class="hp-excerpt hp-planner-body hp-markdown"><h3>Claude's analysis</h3>
+<p><strong>Summary.</strong> The receipt view has no dark palette; the tokens exist.</p>
+<ol>
+<li>Map the receipt's colours onto the console tokens.</li>
+<li>Check the print stylesheet still forces light.</li>
+</ol></div>
           <div class="hp-planner-execute">
             <span class="hp-label">with Claude Code</span>
             <code class="mono">Execute github issue acme/planning#31</code>

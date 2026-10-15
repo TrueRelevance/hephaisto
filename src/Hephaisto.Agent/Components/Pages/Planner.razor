@@ -184,7 +184,8 @@ else
                                          OnClose="notPlanned => CloseAsync(id, notPlanned, thenNext: true)"
                                          OnField="choice => FieldAsync(id, choice.Field, choice.Option)"
                                          OnAssign="choice => AssignAsync(id, choice.Login, choice.Assign)"
-                                         OnSchedule="when => PlanLaterAsync(id, when, thenNext: true)" />
+                                         OnSchedule="when => PlanLaterAsync(id, when, thenNext: true)"
+                                         IssueLink="Service.DetailHrefFor" />
                     }
                     else
                     {
@@ -1141,7 +1142,8 @@ else
                                          OnClose="notPlanned => CloseAsync(detailId, notPlanned, thenNext: false)"
                                          OnField="choice => FieldAsync(detailId, choice.Field, choice.Option)"
                                          OnAssign="choice => AssignAsync(detailId, choice.Login, choice.Assign)"
-                                         OnSchedule="when => PlanLaterAsync(detailId, when, thenNext: false)" />
+                                         OnSchedule="when => PlanLaterAsync(detailId, when, thenNext: false)"
+                                         IssueLink="Service.DetailHrefFor" />
                         <PlannerCommentsPanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
                                               Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
                     </div>

@@ -18,8 +18,17 @@ and a button for everything that can be done about it. *Today*, *not today* and 
 the next issue; a closed issue's card is one step back and says what was done. Beside it the day
 as it stands — what is planned, what was put away, what comes next.
 
-The issue's description is shown under its title as its markdown source — somebody else's text
-is shown as text, never rendered — with its comment count and its labels. *Hide description* puts
+The issue's description is shown under its title as rendered markdown, with its comment count and
+its labels. Somebody else wrote it, so the rendering has three rules: none of the author's own
+HTML (it shows as the characters it is), a link only to http(s) or mailto (opening in a new tab,
+without an opener), and no image loaded - an image becomes a link to it. The same holds for
+comments, Claude's analysis and a pull request's description.
+
+Issue references are links, as on GitHub: `#12` in the issue's own repository, `owner/repo#12`,
+and the address of an issue or a pull request. One that is on the board opens its page in the
+console, in the same tab - an epic's list of work leads to each piece of it; any other goes to
+GitHub. Inside code and inside a link nothing becomes one. The card lists an issue's sub-issues
+the same way, each a link, and its parent is a link back up. *Hide description* puts
 it away for the whole walk, and the browser remembers that.
 
 **Today.** First what is **left over**: planned on an earlier day and still open, the oldest
@@ -44,7 +53,7 @@ label or a reference (`#88` for a number). A hit opens in detail like an issue o
 closed issue's card offers no button, and it can still be commented on. `?q=` and `?state=` are in
 the address, so a search can be linked.
 
-Every detail view shows the issue's **comments** as their markdown source, and a box to write one.
+Every detail view shows the issue's **comments**, rendered the same way, and a box to write one.
 It is posted by the agent's account and ends with *Written by &lt;name&gt; in Hephaisto's planner*;
 the audit row is `planner.comment`.
 
@@ -134,8 +143,8 @@ What the agent does with the answer:
 
 The comment is what the details show, read back from the issue: the newest that begins with
 Hephaisto's marker **and** was written by the agent's account - anybody can type the marker. A
-model wrote it about somebody else's text, so it is shown as its source, never rendered, and on
-GitHub it mentions nobody and links nothing.
+model wrote it about somebody else's text: it is rendered under the rules above, and on GitHub it
+mentions nobody and links nothing.
 
 The audit trail names the person who asked: `planner.triage` when the Job starts,
 `planner.triaged` when its answer is applied. At most `maxConcurrentJobs` run at once and one per

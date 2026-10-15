@@ -1927,6 +1927,105 @@ details > summary {
 
 /* A row of the today view reads by its title: large and in the reading face, the reference,
    type and reason small and faint beneath it. */
+/* GitHub's markdown, rendered by SafeMarkdown: the reading face, the console's sizes, and no
+   white-space of its own - the paragraphs are elements now. */
+.hp-markdown {
+    white-space: normal;
+    line-height: 1.5;
+}
+
+.hp-markdown > :first-child { margin-top: 0; }
+.hp-markdown > :last-child { margin-bottom: 0; }
+
+.hp-markdown p,
+.hp-markdown ul,
+.hp-markdown ol,
+.hp-markdown pre,
+.hp-markdown blockquote,
+.hp-markdown table {
+    margin: 0 0 0.6rem;
+}
+
+.hp-markdown h1,
+.hp-markdown h2,
+.hp-markdown h3,
+.hp-markdown h4 {
+    margin: 0.8rem 0 0.4rem;
+    padding: 0;
+    border: 0;
+    font-size: var(--text-xl);
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.hp-markdown h1 { font-size: var(--text-2xl); }
+
+.hp-markdown ul,
+.hp-markdown ol {
+    padding-left: 1.4rem;
+}
+
+.hp-markdown li > p { margin: 0; }
+
+.hp-markdown code {
+    font-family: var(--mono);
+    font-size: 0.92em;
+    padding: 0.05rem 0.3rem;
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+}
+
+.hp-markdown pre {
+    padding: 0.5rem 0.7rem;
+    overflow-x: auto;
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+}
+
+.hp-markdown pre code {
+    padding: 0;
+    background: none;
+}
+
+.hp-markdown blockquote {
+    padding-left: 0.7rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--fg-dim);
+}
+
+.hp-markdown table {
+    border-collapse: collapse;
+}
+
+.hp-markdown th,
+.hp-markdown td {
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+}
+
+.hp-markdown hr {
+    border: 0;
+    border-top: 1px solid var(--border);
+}
+
+.hp-markdown input[type="checkbox"] {
+    margin-right: 0.3rem;
+}
+
+.hp-planner-subissues {
+    margin: 0.3rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.hp-planner-subissues li {
+    display: flex;
+    gap: 0.45rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
 .hp-planner-row-title {
     display: block;
     font-size: var(--text-2xl);

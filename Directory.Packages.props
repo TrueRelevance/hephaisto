@@ -29,6 +29,8 @@
   </ItemGroup>
 
   <ItemGroup Label="LLM">
+    <!-- Markdig renders GitHub's markdown in the planner, with raw HTML switched off (SafeMarkdown). -->
+    <PackageVersion Include="Markdig" Version="1.4.0" />
     <!-- Google.GenAI ships AsIChatClient(model) in-box, so no adapter layer. -->
     <PackageVersion Include="Google.GenAI" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />

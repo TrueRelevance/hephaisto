@@ -7,8 +7,8 @@
 @*
     The comments of one issue in the planner's detail view (v0.15.0), and a box to write one.
 
-    Every comment is somebody else's text - or a model's - and is shown as its markdown source,
-    never rendered. A comment written here is posted by the agent's account and ends by naming
+    Every comment is somebody else's text - or a model's - and is rendered by SafeMarkdown: no
+    HTML of its own, a link only to http(s), no image loaded. A comment written here is posted by the agent's account and ends by naming
     the person who wrote it; the audit trail names them too.
 *@
 
@@ -40,7 +40,7 @@
                         <a class="hp-muted" href="@url" target="_blank" rel="noopener">on GitHub</a>
                     }
                 </div>
-                <div class="hp-excerpt hp-planner-body" data-testid="planner-comment-body">@comment.Body</div>
+                <div class="hp-excerpt hp-planner-body hp-markdown" data-testid="planner-comment-body">@SafeMarkdown.Render(comment.Body, Repository, Service.DetailHrefFor)</div>
             </article>
         }
     }

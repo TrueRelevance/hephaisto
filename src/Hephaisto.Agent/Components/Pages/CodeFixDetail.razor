@@ -276,9 +276,10 @@ else
             <h2>pull request description</h2>
             <p class="hp-muted">
                 As the runner sent it to GitHub; the copy there may have been edited since. A model
-                wrote parts of it, so it is shown as text and nothing in it is a link.
+                wrote parts of it, so its markdown is rendered without any HTML of its own, a link
+                only to http(s), and no image loaded.
             </p>
-            <pre class="hp-code hp-raw-code" data-testid="codefix-pr-body">@prBody</pre>
+            <div class="hp-excerpt hp-markdown" data-testid="codefix-pr-body">@SafeMarkdown.Render(prBody, SafeMarkdown.RepositoryOf(a.Repository))</div>
         </section>
     }
 }

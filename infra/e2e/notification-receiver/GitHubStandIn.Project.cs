@@ -135,14 +135,17 @@ public static partial class GitHubStandIn
                 board[(repo, number)].ClosedAs = "COMPLETED";
             }
 
-            Add("acme/planning", 17, "Epic", "Epic: move order history to the column store", "In progress", "P1", "API");
+            // An epic whose description names its work in every way GitHub knows one.
+            Add("acme/planning", 17, "Epic", "Epic: move order history to the column store", "In progress", "P1", "API",
+                body: "Moves order history to the column store.\n\n- [ ] acme/api#431 the stale cache\n- [ ] #21 replay every account\n- [ ] https://github.com/acme/api/issues/440\n- [ ] acme/unknown#5 somebody else's");
 
             // Finished and still open: its one pull request is merged.
-            // Its description is markdown with everything in it that must stay text on a page: a
-            // heading, a list, an element, a link, a mention, a reference to another issue.
+            // Its description is markdown with everything a page must handle: a heading, a list, an
+            // element that must stay text, a link, a mention, a reference to another issue, an
+            // image that must not be loaded and a link that must not be one.
             Add("acme/api", 431, "Bug", "Stale cache entry survives a price change", "In review", "P0", "API", ("acme/planning", 17),
                 [new("acme/api", 433, "MERGED", now.AddDays(-2), "Closes #431", Closing: true)], updatedDaysAgo: 2,
-                body: "## What happens\n\nAfter a price change the cart shows the old total until the entry expires.\n\n1. Change a price\n2. <b>Reload</b> the cart\n\nSee [the runbook](https://example.invalid/runbook), cc @somebody, related to #12.",
+                body: "## What happens\n\nAfter a price change the cart shows the old total until the entry expires.\n\n1. Change a price\n2. <b>Reload</b> the cart\n\nSee [the runbook](https://example.invalid/runbook), cc @somebody, related to #12.\n\n![the dashboard](https://example.invalid/dashboard.png) and [a trap](javascript:alert(1)).",
                 comments: 4);
             issues[("acme/api", 431)].Labels.Add("customer");
 

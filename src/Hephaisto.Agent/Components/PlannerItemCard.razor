@@ -67,8 +67,8 @@
 
     @* The issue itself: what its author wrote, how much was said under it, and its labels. It
        can be put away - a long description pushes the buttons off the screen - and the choice
-       is the page's, so it holds for the next issue too. Markdown is shown as its source:
-       somebody else's text is text. *@
+       is the page's, so it holds for the next issue too. Markdown is rendered by SafeMarkdown:
+       no HTML of its own, a link only to http(s), no image loaded. *@
     <div class="hp-planner-more" data-testid="planner-item-more">
         <div class="hp-planner-ids">
             <button type="button" data-testid="planner-description-toggle" aria-expanded="@Pressed(DescriptionOpen)"
@@ -83,7 +83,7 @@
         {
             @if (Item.Body is { Length: > 0 } body)
             {
-                <div class="hp-excerpt hp-planner-body" data-testid="planner-item-description">@body</div>
+                <div class="hp-excerpt hp-planner-body hp-markdown" data-testid="planner-item-description">@SafeMarkdown.Render(body, Item.Repository, IssueLink)</div>
             }
             else
             {
@@ -146,9 +146,16 @@
             }
             else if (Parent is { } parent)
             {
-                <span class="hp-planner-ids">
-                    <span class="mono">@parent.Item.Reference</span>
-                    <span>@parent.Item.Title</span>
+                <span class="hp-planner-ids" data-testid="planner-item-parent">
+                    @if (IssueLink?.Invoke(parent.Item.Repository, parent.Item.Number) is { } parentHref)
+                    {
+                        <a href="@parentHref" data-testid="planner-item-parent-link">@parent.Item.Title</a>
+                    }
+                    else
+                    {
+                        <span>@parent.Item.Title</span>
+                    }
+                    <span class="mono hp-muted">@parent.Item.Reference</span>
                     @if (parent.Item.SubIssues > 0)
                     {
                         <span class="hp-muted">&middot; @parent.Item.SubIssuesDone of @parent.Item.SubIssues done</span>
@@ -195,7 +202,32 @@
             }
             else
             {
-                <text>@Item.SubIssuesDone of @Item.SubIssues done</text>
+                <span class="hp-muted">@Item.SubIssuesDone of @Item.SubIssues done</span>
+                <ul class="hp-planner-subissues" data-testid="planner-item-subissues">
+                    @foreach (var child in Children)
+                    {
+                        <li data-testid="planner-item-subissue" data-reference="@child.Reference" data-open="@(child.Open ? "true" : "false")">
+                            <span class="glyph">@(child.Open ? "~" : "+")</span>
+                            @if (IssueLink?.Invoke(child.Repository, child.Number) is { } childHref)
+                            {
+                                <a href="@childHref">@child.Title</a>
+                            }
+                            else if (Display.HttpUrl(child.Url) is { } childUrl)
+                            {
+                                <a href="@childUrl" target="_blank" rel="noopener">@child.Title</a>
+                            }
+                            else
+                            {
+                                <span>@child.Title</span>
+                            }
+                            <span class="mono hp-muted">@child.Reference</span>
+                            @if (!child.Open)
+                            {
+                                <span class="hp-muted">closed</span>
+                            }
+                        </li>
+                    }
+                </ul>
             }
         </dd>
 
@@ -372,6 +404,10 @@
     [Parameter]
     public EventCallback<bool> OnClose { get; set; }
 
+    /// <summary>The console's own page of an issue of the board, or null: what the issue's references link to.</summary>
+    [Parameter]
+    public Func<string, int, string?>? IssueLink { get; set; }
+
     /// <summary>A later day: tomorrow, next week, or the backlog.</summary>
     [Parameter]
     public EventCallback<PlannerSchedule> OnSchedule { get; set; }
@@ -383,6 +419,13 @@
     public EventCallback<(string Login, bool Assign)> OnAssign { get; set; }
 
     private BoardItem Item => Entry.Item;
+
+    /// <summary>The issue's sub-issues on the board, open first, then by number.</summary>
+    private IEnumerable<BoardItem> Children => Board.Items
+        .Where(i => string.Equals(i.ParentUrl, Item.Url, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(i => i.Open)
+        .ThenBy(i => i.Repository, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(i => i.Number);
 
     private bool Locked => Busy || !Open || LockedBecause is not null;
 

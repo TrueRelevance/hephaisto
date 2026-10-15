@@ -66,6 +66,11 @@ turn it on - the project, the token, the values - is one page:
   opens in detail too.
 - **Comments in the detail view**: the issue's comments as text, and a box to write one, posted by
   the agent's account and signed with the person's name (`planner.comment`).
+- **Markdown is rendered**: an issue's description, its comments, Claude's analysis and a pull
+  request's description, with none of the author's HTML, a link only to http(s) or mailto, and no
+  image loaded - an image becomes a link to it. Issue references (`#12`, `owner/repo#12`, an
+  issue's address) are links - to the issue's page in the console when it is on the board, to
+  GitHub otherwise - and the card lists an issue's sub-issues as links, its parent too.
 - **Left over from an earlier day.** The today view opens with what was planned on an earlier
   day and is still open - the oldest first, with when it was planned - and decides each again:
   keep it for today, put it away until tomorrow, take it off the plan, or close it. The day's

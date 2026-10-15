@@ -809,6 +809,13 @@ public sealed class PlannerService(
             || item.Labels.Any(l => l.Name.Contains(word, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The console's own page of an issue of the board - its detail in the today view - or null
+    /// for one the board does not hold. What an issue reference in rendered markdown links to.
+    /// </summary>
+    public string? DetailHrefFor(string repository, int number) =>
+        OnBoard(repository, number) is { } item ? $"planner?view=today&detail={Uri.EscapeDataString(item.ItemId)}" : null;
+
     /// <summary>An item of the kept board by its id, open or closed.</summary>
     public BoardItem? BoardItem(string itemId) => Kept?.Board?.Items.FirstOrDefault(i => i.ItemId == itemId);
 

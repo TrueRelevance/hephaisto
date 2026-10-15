@@ -302,7 +302,7 @@ test.describe('planner', () => {
       }
     });
 
-    test('the issue\'s own text is shown as text, and can be put away for the whole walk', async ({ page }) => {
+    test('the issue\'s own text is rendered as markdown without any markup of its own, and can be put away for the whole walk', async ({ page }) => {
       const board = await planner(page.request);
       const written = board.items.slice(0, 30).find(i => i.body);
       const blank = board.items.slice(0, 30).find(i => !i.body);
@@ -311,10 +311,27 @@ test.describe('planner', () => {
 
       let card = await openItem(page, written!.itemId);
 
-      // Markdown as its source: exactly the stored string, and no element made of it.
+      // Markdown, rendered: but no HTML of the author's, no image fetched, and a link only to
+      // http(s), opening in a new tab without an opener.
       const description = card.getByTestId('planner-item-description');
-      expect(await description.evaluate(e => e.textContent)).toBe(written!.body);
-      expect(await description.locator('*').count()).toBe(0);
+      await expect(description).toBeVisible();
+      expect(await description.locator('script, img, iframe, object, embed, style, b').count()).toBe(0);
+      for (const link of await description.locator('a').all()) {
+        expect(await link.getAttribute('href')).toMatch(/^(https?:|mailto:)/);
+        expect(await link.getAttribute('rel')).toBe('noopener noreferrer nofollow');
+        expect(await link.getAttribute('target')).toBe('_blank');
+      }
+
+      if (ref(written!) === 'acme/api#431') {
+        // The seeded description: each kind of thing once.
+        await expect(description.locator('h2')).toHaveText('What happens');
+        await expect(description.locator('ol > li')).toHaveCount(2);
+        await expect(description).toContainText('<b>Reload</b>');
+        await expect(description.locator('a[href="https://example.invalid/runbook"]')).toHaveText('the runbook');
+        await expect(description.locator('a[href="https://example.invalid/dashboard.png"]')).toHaveText('the dashboard');
+        await expect(description).toContainText('a trap');
+        expect(await description.locator('a', { hasText: 'a trap' }).count()).toBe(0);
+      }
 
       await expect(card.getByTestId('planner-item-comments')).toHaveText(
         written!.comments === 0 ? 'no comments' : written!.comments === 1 ? '1 comment' : `${written!.comments} comments`);
@@ -797,6 +814,43 @@ test.describe('planner', () => {
       expect(posted.at(-1).body).toContain(`Written by ${NAME} in Hephaisto's planner.`);
     });
 
+    test('an epic\'s references and its sub-issues lead to their pages', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in seeds the epic');
+
+      const board = await planner(page.request, true);
+      const epic = board.items.find(i => ref(i) === 'acme/planning#17')!;
+      await open(page, `/planner?view=today&detail=${encodeURIComponent(epic.itemId)}`);
+      const card = page.getByTestId('planner-detail').getByTestId('planner-item');
+      await expect(card).toHaveAttribute('data-reference', 'acme/planning#17');
+
+      // In its description: an issue of the board opens in the console, in the same tab; one it
+      // does not hold goes to GitHub.
+      const description = card.getByTestId('planner-item-description');
+      const inside = description.locator('a', { hasText: 'acme/api#431' });
+      await expect(inside).toHaveAttribute('href', 'planner?view=today&detail=PVTI_acme_api_431');
+      expect(await inside.getAttribute('target')).toBeNull();
+      await expect(description.locator('a', { hasText: '#21' })).toHaveAttribute('href', 'planner?view=today&detail=PVTI_acme_planning_21');
+      await expect(description.locator('a', { hasText: 'https://github.com/acme/api/issues/440' })).toHaveAttribute('href', 'planner?view=today&detail=PVTI_acme_api_440');
+      const outside = description.locator('a', { hasText: 'acme/unknown#5' });
+      await expect(outside).toHaveAttribute('href', 'https://github.com/acme/unknown/issues/5');
+      await expect(outside).toHaveAttribute('target', '_blank');
+
+      // Its sub-issues, each a link to its page; one of them followed.
+      const subs = card.getByTestId('planner-item-subissue');
+      const children = board.items.filter(i => i.parentUrl === epic.url).map(ref);
+      for (const child of children) {
+        await expect(card.locator(`[data-testid="planner-item-subissue"][data-reference="${child}"] a`)).toHaveCount(1);
+      }
+      expect(await subs.count()).toBeGreaterThanOrEqual(children.length);
+
+      await card.locator('[data-testid="planner-item-subissue"][data-reference="acme/planning#21"] a').click();
+      await expect(page.getByTestId('planner-detail').getByTestId('planner-item')).toHaveAttribute('data-reference', 'acme/planning#21');
+
+      // And the way back up: the parent is a link too.
+      await page.getByTestId('planner-detail').getByTestId('planner-item-parent-link').click();
+      await expect(page.getByTestId('planner-detail').getByTestId('planner-item')).toHaveAttribute('data-reference', 'acme/planning#17');
+    });
+
     for (const [role, how, reason, word] of [
       ['closeDone', 'done', 'COMPLETED', 'closed as done'],
       ['closeNotPlanned', 'not planned', 'NOT_PLANNED', 'closed as not planned'],
@@ -916,7 +970,8 @@ test.describe('planner', () => {
 
       const claude = detail.getByTestId('planner-claude');
       await expect(claude.getByTestId('planner-claude-analysis')).toContainText('FAKE SDK triage', { timeout: 60_000 });
-      await expect(claude.getByTestId('planner-claude-analysis')).toContainText(`Labels put on: \`${FAKE_LABEL}\``);
+      await expect(claude.getByTestId('planner-claude-analysis')).toContainText(`Labels put on: ${FAKE_LABEL}`);
+      await expect(claude.getByTestId('planner-claude-analysis').locator('code', { hasText: FAKE_LABEL })).toHaveCount(1);
       await expect(claude.getByTestId('planner-execute-line')).toHaveText(`Execute github issue ${reference}`);
     });
 
