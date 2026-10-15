@@ -53,6 +53,9 @@ public static partial class GitHubStandIn
     private static readonly (string Name, string? Description)[] RepositoryLabels =
         [("bug", "Something isn't working"), ("enhancement", "New feature or request"), ("documentation", null), ("question", "Further information is requested")];
 
+    /// <summary>The board's date fields: the day an issue is planned for, and a roadmap date beside it.</summary>
+    private static readonly (string Id, string Name)[] DateFields = [("F_planned", "Planned for"), ("F_start", "Start date")];
+
     private sealed record BoardPull(string Repo, int Number, string State, DateTimeOffset At, string Body, bool Closing);
 
     private sealed class BoardRow
@@ -62,6 +65,7 @@ public static partial class GitHubStandIn
         public (string Repo, int Number)? Parent { get; init; }
         public List<BoardPull> Pulls { get; init; } = [];
         public Dictionary<string, DateTimeOffset> LabelledAt { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string> Dates { get; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset? ClosedAt { get; set; }
         public string? ClosedAs { get; set; }
     }
@@ -161,6 +165,12 @@ public static partial class GitHubStandIn
             Add("acme/scraper", 57, "Task", "Robots rules are fetched once per URL", "Ready", "P2", "API");
             Label("acme/scraper", 57, "today", now.AddDays(-2));
 
+            // Planned by the board's day field: for today, and for three days from now.
+            Add("acme/billing", 92, "Bug", "Dunning mails go out twice", "Ready", "P1", "API");
+            board[("acme/billing", 92)].Dates["Planned for"] = now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            Add("acme/web", 251, "Feature", "Export the receipts as CSV", "Backlog", "P2", "Web");
+            board[("acme/web", 251)].Dates["Planned for"] = now.AddDays(3).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
             // Planned yesterday and three days ago, and not finished: the today view's left-overs.
             Add("acme/web", 250, "Bug", "Invoice PDF misses the VAT id", "Ready", "P1", "Web");
             Label("acme/web", 250, "today", now.AddDays(-1));
@@ -196,6 +206,11 @@ public static partial class GitHubStandIn
             foreach (var (name, option) in row.Fields)
             {
                 values.Add(new JsonObject { ["name"] = option, ["field"] = new JsonObject { ["name"] = name } });
+            }
+
+            foreach (var (name, date) in row.Dates)
+            {
+                values.Add(new JsonObject { ["date"] = date, ["field"] = new JsonObject { ["name"] = name } });
             }
 
             var timeline = new JsonArray();
@@ -259,6 +274,41 @@ public static partial class GitHubStandIn
 
             lock (gate)
             {
+                if (query.Contains("updateProjectV2ItemFieldValue", StringComparison.Ordinal) && Field(variables, "date") is { } date)
+                {
+                    var dateField = DateFields.FirstOrDefault(f => f.Id == Field(variables, "field"));
+                    var dated = board.Values.FirstOrDefault(r => r.ItemId == Field(variables, "item"));
+
+                    if (Field(variables, "project") != ProjectId || dateField.Id is null || dated is null
+                        || !DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                    {
+                        return GraphQlError("updateProjectV2ItemFieldValue", "NOT_FOUND", "Could not resolve to a node with the global id given.");
+                    }
+
+                    dated.Dates[dateField.Name] = date;
+                    Console.WriteLine($"GITHUB board: {dated.ItemId} {dateField.Name} = {date}");
+
+                    return Json(new JsonObject { ["data"] = new JsonObject { ["updateProjectV2ItemFieldValue"] = new JsonObject { ["projectV2Item"] = new JsonObject { ["id"] = dated.ItemId } } } });
+                }
+
+                if (query.Contains("clearProjectV2ItemFieldValue", StringComparison.Ordinal))
+                {
+                    var cleared = board.Values.FirstOrDefault(r => r.ItemId == Field(variables, "item"));
+                    var dateField = DateFields.FirstOrDefault(f => f.Id == Field(variables, "field"));
+                    var selectField = ProjectFields.FirstOrDefault(f => f.Id == Field(variables, "field"));
+
+                    if (Field(variables, "project") != ProjectId || cleared is null || (dateField.Id is null && selectField.Id is null))
+                    {
+                        return GraphQlError("clearProjectV2ItemFieldValue", "NOT_FOUND", "Could not resolve to a node with the global id given.");
+                    }
+
+                    if (dateField.Id is not null) cleared.Dates.Remove(dateField.Name);
+                    if (selectField.Id is not null) cleared.Fields.Remove(selectField.Name);
+                    Console.WriteLine($"GITHUB board: {cleared.ItemId} {(dateField.Name ?? selectField.Name)} cleared");
+
+                    return Json(new JsonObject { ["data"] = new JsonObject { ["clearProjectV2ItemFieldValue"] = new JsonObject { ["projectV2Item"] = new JsonObject { ["id"] = cleared.ItemId } } } });
+                }
+
                 if (query.Contains("updateProjectV2ItemFieldValue", StringComparison.Ordinal))
                 {
                     var field = ProjectFields.FirstOrDefault(f => f.Id == Field(variables, "field"));
@@ -316,7 +366,7 @@ public static partial class GitHubStandIn
 
                 if (!query.Contains("projectV2(number:", StringComparison.Ordinal))
                 {
-                    return Json(new JsonObject { ["errors"] = new JsonArray(new JsonObject { ["message"] = "This stand-in knows the project read, updateProjectV2ItemFieldValue, closeIssue and addProjectV2ItemById." }) });
+                    return Json(new JsonObject { ["errors"] = new JsonArray(new JsonObject { ["message"] = "This stand-in knows the project read, updateProjectV2ItemFieldValue, clearProjectV2ItemFieldValue, closeIssue and addProjectV2ItemById." }) });
                 }
 
                 var number = variables?["number"] is JsonValue n && n.TryGetValue<int>(out var asked) ? asked : 0;
@@ -379,6 +429,8 @@ public static partial class GitHubStandIn
                                             ["name"] = f.Name,
                                             ["options"] = new JsonArray([.. f.Options.Select(o => new JsonObject { ["id"] = o.Id, ["name"] = o.Name })]),
                                         }),
+                                        .. DateFields.Select(f => new JsonObject { ["id"] = f.Id, ["name"] = f.Name, ["dataType"] = "DATE" }),
+                                        new JsonObject { ["id"] = "F_title", ["name"] = "Title", ["dataType"] = "TITLE" },
                                     ]),
                                 },
                                 ["items"] = new JsonObject
@@ -593,6 +645,7 @@ public static partial class GitHubStandIn
                             ["state"] = issue.State,
                             ["closedAs"] = b.Value.ClosedAs,
                             ["fields"] = new JsonObject([.. b.Value.Fields.Select(f => KeyValuePair.Create(f.Key, (JsonNode?)f.Value))]),
+                            ["dates"] = new JsonObject([.. b.Value.Dates.Select(d => KeyValuePair.Create(d.Key, (JsonNode?)d.Value))]),
                             ["labels"] = new JsonArray([.. issue.Labels.Select(l => (JsonNode)l)]),
                             ["assignees"] = new JsonArray([.. issue.Assignees.Select(a => (JsonNode)a.Login)]),
                         };

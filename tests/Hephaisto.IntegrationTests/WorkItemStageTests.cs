@@ -1483,6 +1483,9 @@ public sealed partial class WorkItemStageTests(PostgresFixture pg)
         public Task<GitHubResult<bool>> RemoveAssigneeAsync(string repository, int number, string login, CancellationToken ct) =>
             throw new NotSupportedException("the poller assigns nobody");
 
+        public Task<GitHubResult<bool>> SetProjectDateAsync(string projectId, string itemId, string fieldId, DateOnly? date, CancellationToken ct) =>
+            throw new NotSupportedException("the poller plans no day");
+
         public Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct) =>
             throw new NotSupportedException("the poller opens no issue");
 

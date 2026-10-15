@@ -114,6 +114,10 @@ public sealed class PlannerService(
     public const string AuditCreate = "planner.create";
     public const string AuditTriage = "planner.triage";
     public const string AuditTriaged = "planner.triaged";
+    public const string AuditSchedule = "planner.schedule";
+    public const string AuditComment = "planner.comment";
+
+    public const int MaxComment = 60_000;
 
     /// <summary>What begins every comment the agent posts with Claude's analysis. Only one by the agent's own account counts.</summary>
     public const string AnalysisMarker = "<!-- hephaisto:triage";
@@ -217,7 +221,7 @@ public sealed class PlannerService(
     /// says which day it is for.
     /// </summary>
     public Task<PlannerActionResult> SetDayAsync(string itemId, PlannerDay day, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, _, entry) =>
+        ActAsync(itemId, actor, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
             var word = DayWord(day);
@@ -257,7 +261,13 @@ public sealed class PlannerService(
                 labels.Add(new BoardLabel(name, clock.UtcNow));
             }
 
-            return (PlannerActionOutcome.Done, word, item with { Labels = labels });
+            // A day decided now replaces a later day planned before: the date would make it
+            // planned again, or left over, on a day nobody chose any more.
+            var (cleared, dates) = await ClearPlannedAsync(client, board, item, ct).ConfigureAwait(false);
+
+            return cleared is { } refused
+                ? (PlannerActionOutcome.Refused, refused, item with { Labels = labels })
+                : (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = dates });
         });
 
     public Task<PlannerActionResult> AssignAsync(string itemId, string login, bool assign, string actor, CancellationToken ct) =>
@@ -578,8 +588,253 @@ public sealed class PlannerService(
     {
         PlannerDay.Today => "today",
         PlannerDay.NotToday => "not today",
+        PlannerDay.Later => "a later day",
         _ => "not decided",
     };
+
+    public static string ScheduleWord(PlannerSchedule schedule) => schedule switch
+    {
+        PlannerSchedule.Tomorrow => "tomorrow",
+        PlannerSchedule.NextWeek => "next week",
+        _ => "backlog",
+    };
+
+    /// <summary>
+    /// Plans an item for a later day - the board's date field set to tomorrow or to next
+    /// Monday - or puts it back into the backlog: no day, and Status <c>BacklogStatus</c>. The
+    /// two labels of the day come off in every case: what was decided for today no longer holds.
+    /// </summary>
+    public Task<PlannerActionResult> ScheduleAsync(string itemId, PlannerSchedule schedule, string actor, CancellationToken ct) =>
+        ActAsync(itemId, actor, ct, async (client, board, entry) =>
+        {
+            var item = entry.Item;
+            var planner = options.CurrentValue.Planner;
+            var day = PlannerQueue.DayFor(schedule, clock.UtcNow);
+            var field = board.DateField(planner.DayField);
+
+            if (day is not null && field is null)
+            {
+                return (PlannerActionOutcome.NotFound, $"the board has no date field '{planner.DayField}' to plan a later day by", null);
+            }
+
+            BoardField? status = null;
+            BoardOption? backlog = null;
+
+            if (schedule == PlannerSchedule.Backlog)
+            {
+                status = board.Field(PlannerQueue.StatusField);
+                backlog = status?.Options.FirstOrDefault(o => string.Equals(o.Name, planner.BacklogStatus, StringComparison.OrdinalIgnoreCase));
+
+                if (backlog is null)
+                {
+                    return (PlannerActionOutcome.NotFound, $"the board's {PlannerQueue.StatusField} has no option '{planner.BacklogStatus}'", null);
+                }
+            }
+
+            var word = day is { } on ? $"planned for {on.ToString("dddd d MMMM", System.Globalization.CultureInfo.InvariantCulture)}" : "back in the backlog";
+
+            await AuditAsync(AuditSchedule, actor, $"{item.Reference}: {word}", item,
+                new { schedule = ScheduleWord(schedule), day = day?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), was = DayWord(entry.Day) }, ct).ConfigureAwait(false);
+
+            var labels = item.Labels.ToList();
+
+            foreach (var present in labels.Where(l => string.Equals(l.Name, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(l.Name, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                var removed = await client.RemoveLabelAsync(item.Repository, item.Number, present.Name, ct).ConfigureAwait(false);
+
+                if (!removed.Ok && removed.Outcome != GitHubOutcome.NotFound)
+                {
+                    return (PlannerActionOutcome.Refused, removed.Describe(), item with { Labels = labels });
+                }
+
+                labels.Remove(present);
+            }
+
+            var dates = new Dictionary<string, DateOnly>(item.Dates ?? new Dictionary<string, DateOnly>(), StringComparer.OrdinalIgnoreCase);
+
+            if (day is { } planned)
+            {
+                var set = await client.SetProjectDateAsync(board.Id, item.ItemId, field!.Id, planned, ct).ConfigureAwait(false);
+
+                if (!set.Ok)
+                {
+                    return (PlannerActionOutcome.Refused, set.Describe(), item with { Labels = labels });
+                }
+
+                dates[field.Name] = planned;
+
+                return (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = dates });
+            }
+
+            var (cleared, after) = await ClearPlannedAsync(client, board, item, ct).ConfigureAwait(false);
+
+            if (cleared is { } refused)
+            {
+                return (PlannerActionOutcome.Refused, refused, item with { Labels = labels });
+            }
+
+            var moved = await client.SetProjectFieldAsync(board.Id, item.ItemId, status!.Id, backlog!.Id, ct).ConfigureAwait(false);
+
+            if (!moved.Ok)
+            {
+                return (PlannerActionOutcome.Refused, moved.Describe(), item with { Labels = labels, Dates = after });
+            }
+
+            var fields = new Dictionary<string, string>(item.Fields, StringComparer.OrdinalIgnoreCase) { [status.Name] = backlog.Name };
+
+            return (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = after, Fields = fields });
+        });
+
+    /// <summary>
+    /// An issue's comments, oldest first - the first page of a hundred, as GitHub lists them.
+    /// Only for an issue on the board. Null when it is not, or when GitHub said no.
+    /// </summary>
+    public async Task<IReadOnlyList<GitHubComment>?> CommentsAsync(string repository, int number, CancellationToken ct)
+    {
+        if (!Enabled || OnBoard(repository, number) is null)
+        {
+            return null;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+        {
+            return null;
+        }
+
+        var comments = await client.ListCommentsAsync(repository, number, since: null, etag: null, ct).ConfigureAwait(false);
+
+        return comments.Ok ? comments.Value : null;
+    }
+
+    /// <summary>
+    /// A comment on an issue of the board, open or closed, written by a person in the console and
+    /// posted by the agent's account - so it ends by saying whose words they are.
+    /// </summary>
+    public async Task<(PlannerActionOutcome Outcome, string Message, GitHubComment? Comment)> CommentAsync(
+        string repository, int number, string body, string actor, CancellationToken ct)
+    {
+        var who = actor?.Trim() ?? string.Empty;
+        ArgumentException.ThrowIfNullOrWhiteSpace(who);
+
+        if (!Enabled)
+        {
+            return (PlannerActionOutcome.Off, "the planner is off", null);
+        }
+
+        if (IncidentStateMachine.IsForbiddenGranter(who))
+        {
+            return (PlannerActionOutcome.Forbidden, $"'{who}' may not write here: a comment from the planner is a person's.", null);
+        }
+
+        var text = body?.Trim() ?? string.Empty;
+
+        if (text.Length == 0 || text.Length > MaxComment)
+        {
+            return (PlannerActionOutcome.NotFound, $"a comment holds 1 to {MaxComment} characters", null);
+        }
+
+        if (OnBoard(repository, number) is not { } item)
+        {
+            return (PlannerActionOutcome.NotFound, $"{repository}#{number} is not on the board", null);
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+        {
+            return (PlannerActionOutcome.Off, "the planner is off", null);
+        }
+
+        await AuditAsync(AuditComment, who, $"{item.Reference}: a comment", item, new { length = text.Length }, ct).ConfigureAwait(false);
+
+        var posted = await client.CreateCommentAsync(item.Repository, item.Number,
+            $"{text}\n\n<sub>Written by {Hephaisto.Agent.WorkItems.IssueComments.Neutralise(who, 100).TrimEnd('.')} in Hephaisto's planner.</sub>", ct).ConfigureAwait(false);
+
+        if (!posted.Ok)
+        {
+            await AuditAsync(AuditRefused, who, $"{item.Reference}: GitHub refused the comment, {posted.Describe()}", item, new { detail = posted.Describe() }, ct).ConfigureAwait(false);
+
+            return (PlannerActionOutcome.Refused, posted.Describe(), null);
+        }
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (kept is { Board: { } board } && board.Items.FirstOrDefault(i => i.ItemId == item.ItemId) is { } current)
+            {
+                var changed = current with { Comments = current.Comments + 1 };
+                kept = Present(board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] }, kept.ReadAt ?? clock.UtcNow, kept.Problem);
+                Changed?.Invoke();
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        return (PlannerActionOutcome.Done, "the comment is on the issue", posted.Value);
+    }
+
+    /// <summary>
+    /// The board's issues - open, closed, or both - whose title, description, reference or labels
+    /// hold every word of <paramref name="query"/>, whatever the case; the newest first. From the
+    /// kept board: no request to GitHub per keystroke.
+    /// </summary>
+    public IReadOnlyList<BoardItem> Search(string? query, bool? open, int limit = 100)
+    {
+        if (Kept is not { Board: { } board })
+        {
+            return [];
+        }
+
+        var words = (query ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return [.. board.Items
+            .Where(i => open is null || i.Open == open)
+            .Where(i => words.All(w => Matches(i, w)))
+            .OrderByDescending(i => i.CreatedAt)
+            .ThenBy(i => i.Repository, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(i => i.Number)
+            .Take(limit)];
+
+        static bool Matches(BoardItem item, string word) =>
+            item.Title.Contains(word, StringComparison.OrdinalIgnoreCase)
+            || item.Reference.Contains(word, StringComparison.OrdinalIgnoreCase)
+            || ("#" + item.Number.ToString(System.Globalization.CultureInfo.InvariantCulture)).Equals(word, StringComparison.OrdinalIgnoreCase)
+            || (item.Body?.Contains(word, StringComparison.OrdinalIgnoreCase) ?? false)
+            || item.Labels.Any(l => l.Name.Contains(word, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>An item of the kept board by its id, open or closed.</summary>
+    public BoardItem? BoardItem(string itemId) => Kept?.Board?.Items.FirstOrDefault(i => i.ItemId == itemId);
+
+    private BoardItem? OnBoard(string repository, int number) =>
+        kept?.Board?.Items.FirstOrDefault(i => string.Equals(i.Repository, repository?.Trim(), StringComparison.OrdinalIgnoreCase) && i.Number == number);
+
+    /// <summary>Empties the board's day field on an item that has one. A message when GitHub said no.</summary>
+    private async Task<(string? Refused, IReadOnlyDictionary<string, DateOnly>? Dates)> ClearPlannedAsync(IGitHubClient client, Board board, BoardItem item, CancellationToken ct)
+    {
+        if (board.DateField(options.CurrentValue.Planner.DayField) is not { } field || item.Date(field.Name) is null)
+        {
+            return (null, item.Dates);
+        }
+
+        var cleared = await client.SetProjectDateAsync(board.Id, item.ItemId, field.Id, null, ct).ConfigureAwait(false);
+
+        if (!cleared.Ok)
+        {
+            return (cleared.Describe(), item.Dates);
+        }
+
+        var dates = new Dictionary<string, DateOnly>(item.Dates!, StringComparer.OrdinalIgnoreCase);
+        dates.Remove(field.Name);
+
+        return (null, dates);
+    }
 
     /// <summary>
     /// One click: who, on what, and then <paramref name="act"/>, which answers with the outcome,
@@ -700,7 +955,8 @@ public sealed class PlannerService(
     {
         var planner = options.CurrentValue.Planner;
         var now = clock.UtcNow;
-        var entries = PlannerQueue.Build(board, new PlannerRules(planner.RequiredFields, TimeSpan.FromDays(planner.StaleAfterDays)), now);
+        var entries = PlannerQueue.Build(
+            board, new PlannerRules(planner.RequiredFields, TimeSpan.FromDays(planner.StaleAfterDays), planner.DayField), now);
 
         var assignees = new[] { botLogin }
             .Concat(planner.Assignees)

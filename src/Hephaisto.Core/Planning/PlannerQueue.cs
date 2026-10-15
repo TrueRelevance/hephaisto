@@ -25,6 +25,22 @@ public enum PlannerDay
     Undecided = 0,
     Today = 1,
     NotToday = 2,
+
+    /// <summary>Planned for a later day, by the board's date field (<see cref="PlannerRules.DayField"/>).</summary>
+    Later = 3,
+}
+
+/// <summary>A day further off than today: what a person can plan an item for besides today and not today.</summary>
+public enum PlannerSchedule
+{
+    /// <summary>The next day.</summary>
+    Tomorrow = 0,
+
+    /// <summary>The Monday after this week.</summary>
+    NextWeek = 1,
+
+    /// <summary>No day at all: back into the backlog.</summary>
+    Backlog = 2,
 }
 
 /// <summary>
@@ -32,7 +48,8 @@ public enum PlannerDay
 /// </summary>
 /// <param name="RequiredFields">Names of fields an item should not leave empty. A name the board does not have is ignored.</param>
 /// <param name="StaleAfter">How long an open pull request may be quiet.</param>
-public sealed record PlannerRules(IReadOnlyList<string> RequiredFields, TimeSpan StaleAfter)
+/// <param name="DayField">The board's date field an item is planned for a day by. Null, or a name the board does not have: only the labels count.</param>
+public sealed record PlannerRules(IReadOnlyList<string> RequiredFields, TimeSpan StaleAfter, string? DayField = null)
 {
     public static readonly PlannerRules Default = new([], TimeSpan.FromDays(5));
 }
@@ -41,6 +58,7 @@ public sealed record PlannerRules(IReadOnlyList<string> RequiredFields, TimeSpan
 /// <param name="EmptyFields">The required fields that are empty, by the board's own spelling.</param>
 /// <param name="CarriedOver">Scheduled on an earlier day and still open.</param>
 /// <param name="LastActivity">The newest of the issue's last change and its pull requests'.</param>
+/// <param name="PlannedFor">The day in the board's date field, when there is one.</param>
 public sealed record PlannerEntry(
     BoardItem Item,
     PlannerReason Reason,
@@ -48,7 +66,8 @@ public sealed record PlannerEntry(
     PlannerDay Day,
     bool CarriedOver,
     DateTimeOffset? DayAt,
-    DateTimeOffset LastActivity)
+    DateTimeOffset LastActivity,
+    DateOnly? PlannedFor = null)
 {
     public bool NeedsDecision => Reason != PlannerReason.None;
 }
@@ -77,6 +96,12 @@ public sealed record PlannerGroup(PlannerEntry? Epic, IReadOnlyList<PlannerRow> 
 /// <see cref="PlannerEntry.CarriedOver"/>, not forgotten. <see cref="NotTodayLabel"/> counts only
 /// on the day it was set - a put-away item comes back the next morning without anybody, or any
 /// timer, having to remove a label. A day is a UTC day.
+/// </para>
+/// <para>
+/// <b>A later day is a date on the board</b> (<see cref="PlannerRules.DayField"/>). When that day
+/// comes the item is planned for today without anybody writing anything; a day that passed with
+/// the item still open makes it left over, as an old <see cref="TodayLabel"/> does. A label set
+/// today wins over the date.
 /// </para>
 /// </remarks>
 public static class PlannerQueue
@@ -266,8 +291,18 @@ public static class PlannerQueue
             : PlannerReason.None;
 
         var (day, carried, at) = DayOf(item, now);
+        var planned = rules.DayField is { } field ? item.Date(field) : null;
 
-        return new PlannerEntry(item, reason, empty, day, carried, at, lastActivity);
+        if (day == PlannerDay.Undecided && planned is { } on)
+        {
+            var date = DateOnly.FromDateTime(now.UtcDateTime);
+
+            (day, carried, at) = on > date
+                ? (PlannerDay.Later, false, new DateTimeOffset(on.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero))
+                : (PlannerDay.Today, on < date, new DateTimeOffset(on.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero));
+        }
+
+        return new PlannerEntry(item, reason, empty, day, carried, at, lastActivity, planned);
     }
 
     /// <summary>
@@ -293,4 +328,20 @@ public static class PlannerQueue
         item.Labels.FirstOrDefault(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
 
     private static bool SameDay(DateTimeOffset a, DateTimeOffset b) => a.UtcDateTime.Date == b.UtcDateTime.Date;
+
+    /// <summary>The day a schedule means, seen from <paramref name="now"/>; null for the backlog.</summary>
+    public static DateOnly? DayFor(PlannerSchedule schedule, DateTimeOffset now)
+    {
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+
+        // The next Monday: from a Monday a week on, from a Sunday the next day.
+        var toMonday = ((int)DayOfWeek.Monday - (int)today.DayOfWeek + 7) % 7;
+
+        return schedule switch
+        {
+            PlannerSchedule.Tomorrow => today.AddDays(1),
+            PlannerSchedule.NextWeek => today.AddDays(toMonday == 0 ? 7 : toMonday),
+            _ => null,
+        };
+    }
 }

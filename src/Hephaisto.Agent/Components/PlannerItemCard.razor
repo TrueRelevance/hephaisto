@@ -101,6 +101,10 @@
                 {
                     <span class="hp-chip" title="Scheduled on an earlier day and still open">from an earlier day</span>
                 }
+                @if (Entry.PlannedFor is { } plannedFor)
+                {
+                    <span class="hp-chip" data-testid="planner-item-planned" title="The board's day field">planned for @plannedFor.ToString("dddd d MMMM", System.Globalization.CultureInfo.InvariantCulture)</span>
+                }
             </span>
         </dd>
 
@@ -220,6 +224,11 @@
                 }
                 not today
             </button>
+            <span class="hp-planner-later">
+                <button type="button" data-testid="planner-schedule" data-when="tomorrow" disabled="@Locked" @onclick="() => OnSchedule.InvokeAsync(PlannerSchedule.Tomorrow)">tomorrow</button>
+                <button type="button" data-testid="planner-schedule" data-when="next week" disabled="@Locked" @onclick="() => OnSchedule.InvokeAsync(PlannerSchedule.NextWeek)">next week</button>
+                <button type="button" data-testid="planner-schedule" data-when="backlog" disabled="@Locked" @onclick="() => OnSchedule.InvokeAsync(PlannerSchedule.Backlog)">backlog</button>
+            </span>
             <span class="hp-muted">
                 @if (!Open)
                 {
@@ -232,6 +241,10 @@
                 else if (Entry.CarriedOver)
                 {
                     <text>planned on an earlier day: click today to keep it for today</text>
+                }
+                else if (Entry.Day == PlannerDay.Later)
+                {
+                    <text>planned for a later day: today brings it forward</text>
                 }
                 else
                 {
@@ -358,6 +371,10 @@
 
     [Parameter]
     public EventCallback<bool> OnClose { get; set; }
+
+    /// <summary>A later day: tomorrow, next week, or the backlog.</summary>
+    [Parameter]
+    public EventCallback<PlannerSchedule> OnSchedule { get; set; }
 
     [Parameter]
     public EventCallback<(string Field, string Option)> OnField { get; set; }

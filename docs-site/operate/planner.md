@@ -33,10 +33,20 @@ it, and the line that hands it to Claude Code - `Execute github issue owner/repo
 button. The address carries the issue (`/planner?view=today&detail=<item>`), so it can be linked.
 
 **New issue.** A title, a description in markdown, a button per repository it may be opened in, one
-per issue type of the organisation and one per option of every field of the board. *Open issue*
+per issue type of the organisation, one per option of every field of the board, and its day:
+none, today, not today, tomorrow, next week or backlog. *Open issue*
 opens it as the agent's account, puts it on the project and sets the fields chosen; with *ask
 Claude* ticked, Claude is asked about it next. The form keeps the repository and the type for the
 next issue.
+
+**Search.** The board's issues, open, closed or both, by every word of a title, a description, a
+label or a reference (`#88` for a number). A hit opens in detail like an issue of the day; a
+closed issue's card offers no button, and it can still be commented on. `?q=` and `?state=` are in
+the address, so a search can be linked.
+
+Every detail view shows the issue's **comments** as their markdown source, and a box to write one.
+It is posted by the agent's account and ends with *Written by &lt;name&gt; in Hephaisto's planner*;
+the audit row is `planner.comment`.
 
 **All open.** Everything that is open, grouped under its top-level issue with that issue's
 progress, sub-issues one step in under their parent, a *today / not today* switch on every row and
@@ -131,6 +141,19 @@ The audit trail names the person who asked: `planner.triage` when the Job starts
 `planner.triaged` when its answer is applied. At most `maxConcurrentJobs` run at once and one per
 issue; a click beyond that says so.
 
+### A later day is a date on the board
+
+*Tomorrow* and *next week* (the next Monday) take both labels of the day off and set the board's
+date field `dayField` (default **Planned for**) to that day. On that day the issue is planned for
+today without anybody writing anything; a day that passed with the issue open makes it left over.
+The today view lists what is planned for a later day, the soonest first, with *today* to bring it
+forward. *Backlog* takes the labels and the date off and sets Status to `backlogStatus` (default
+**Backlog**). A label set today wins over the date, and setting today, not today or taking the day
+back empties the date.
+
+The field is the board's own: create a field of type **Date** with that name on the project.
+Without it, *tomorrow* and *next week* are refused and say why; today, not today and backlog work.
+
 ### The day is two labels
 
 `today` stays on an issue until somebody takes it off or closes the issue. An issue that was
@@ -173,6 +196,8 @@ github:
       - octocat
     repositories:            # where a new issue is opened; the first is the default
       - example/planning
+    dayField: Planned for    # the board's Date field tomorrow / next week set
+    backlogStatus: Backlog   # the Status option backlog sets
     triage:                  # Claude labels and analyses an issue when asked
       enabled: true          # needs codeFix.enabled
       maxCostUsd: 2
@@ -204,6 +229,7 @@ repositories the agent was never asked to work in.
 | close, label, assign | `repo` | **Issues: read and write** on every repository whose issues are on the board |
 | open a new issue | `repo` | **Issues: read and write** on every repository in `repositories` |
 | put it on the project | `project` | organisation permission **Projects: read and write** |
+| comment on an issue | `repo` | **Issues: read and write** on its repository |
 
 The classic column is what was measured against github.com (`scripts/e2e/planner-live.sh`, every
 button, read back from GitHub). The fine-grained column is GitHub's documentation and was **not**
@@ -229,7 +255,10 @@ the approver policy, with `decidedBy` in the body where nobody is signed in. A n
 `POST /api/planner/issues` (`repository`, `title`, `body`, `type`, `fields`, `triage`), asking
 Claude `POST /api/planner/triage` (`repository`, `number`), and what Claude said
 `GET /api/planner/analysis?repository=&number=` - the run as far as the agent knows it, the
-newest analysis on the issue, and the line for Claude Code.
+newest analysis on the issue, and the line for Claude Code. A later day is
+`POST /api/planner/items/{itemId}/schedule` (`when`: `tomorrow`, `next week`, `backlog`); a new
+issue takes `day` with any of those or `today` / `not today`. `GET /api/planner/search?q=&state=`
+searches the board, `GET` and `POST /api/planner/comments` read and write an issue's comments.
 
 ```sh
 kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in progress

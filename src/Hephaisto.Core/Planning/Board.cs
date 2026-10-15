@@ -6,6 +6,9 @@ public sealed record BoardOption(string Id, string Name);
 /// <summary>A single-select field of the board - Status, Priority, whatever the board's owner added.</summary>
 public sealed record BoardField(string Id, string Name, IReadOnlyList<BoardOption> Options);
 
+/// <summary>A date field of the board - the day an issue is planned for, among others.</summary>
+public sealed record BoardDateField(string Id, string Name);
+
 public enum BoardPullState
 {
     Open = 0,
@@ -35,6 +38,7 @@ public sealed record BoardLabel(string Name, DateTimeOffset? AddedAt);
 /// <param name="Fields">The board's single-select fields that have a value on this item: field name to option name.</param>
 /// <param name="Body">The issue's description as its author wrote it: markdown, and somebody else's text. Null when nobody wrote one.</param>
 /// <param name="Comments">How many comments the issue has.</param>
+/// <param name="Dates">The board's date fields that have a value on this item: field name to day.</param>
 public sealed record BoardItem(
     string ItemId,
     string IssueId,
@@ -56,9 +60,14 @@ public sealed record BoardItem(
     IReadOnlyList<string> Assignees,
     IReadOnlyList<BoardPullRequest> PullRequests,
     string? Body = null,
-    int Comments = 0)
+    int Comments = 0,
+    IReadOnlyDictionary<string, DateOnly>? Dates = null)
 {
     public string Reference => $"{Repository}#{Number}";
+
+    /// <summary>The value of a date field by its name, whatever its case. Null when it is empty on this item.</summary>
+    public DateOnly? Date(string name) =>
+        Dates?.FirstOrDefault(d => string.Equals(d.Key, name, StringComparison.OrdinalIgnoreCase)) is { Key: not null } found ? found.Value : null;
 
     /// <summary>The value of a field by its name, whatever its case. Null when the field is empty on this item.</summary>
     public string? Field(string name) =>
@@ -67,15 +76,20 @@ public sealed record BoardItem(
 
 /// <summary>A GitHub project as the planner sees it: its single-select fields and its issues.</summary>
 /// <param name="IssueTypes">The issue types of the project's organisation that are enabled, for a new issue. Empty when the token may not read them.</param>
+/// <param name="DateFields">The board's date fields.</param>
 public sealed record Board(
     string Id,
     string Title,
     string Url,
     IReadOnlyList<BoardField> Fields,
     IReadOnlyList<BoardItem> Items,
-    IReadOnlyList<string>? IssueTypes = null)
+    IReadOnlyList<string>? IssueTypes = null,
+    IReadOnlyList<BoardDateField>? DateFields = null)
 {
     public IReadOnlyList<string> Types => IssueTypes ?? [];
+
+    public BoardDateField? DateField(string? name) =>
+        name is null ? null : DateFields?.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
 
     public BoardField? Field(string name) =>
         Fields.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));

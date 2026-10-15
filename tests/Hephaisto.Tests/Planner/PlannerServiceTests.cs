@@ -538,6 +538,103 @@ public sealed class PlannerServiceTests
         (await runner.StartAsync("acme/scraper", 57, "flo", Ct)).Outcome.Should().Be(TriageStartOutcome.Busy, "two at once is the cap");
     }
 
+    // --- a later day -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Tomorrow_takes_the_days_labels_off_and_sets_the_day_field_after_the_audit_row()
+    {
+        var (planner, github, _, audit) = Build();
+        await planner.ReadAsync(false, Ct);
+
+        github.OnWrite = () => audit.Rows.Should().ContainSingle(r => r.Type == PlannerService.AuditSchedule, "no audit, no action");
+
+        var result = await planner.ScheduleAsync("PVTI_240", PlannerSchedule.Tomorrow, "flo", Ct);
+
+        var tomorrow = DateOnly.FromDateTime(Given.Now.UtcDateTime).AddDays(1);
+
+        result.Outcome.Should().Be(PlannerActionOutcome.Done, result.Message);
+        result.Message.Should().Be("planned for " + tomorrow.ToString("dddd d MMMM", System.Globalization.CultureInfo.InvariantCulture));
+        github.Calls.Should().ContainInOrder("unlabel acme/web#240 today", $"date PVT_1 PVTI_240 F_planned {tomorrow:yyyy-MM-dd}");
+
+        var entry = result.Snapshot.Entry("PVTI_240")!;
+        entry.Day.Should().Be(PlannerDay.Later);
+        entry.PlannedFor.Should().Be(tomorrow);
+        entry.Item.Labels.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Backlog_empties_the_day_field_and_sets_the_status_and_a_day_decided_now_empties_it_too()
+    {
+        var (planner, github, _, _) = Build();
+        await planner.ReadAsync(false, Ct);
+        await planner.ScheduleAsync("PVTI_431", PlannerSchedule.NextWeek, "flo", Ct);
+
+        var backlog = await planner.ScheduleAsync("PVTI_431", PlannerSchedule.Backlog, "flo", Ct);
+
+        backlog.Outcome.Should().Be(PlannerActionOutcome.Done, backlog.Message);
+        backlog.Message.Should().Be("back in the backlog");
+        github.Calls.Should().ContainInOrder(
+            $"date PVT_1 PVTI_431 F_planned {PlannerQueue.DayFor(PlannerSchedule.NextWeek, Given.Now):yyyy-MM-dd}", "undate PVT_1 PVTI_431 F_planned", "field PVT_1 PVTI_431 F_status s3");
+        backlog.Snapshot.Entry("PVTI_431")!.Item.Field("Status").Should().Be("Backlog");
+        backlog.Snapshot.Entry("PVTI_431")!.Day.Should().Be(PlannerDay.Undecided);
+
+        await planner.ScheduleAsync("PVTI_431", PlannerSchedule.Tomorrow, "flo", Ct);
+        var today = await planner.SetDayAsync("PVTI_431", PlannerDay.Today, "flo", Ct);
+
+        today.Snapshot.Entry("PVTI_431")!.PlannedFor.Should().BeNull("today replaces the later day");
+        github.Calls.Last().Should().Be("undate PVT_1 PVTI_431 F_planned");
+    }
+
+    [Fact]
+    public async Task A_later_day_on_a_board_without_the_field_is_refused_before_github_hears_of_it()
+    {
+        var (planner, github, _, audit) = Build(dayField: "Due");
+        await planner.ReadAsync(false, Ct);
+
+        var result = await planner.ScheduleAsync("PVTI_240", PlannerSchedule.Tomorrow, "flo", Ct);
+
+        result.Outcome.Should().Be(PlannerActionOutcome.NotFound);
+        result.Message.Should().Contain("no date field 'Due'");
+        audit.Rows.Should().BeEmpty();
+        github.Calls.Should().NotContain(c => c.StartsWith("unlabel", StringComparison.Ordinal));
+    }
+
+    // --- comments and search ----------------------------------------------------------------
+
+    [Fact]
+    public async Task A_comment_is_posted_with_whose_words_they_are_only_on_an_issue_of_the_board()
+    {
+        var (planner, github, _, audit) = Build();
+        await planner.ReadAsync(false, Ct);
+
+        var (outcome, _, comment) = await planner.CommentAsync("acme/api", 431, "  Looked at it: the cache key misses the currency.  ", "flo", Ct);
+
+        outcome.Should().Be(PlannerActionOutcome.Done);
+        comment!.Body.Should().Be("Looked at it: the cache key misses the currency.\n\n<sub>Written by flo in Hephaisto's planner.</sub>");
+        audit.Rows.Should().ContainSingle(r => r.Type == PlannerService.AuditComment).Which.Actor.Should().Be("flo");
+        (await planner.CommentsAsync("acme/api", 431, Ct))!.Should().ContainSingle();
+
+        (await planner.CommentAsync("acme/elsewhere", 1, "hi", "flo", Ct)).Outcome.Should().Be(PlannerActionOutcome.NotFound);
+        (await planner.CommentAsync("acme/api", 431, "hi", "model", Ct)).Outcome.Should().Be(PlannerActionOutcome.Forbidden);
+        (await planner.CommentAsync("acme/api", 431, "   ", "flo", Ct)).Outcome.Should().Be(PlannerActionOutcome.NotFound);
+        github.Calls.Count(c => c.StartsWith("comment ", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Search_finds_by_every_word_by_number_and_by_state_newest_first()
+    {
+        var (planner, _, _, _) = Build();
+        await planner.ReadAsync(false, Ct);
+        await planner.CloseAsync("PVTI_57", false, "flo", Ct);
+
+        planner.Search("issue", open: null).Select(i => i.Number).Should().BeEquivalentTo([431, 240, 57]);
+        planner.Search("ISSUE 240", open: null).Select(i => i.Number).Should().Equal(240);
+        planner.Search("#431", open: null).Select(i => i.Number).Should().Equal(431);
+        planner.Search(null, open: false).Select(i => i.Number).Should().Equal(57);
+        planner.Search("acme/scraper", open: true).Should().BeEmpty();
+        planner.Search("today", open: true).Select(i => i.Number).Should().Equal([240], "a label is searched too");
+    }
+
     private static TriageResult Answer(Guid? attempt = null, string[]? labels = null, string analysis = "It lies in the API.") => new()
     {
         AttemptId = attempt ?? Guid.NewGuid(),
@@ -605,15 +702,15 @@ public sealed class PlannerServiceTests
         }
     }
 
-    private static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null)
+    private static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null, string dayField = "Planned for")
     {
-        var (planner, github, clock, audit, _, _) = Parts(enabled, repositories ?? [], triage: false);
+        var (planner, github, clock, audit, _, _) = Parts(enabled, repositories ?? [], triage: false, dayField);
 
         return (planner, github, clock, audit);
     }
 
     private static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit, IServiceScopeFactory Scopes, GitHubOptions Options) Parts(
-        bool enabled, string[] repositories, bool triage)
+        bool enabled, string[] repositories, bool triage, string dayField = "Planned for")
     {
         var github = new FakeGitHub();
         var audit = new FakeAudit();
@@ -638,6 +735,7 @@ public sealed class PlannerServiceTests
                 Assignees = ["flo"],
                 Repositories = [.. repositories],
                 Triage = new GitHubPlannerTriageOptions { Enabled = triage },
+                DayField = dayField,
             },
         };
 
@@ -652,7 +750,7 @@ public sealed class PlannerServiceTests
         "Platform planning",
         "https://github.com/orgs/acme/projects/3",
         [
-            new BoardField("F_status", "Status", [new("s1", "Inbox"), new("s2", "In review")]),
+            new BoardField("F_status", "Status", [new("s1", "Inbox"), new("s2", "In review"), new("s3", "Backlog")]),
             new BoardField("F_prio", "Priority", [new("p0", "P0"), new("p1", "P1")]),
         ],
         [
@@ -660,7 +758,8 @@ public sealed class PlannerServiceTests
             Item("PVTI_240", "acme/web", 240, priority: null, labels: [new("today", Given.Now.AddDays(-2))]),
             Item("PVTI_57", "acme/scraper", 57, priority: "P1", labels: [new("not today", Given.Now.AddDays(-1))]),
         ],
-        ["Task", "Bug"]);
+        ["Task", "Bug"],
+        [new BoardDateField("F_planned", "Planned for")]);
 
     private static BoardItem Item(string id, string repository, int number, string? priority, BoardLabel[]? labels = null, BoardPullRequest[]? pulls = null)
     {
@@ -738,6 +837,9 @@ public sealed class PlannerServiceTests
 
         public Task<GitHubResult<bool>> SetProjectFieldAsync(string projectId, string itemId, string fieldId, string optionId, CancellationToken ct) =>
             Write($"field {projectId} {itemId} {fieldId} {optionId}");
+
+        public Task<GitHubResult<bool>> SetProjectDateAsync(string projectId, string itemId, string fieldId, DateOnly? date, CancellationToken ct) =>
+            Write(date is { } day ? $"date {projectId} {itemId} {fieldId} {day:yyyy-MM-dd}" : $"undate {projectId} {itemId} {fieldId}");
 
         public Task<GitHubResult<bool>> CloseIssueAsync(string issueId, bool notPlanned, CancellationToken ct) =>
             Write($"close {issueId} {(notPlanned ? "NOT_PLANNED" : "COMPLETED")}");

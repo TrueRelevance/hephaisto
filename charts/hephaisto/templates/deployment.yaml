@@ -590,6 +590,14 @@ spec:
             - name: CodeFix__ContextRepositoryRef
               value: {{ .contextRepository.ref | quote }}
             # The authorization list, evaluated in-process by the eligibility predicate.
+            {{- with .dayField }}
+            - name: GitHub__Planner__DayField
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .backlogStatus }}
+            - name: GitHub__Planner__BacklogStatus
+              value: {{ . | quote }}
+            {{- end }}
             {{- range $i, $r := .repositories }}
             - name: CodeFix__Repositories__{{ $i }}__Workload
               value: {{ $r.workload | quote }}

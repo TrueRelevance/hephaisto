@@ -925,6 +925,13 @@ github:
     #   - example/shop
     repositories: []
 
+    # The board's date field "tomorrow" and "next week" plan an issue by. On that day the issue
+    # is planned for today; a day that passed with it open makes it left over. Create a field of
+    # type Date with this name on the project; without one, only today / not today work.
+    dayField: "Planned for"
+    # The Status option "backlog" sets.
+    backlogStatus: "Backlog"
+
   # Who may answer a plan ON THE ISSUE, by account NUMBER - a login can be renamed and taken by
   # somebody else. `gh api users/<login> --jq .id`.
   #

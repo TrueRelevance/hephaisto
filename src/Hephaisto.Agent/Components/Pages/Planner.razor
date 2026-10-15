@@ -49,6 +49,8 @@ else
                     @onclick="() => Go(ViewAll)">all open @_snapshot.Entries.Count</button>
             <button type="button" class="@Seg(ViewNew)" aria-pressed="@Pressed(ViewName == ViewNew)" data-testid="planner-view-new"
                     @onclick="() => Go(ViewNew)">new issue</button>
+            <button type="button" class="@Seg(ViewSearch)" aria-pressed="@Pressed(ViewName == ViewSearch)" data-testid="planner-view-search"
+                    @onclick="() => Go(ViewSearch)">search</button>
         </span>
 
         @if (ViewName == ViewPlan)
@@ -181,7 +183,8 @@ else
                                          OnDay="day => DayAsync(id, day, thenNext: day != PlannerDay.Undecided)"
                                          OnClose="notPlanned => CloseAsync(id, notPlanned, thenNext: true)"
                                          OnField="choice => FieldAsync(id, choice.Field, choice.Option)"
-                                         OnAssign="choice => AssignAsync(id, choice.Login, choice.Assign)" />
+                                         OnAssign="choice => AssignAsync(id, choice.Login, choice.Assign)"
+                                         OnSchedule="when => PlanLaterAsync(id, when, thenNext: true)" />
                     }
                     else
                     {
@@ -271,50 +274,19 @@ else
                 <div class="hp-stat" data-testid="planner-stat" data-stat="leftover"><span class="hp-stat-label">left over</span><span class="hp-stat-value">@LeftOver.Count</span><span class="hp-muted">from an earlier day</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="done"><span class="hp-stat-label">done today</span><span class="hp-stat-value">@_snapshot.ClosedToday.Count</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="away"><span class="hp-stat-label">put away</span><span class="hp-stat-value">@PutAway.Count</span><span class="hp-muted">come back tomorrow</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="later"><span class="hp-stat-label">later</span><span class="hp-stat-value">@Later.Count</span><span class="hp-muted">tomorrow and on</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="undecided"><span class="hp-stat-label">not decided</span><span class="hp-stat-value">@_snapshot.Entries.Count(e => e.Day == PlannerDay.Undecided)</span><span class="hp-muted"><a href="planner">go on planning</a></span></div>
             </div>
 
-            @if (!string.IsNullOrEmpty(Detail))
-            {
-                var detailEntry = _snapshot.Entry(Detail);
-                var detailClosed = detailEntry is null && _closed.TryGetValue(Detail, out var wasClosed) ? wasClosed : default;
-                var detailShown = detailEntry ?? detailClosed.Entry ?? (_seen.TryGetValue(Detail, out var seen) ? seen : null);
-                var detailId = Detail;
-
-                <section class="hp-section hp-planner-detail" data-testid="planner-detail" data-item="@detailId">
-                    <div class="hp-planner-walk">
-                        <h2>issue details</h2>
-                        <a href="planner?view=today" data-testid="planner-detail-close">back to the list</a>
-                    </div>
-                    @if (detailShown is null)
-                    {
-                        <p class="hp-empty" data-testid="planner-detail-gone">This item is not among the board's open issues.</p>
-                    }
-                    else
-                    {
-                        <div class="hp-planner">
-                            <PlannerItemCard @key="detailId" Entry="detailShown" Board="board" Open="@(detailEntry is not null)" ClosedHow="@detailClosed.How"
-                                             Parent="@ParentOf(detailShown)" Assignees="_snapshot.Assignees" BotLogin="@_snapshot.BotLogin" Now="_now"
-                                             Busy="_busy" LockedBecause="@LockedBecause"
-                                             DescriptionOpen="true" OnToggleDescription="ToggleDescriptionAsync"
-                                             OnDay="day => DayAsync(detailId, day, thenNext: false)"
-                                             OnClose="notPlanned => CloseAsync(detailId, notPlanned, thenNext: false)"
-                                             OnField="choice => FieldAsync(detailId, choice.Field, choice.Option)"
-                                             OnAssign="choice => AssignAsync(detailId, choice.Login, choice.Assign)" />
-                            <PlannerClaudePanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
-                                                Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
-                        </div>
-                    }
-                </section>
-            }
+            @DetailSection(board, "planner?view=today")
 
             @if (LeftOver.Count > 0)
             {
                 <section class="hp-section hp-planner-leftover" data-testid="planner-leftover">
                     <h2>left over from an earlier day <span class="hp-count">@LeftOver.Count</span></h2>
                     <p class="hp-muted">
-                        Planned on an earlier day and still open. Keep each for today, put it away until tomorrow, or take it off
-                        the plan; closing it is here too.
+                        Planned on an earlier day and still open. Keep each for today, put it away for today, plan it for
+                        tomorrow or next week, or put it back into the backlog; closing it is here too.
                     </p>
                     <table class="hp-table">
                         <tbody>
@@ -329,7 +301,9 @@ else
                                     <td class="c-act">
                                         <button type="button" class="hp-submit" data-testid="planner-leftover-today" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Today, false)">today</button>
                                         <button type="button" data-testid="planner-leftover-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
-                                        <button type="button" data-testid="planner-leftover-off" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Undecided, false)">off the plan</button>
+                                        <button type="button" data-testid="planner-leftover-tomorrow" disabled="@RowLocked" @onclick="() => PlanLaterAsync(item.ItemId, PlannerSchedule.Tomorrow, false)">tomorrow</button>
+                                        <button type="button" data-testid="planner-leftover-week" disabled="@RowLocked" @onclick="() => PlanLaterAsync(item.ItemId, PlannerSchedule.NextWeek, false)">next week</button>
+                                        <button type="button" data-testid="planner-leftover-backlog" disabled="@RowLocked" @onclick="() => PlanLaterAsync(item.ItemId, PlannerSchedule.Backlog, false)">backlog</button>
                                         <button type="button" data-testid="planner-leftover-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
                                         <a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-leftover-detail">details</a>
                                     </td>
@@ -433,6 +407,82 @@ else
                     </table>
                 }
             </section>
+
+            @if (Later.Count > 0)
+            {
+                <section class="hp-section" data-testid="planner-later">
+                    <h2>planned for a later day <span class="hp-count">@Later.Count</span></h2>
+                    <table class="hp-table">
+                        <tbody>
+                            @foreach (var e in Later)
+                            {
+                                <tr @key="e.Item.ItemId" data-testid="planner-later-row" data-item="@e.Item.ItemId" data-reference="@e.Item.Reference">
+                                    <td class="c-prio"><span class="mono">@(e.Item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                    <td>@IssueCell(e)</td>
+                                    <td class="c-time" data-testid="planner-later-on">@(e.PlannedFor is { } on ? on.ToString("dddd d MMMM", CultureInfo.InvariantCulture) : "--")</td>
+                                    <td class="c-act"><a class="hp-planner-details" href="@DetailHref(e)">details</a> <button type="button" data-testid="planner-later-today" disabled="@RowLocked" @onclick="() => DayAsync(e.Item.ItemId, PlannerDay.Today, false)">today</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+        }
+        else if (ViewName == ViewSearch)
+        {
+            <div class="hp-filters hp-planner-search" data-testid="planner-search">
+                <input type="search" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" placeholder="words of a title, a description, a label, or #number"
+                       data-testid="planner-search-input" />
+                <span class="hp-seg" data-testid="planner-search-state">
+                    @foreach (var state in new[] { SearchOpen, SearchClosed, SearchAll })
+                    {
+                        <button type="button" class="@(_state == state ? "on" : null)" aria-pressed="@Pressed(_state == state)" data-testid="planner-search-state-option" data-state="@state"
+                                @onclick="() => _state = state">@state</button>
+                    }
+                </span>
+                <span class="hp-muted" data-testid="planner-search-count">@SearchHits.Count found</span>
+            </div>
+
+            @DetailSection(board, SearchHref(null))
+
+            @if (SearchHits.Count == 0)
+            {
+                <p class="hp-empty" data-testid="planner-search-empty">No issue of the board matches.</p>
+            }
+            else
+            {
+                <table class="hp-table">
+                    <tbody>
+                        @foreach (var hit in SearchHits)
+                        {
+                            <tr @key="hit.ItemId" class="@(hit.Open ? null : "is-done")" data-testid="planner-search-row" data-item="@hit.ItemId" data-reference="@hit.Reference" data-open="@(hit.Open ? "true" : "false")">
+                                <td class="c-prio"><span class="mono">@(hit.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                <td>
+                                    <a class="hp-planner-row-title" href="@SearchHref(hit.ItemId)" data-testid="planner-row-title">@hit.Title</a>
+                                    <span class="hp-planner-row-ref hp-planner-ids">
+                                        <span class="mono">@hit.Reference</span>
+                                        @if (hit.Type is { Length: > 0 } type)
+                                        {
+                                            <span class="hp-chip">@type</span>
+                                        }
+                                    </span>
+                                </td>
+                                <td class="c-time">@(hit.Field(PlannerQueue.StatusField) ?? "--")</td>
+                                <td class="c-act">
+                                    @if (hit.Open)
+                                    {
+                                        <span class="hp-state st-investigating"><span class="glyph">~</span> open</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="hp-state st-closed"><span class="glyph">x</span> closed @(hit.ClosedAt is { } closedAt ? Display.Ago(closedAt, _now) : null)</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
         }
         else if (ViewName == ViewNew)
         {
@@ -516,6 +566,22 @@ else
                         }
                     </div>
                 }
+
+                <div class="hp-field" data-testid="planner-new-day">
+                    <span class="hp-label">day</span>
+                    @foreach (var (value, word) in NewDays)
+                    {
+                        var on = _newDay == value;
+                        <button type="button" class="@(on ? "hp-thumb on" : null)" aria-pressed="@Pressed(on)" data-testid="planner-new-day-option" data-day="@value"
+                                data-current="@(on ? "true" : "false")" disabled="@_busy" @onclick="() => _newDay = value">
+                            @if (on)
+                            {
+                                <span class="glyph">*</span>
+                            }
+                            @word
+                        </button>
+                    }
+                </div>
 
                 <div class="hp-cf-decide">
                     @if (Triage.Enabled)
@@ -683,6 +749,15 @@ else
     private const string ViewToday = "today";
     private const string ViewAll = "all";
     private const string ViewNew = "new";
+    private const string ViewSearch = "search";
+
+    private const string SearchOpen = "open";
+    private const string SearchClosed = "closed";
+    private const string SearchAll = "all";
+
+    /// <summary>The day a new issue is given: none, or one of the words the API takes.</summary>
+    private static readonly (string Value, string Word)[] NewDays =
+        [("", "none"), ("today", "today"), ("not today", "not today"), ("tomorrow", "tomorrow"), ("next week", "next week"), ("backlog", "backlog")];
 
     private const string WalkAll = "all";
     private const string WalkTop = "top";
@@ -776,7 +851,28 @@ else
             ? picked
             : _snapshot.NewIssueRepositories.FirstOrDefault();
 
-    private string ViewName => View is ViewToday or ViewAll or ViewNew ? View : ViewPlan;
+    private string ViewName => View is ViewToday or ViewAll or ViewNew or ViewSearch ? View : ViewPlan;
+
+    /// <summary>What the search view looks for: <c>?q=</c>, so a search can be linked.</summary>
+    [SupplyParameterFromQuery(Name = "q")]
+    public string? Query { get; set; }
+
+    /// <summary><c>open</c>, <c>closed</c> or <c>all</c>.</summary>
+    [SupplyParameterFromQuery(Name = "state")]
+    public string? StateParameter { get; set; }
+
+    private string _query = string.Empty;
+    private string _state = SearchOpen;
+    private string _newDay = string.Empty;
+
+    private IReadOnlyList<BoardItem> SearchHits =>
+        Service.Search(_query, _state switch { SearchOpen => true, SearchClosed => false, _ => null });
+
+    private string SearchHref(string? itemId) =>
+        $"planner?view=search&q={Uri.EscapeDataString(_query)}&state={_state}" + (itemId is null ? string.Empty : $"&detail={Uri.EscapeDataString(itemId)}");
+
+    /// <summary>Planned for a day after today, by the board's day field: the soonest first.</summary>
+    private IReadOnlyList<PlannerEntry> Later => [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Later).OrderBy(e => e.PlannedFor)];
 
     private IReadOnlyList<PlannerEntry> ForToday =>
         [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Today).OrderBy(e => _snapshot.Board is { } b ? PlannerQueue.PriorityRank(b, e.Item) : 0)];
@@ -795,6 +891,7 @@ else
         ViewToday => Day,
         ViewAll => $"{_snapshot.Entries.Count} open",
         ViewNew => "new issue",
+        ViewSearch => "search",
         _ when _order.Count == 0 => Day,
         _ => $"{Day} · {_index + 1} of {_order.Count}",
     };
@@ -813,6 +910,8 @@ else
     {
         _cts = new CancellationTokenSource();
         _walk = WalkOf(WalkParameter);
+        _query = Query ?? string.Empty;
+        _state = StateParameter is SearchClosed or SearchAll ? StateParameter : SearchOpen;
         _viewer = await ConsoleViewer.ResolveAsync(AuthProvider, Authorization);
 
         await LoadAsync(refresh: false);
@@ -997,6 +1096,61 @@ else
 
     private Task DayAsync(string itemId, PlannerDay day, bool thenNext) =>
         ActAsync(itemId, (actor, ct) => Service.SetDayAsync(itemId, day, actor, ct), thenNext);
+
+    private Task PlanLaterAsync(string itemId, PlannerSchedule when, bool thenNext) =>
+        ActAsync(itemId, (actor, ct) => Service.ScheduleAsync(itemId, when, actor, ct), thenNext);
+
+    /// <summary>
+    /// One issue in detail, for the today view and the search: the card with every button for an
+    /// open issue (a closed one's card offers nothing), its comments, and what Claude said.
+    /// </summary>
+    private RenderFragment DetailSection(Board board, string backHref)
+    {
+        if (string.IsNullOrEmpty(Detail))
+        {
+            return _ => { };
+        }
+
+        var detailId = Detail;
+        var detailEntry = _snapshot.Entry(detailId);
+        var detailClosed = detailEntry is null && _closed.TryGetValue(detailId, out var wasClosed) ? wasClosed : default;
+        var detailShown = detailEntry ?? detailClosed.Entry
+            ?? (Service.BoardItem(detailId) is { Open: false } closedItem
+                ? new PlannerEntry(closedItem, PlannerReason.None, [], PlannerDay.Undecided, false, null, closedItem.UpdatedAt)
+                : _seen.TryGetValue(detailId, out var seen) ? seen : null);
+        var closedHow = detailClosed.How ?? (detailShown is { Item.Open: false } ? "closed" : null);
+
+        return @<section class="hp-section hp-planner-detail" data-testid="planner-detail" data-item="@detailId">
+            <div class="hp-planner-walk">
+                <h2>issue details</h2>
+                <a href="@backHref" data-testid="planner-detail-close">back to the list</a>
+            </div>
+            @if (detailShown is null)
+            {
+                <p class="hp-empty" data-testid="planner-detail-gone">This item is not on the board.</p>
+            }
+            else
+            {
+                <div class="hp-planner">
+                    <div>
+                        <PlannerItemCard @key="detailId" Entry="detailShown" Board="board" Open="@(detailEntry is not null)" ClosedHow="@closedHow"
+                                         Parent="@ParentOf(detailShown)" Assignees="_snapshot.Assignees" BotLogin="@_snapshot.BotLogin" Now="_now"
+                                         Busy="_busy" LockedBecause="@LockedBecause"
+                                         DescriptionOpen="true" OnToggleDescription="ToggleDescriptionAsync"
+                                         OnDay="day => DayAsync(detailId, day, thenNext: false)"
+                                         OnClose="notPlanned => CloseAsync(detailId, notPlanned, thenNext: false)"
+                                         OnField="choice => FieldAsync(detailId, choice.Field, choice.Option)"
+                                         OnAssign="choice => AssignAsync(detailId, choice.Login, choice.Assign)"
+                                         OnSchedule="when => PlanLaterAsync(detailId, when, thenNext: false)" />
+                        <PlannerCommentsPanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
+                                              Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
+                    </div>
+                    <PlannerClaudePanel Repository="@detailShown.Item.Repository" Number="detailShown.Item.Number"
+                                        Actor="@(_viewer.Actor(_actor) ?? string.Empty)" LockedBecause="@LockedBecause" />
+                </div>
+            }
+        </section>;
+    }
 
     /// <summary>
     /// Closing an issue is the end of deciding about it, so the walk goes on - as it does after
@@ -1209,6 +1363,17 @@ else
                 _newFields.Clear();
 
                 var text = $"{result.Message}.";
+
+                // Its day, right after: a refusal there leaves the issue open and says so.
+                if (PlannerEndpoints.DayChoice(_newDay) is { } choice)
+                {
+                    var planned = choice.Day is { } day
+                        ? await Service.SetDayAsync(opened.ItemId, day, actor, _cts?.Token ?? CancellationToken.None)
+                        : await Service.ScheduleAsync(opened.ItemId, choice.Schedule!.Value, actor, _cts?.Token ?? CancellationToken.None);
+
+                    _snapshot = planned.Snapshot.State != PlannerState.Off ? planned.Snapshot : _snapshot;
+                    text += planned.Done ? $" Day: {planned.Message}." : $" Its day was not set: {planned.Message}.";
+                }
 
                 if (_newTriage && Triage.Enabled)
                 {

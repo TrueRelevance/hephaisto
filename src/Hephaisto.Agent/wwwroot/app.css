@@ -1889,6 +1889,42 @@ details > summary {
     margin-right: 0.4rem;
 }
 
+/* The later days beside today and not today: smaller, after a gap - a decision further off. */
+.hp-planner-later {
+    display: inline-flex;
+    gap: 0.3rem;
+    margin-left: 0.6rem;
+}
+
+/* The comments of an issue under its card, and the box to write one. */
+.hp-planner-comments {
+    margin-top: 1rem;
+}
+
+.hp-planner-comments h3 {
+    margin: 0 0 0.5rem;
+}
+
+.hp-planner-comment {
+    margin-bottom: 0.7rem;
+}
+
+.hp-planner-comment .hp-planner-body {
+    max-height: 16rem;
+    font-size: var(--text-md);
+}
+
+.hp-planner-comment-new textarea {
+    width: 100%;
+    font-family: inherit;
+    margin-bottom: 0.4rem;
+}
+
+.hp-planner-search input[type="search"] {
+    flex: 1;
+    min-width: 16rem;
+}
+
 /* A row of the today view reads by its title: large and in the reading face, the reference,
    type and reason small and faint beneath it. */
 .hp-planner-row-title {

@@ -35,7 +35,8 @@ public sealed class PlannerQueueTests
         DateTimeOffset? updatedAt = null,
         DateTimeOffset? closedAt = null,
         BoardLabel[]? labels = null,
-        BoardPullRequest[]? pullRequests = null)
+        BoardPullRequest[]? pullRequests = null,
+        DateOnly? plannedFor = null)
     {
         var fields = new Dictionary<string, string>();
 
@@ -46,7 +47,8 @@ public sealed class PlannerQueueTests
         return new BoardItem(
             $"PVTI_{number}", $"I_{number}", "acme/api", number, $"Issue {number}", Url(number), "Task", "reporter",
             open, Now.AddDays(-20), updatedAt ?? Now.AddDays(-1), closedAt, parent, subIssues, subIssuesDone,
-            fields, labels ?? [], [], pullRequests ?? []);
+            fields, labels ?? [], [], pullRequests ?? [],
+            Dates: plannedFor is { } day ? new Dictionary<string, DateOnly> { ["Planned for"] = day } : null);
     }
 
     private static string Url(int number) => $"https://github.com/acme/api/issues/{number}";
@@ -170,6 +172,54 @@ public sealed class PlannerQueueTests
         Only(Item(1, labels: [new("today", Now.AddHours(-3)), new("not today", Now.AddHours(-1))])).Day.Should().Be(PlannerDay.NotToday);
         Only(Item(1, labels: [new("today", Now.AddHours(-1)), new("not today", Now.AddHours(-3))])).Day.Should().Be(PlannerDay.Today);
         Only(Item(1, labels: [new("today", Now.AddDays(-2)), new("not today", Now.AddDays(-1))])).Day.Should().Be(PlannerDay.Today);
+    }
+
+    private static readonly PlannerRules ByDay = Rules with { DayField = "planned FOR" };
+
+    private static PlannerEntry Planned(BoardItem item) => PlannerQueue.Build(BoardOf(item), ByDay, Now).Should().ContainSingle().Subject;
+
+    [Fact]
+    public void A_day_on_the_board_is_today_on_that_day_left_over_after_it_and_later_before_it()
+    {
+        var today = DateOnly.FromDateTime(Now.UtcDateTime);
+
+        var on = Planned(Item(1, plannedFor: today));
+        on.Day.Should().Be(PlannerDay.Today);
+        on.CarriedOver.Should().BeFalse();
+        on.PlannedFor.Should().Be(today);
+
+        var passed = Planned(Item(1, plannedFor: today.AddDays(-2)));
+        passed.Day.Should().Be(PlannerDay.Today);
+        passed.CarriedOver.Should().BeTrue("a day that passed with the issue open makes it left over");
+        passed.DayAt.Should().Be(new DateTimeOffset(2026, 10, 11, 0, 0, 0, TimeSpan.Zero));
+
+        var later = Planned(Item(1, plannedFor: today.AddDays(3)));
+        later.Day.Should().Be(PlannerDay.Later);
+        later.PlannedFor.Should().Be(today.AddDays(3));
+    }
+
+    [Fact]
+    public void A_label_set_today_wins_over_the_day_on_the_board_and_without_the_field_only_labels_count()
+    {
+        var today = DateOnly.FromDateTime(Now.UtcDateTime);
+
+        Planned(Item(1, plannedFor: today, labels: [new("not today", Now.AddHours(-1))])).Day.Should().Be(PlannerDay.NotToday);
+        Planned(Item(1, plannedFor: today.AddDays(4), labels: [new("today", Now.AddHours(-1))])).Day.Should().Be(PlannerDay.Today);
+        Only(Item(1, plannedFor: today)).Day.Should().Be(PlannerDay.Undecided, "the rules name no day field");
+    }
+
+    [Theory]
+    [InlineData("2026-10-13", PlannerSchedule.Tomorrow, "2026-10-14")]
+    [InlineData("2026-10-13", PlannerSchedule.NextWeek, "2026-10-19")]
+    [InlineData("2026-10-19", PlannerSchedule.NextWeek, "2026-10-26")]
+    [InlineData("2026-10-18", PlannerSchedule.NextWeek, "2026-10-19")]
+    [InlineData("2026-10-17", PlannerSchedule.NextWeek, "2026-10-19")]
+    public void Tomorrow_is_the_next_day_and_next_week_the_next_monday(string from, PlannerSchedule schedule, string expected)
+    {
+        var now = new DateTimeOffset(DateOnly.Parse(from, System.Globalization.CultureInfo.InvariantCulture).ToDateTime(new TimeOnly(23, 30)), TimeSpan.Zero);
+
+        PlannerQueue.DayFor(schedule, now).Should().Be(DateOnly.Parse(expected, System.Globalization.CultureInfo.InvariantCulture));
+        PlannerQueue.DayFor(PlannerSchedule.Backlog, now).Should().BeNull();
     }
 
     [Fact]

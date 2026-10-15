@@ -31,6 +31,7 @@ public sealed record PlannerView(
 /// <param name="Labels">Every label of the issue, the two of the day among them.</param>
 /// <param name="CreatedAt">When the issue was opened: what the newest walks go by.</param>
 /// <param name="DayAt">When the label of <paramref name="Day"/> was put on; with <paramref name="CarriedOver"/>, the earlier day it was planned on.</param>
+/// <param name="PlannedFor">The day in the board's day field, when there is one.</param>
 public sealed record PlannerItemView(
     string ItemId,
     string Repository,
@@ -53,7 +54,8 @@ public sealed record PlannerItemView(
     int Comments,
     IReadOnlyList<string> Labels,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? DayAt);
+    DateTimeOffset? DayAt,
+    DateOnly? PlannedFor);
 
 public sealed record PlannerClosedView(string ItemId, string Repository, int Number, string Title, string Url, DateTimeOffset? ClosedAt);
 
@@ -72,8 +74,21 @@ public sealed record PlannerActionResponse(PlannerActionOutcome Outcome, string 
 
 /// <param name="Fields">Field name to option name, for the board's single-select fields.</param>
 /// <param name="Triage">Ask Claude to label and analyse the issue once it is open.</param>
+/// <param name="Day">What the new issue is planned for: <c>today</c>, <c>not today</c>, <c>tomorrow</c>, <c>next week</c>, <c>backlog</c>, or nothing.</param>
 public sealed record PlannerNewIssueRequest(
-    string? Repository, string? Title, string? Body, string? Type, IReadOnlyDictionary<string, string>? Fields, bool Triage, string? DecidedBy);
+    string? Repository, string? Title, string? Body, string? Type, IReadOnlyDictionary<string, string>? Fields, bool Triage, string? DecidedBy, string? Day = null);
+
+/// <param name="When"><c>tomorrow</c>, <c>next week</c> or <c>backlog</c>.</param>
+public sealed record PlannerScheduleRequest(string? When, string? DecidedBy);
+
+public sealed record PlannerCommentRequest(string? Repository, int Number, string? Body, string? DecidedBy);
+
+public sealed record PlannerCommentView(long Id, string Author, DateTimeOffset CreatedAt, string Body, string Url);
+
+public sealed record PlannerCommentsView(string Repository, int Number, IReadOnlyList<PlannerCommentView> Comments);
+
+/// <param name="Open">True for an open issue, false for a closed one.</param>
+public sealed record PlannerSearchHit(string ItemId, string Repository, int Number, string Title, string Url, string? Type, bool Open, DateTimeOffset CreatedAt, DateTimeOffset? ClosedAt, IReadOnlyDictionary<string, string> Fields, IReadOnlyList<string> Labels);
 
 /// <param name="Triage">What asking Claude answered, when it was asked.</param>
 public sealed record PlannerNewIssueResponse(PlannerActionOutcome Outcome, string Message, PlannerItemView? Item, string? Url, TriageStartResponse? Triage);
@@ -132,6 +147,32 @@ public static class PlannerEndpoints
             .WithName("SetPlannerAssignee")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
+        item.MapPost("/schedule", (string itemId, PlannerScheduleRequest body, HttpContext http, PlannerService planner, CancellationToken ct) =>
+                Schedule(body.When) is { } when
+                    ? ActAsync(itemId, body.DecidedBy, http, actor => planner.ScheduleAsync(itemId, when, actor, ct))
+                    : Task.FromResult<Results<Ok<PlannerActionResponse>, NotFound<PlannerActionResponse>, Conflict<PlannerActionResponse>, ValidationProblem>>(
+                        TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["when"] = ["when is 'tomorrow', 'next week' or 'backlog'."] })))
+            .WithName("SchedulePlannerItem")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        app.MapGet("/api/planner/search", (string? q, string? state, PlannerService planner) =>
+                TypedResults.Ok(planner.Search(q, state?.Trim().ToLowerInvariant() switch { "open" => true, "closed" => false, _ => null })
+                    .Select(i => new PlannerSearchHit(i.ItemId, i.Repository, i.Number, i.Title, i.Url, i.Type, i.Open, i.CreatedAt, i.ClosedAt, i.Fields, [.. i.Labels.Select(l => l.Name)]))
+                    .ToList()))
+            .WithName("SearchPlanner");
+
+        app.MapGet("/api/planner/comments", async Task<Results<Ok<PlannerCommentsView>, NotFound, ValidationProblem>> (string? repository, int? number, PlannerService planner, CancellationToken ct) =>
+                string.IsNullOrWhiteSpace(repository) || number is not > 0
+                    ? Missing("repository", "number")
+                    : await planner.CommentsAsync(repository.Trim(), number.Value, ct) is { } comments
+                        ? TypedResults.Ok(new PlannerCommentsView(repository.Trim(), number.Value, [.. comments.Select(View)]))
+                        : TypedResults.NotFound())
+            .WithName("ReadPlannerComments");
+
+        app.MapPost("/api/planner/comments", CommentAsync)
+            .WithName("CommentOnPlannerIssue")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
         app.MapPost("/api/planner/issues", CreateAsync)
             .WithName("CreatePlannerIssue")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
@@ -147,6 +188,51 @@ public static class PlannerEndpoints
 
     /// <summary>The line a person pastes into Claude Code to work on an issue.</summary>
     public static string ExecuteLine(string repository, int number) => $"Execute github issue {repository}#{number}";
+
+    public static PlannerCommentView View(GitHub.GitHubComment c) => new(c.Id, c.Author.Login, c.CreatedAt, c.Body, c.Url);
+
+    /// <summary>A day word of the API: the day itself, or a later one. Null for none or an unknown word.</summary>
+    public static (PlannerDay? Day, PlannerSchedule? Schedule)? DayChoice(string? word) => word?.Trim().ToLowerInvariant() switch
+    {
+        null or "" or "none" => null,
+        "today" => (PlannerDay.Today, null),
+        "not today" or "not-today" => (PlannerDay.NotToday, null),
+        _ when Schedule(word) is { } s => (null, s),
+        _ => (null, null),
+    };
+
+    private static PlannerSchedule? Schedule(string? word) => word?.Trim().ToLowerInvariant() switch
+    {
+        "tomorrow" or "next day" or "next-day" => PlannerSchedule.Tomorrow,
+        "next week" or "next-week" => PlannerSchedule.NextWeek,
+        "backlog" => PlannerSchedule.Backlog,
+        _ => null,
+    };
+
+    private static async Task<Results<Ok<PlannerCommentView>, NotFound<string>, Conflict<string>, ValidationProblem>> CommentAsync(
+        PlannerCommentRequest body, HttpContext http, PlannerService planner, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(body.Repository) || body.Number <= 0 || string.IsNullOrWhiteSpace(body.Body))
+        {
+            return Missing("repository", "number", "body");
+        }
+
+        var actor = ActorResolution.Resolve(http.User, body.DecidedBy);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return NobodyNamed();
+        }
+
+        var (outcome, message, comment) = await planner.CommentAsync(body.Repository.Trim(), body.Number, body.Body, actor, ct);
+
+        return outcome switch
+        {
+            PlannerActionOutcome.Done => TypedResults.Ok(View(comment!)),
+            PlannerActionOutcome.NotFound => TypedResults.NotFound(message),
+            _ => TypedResults.Conflict(message),
+        };
+    }
 
     public static TriageRunView View(TriageRun run) =>
         new(run.Repository, run.Number, run.State, run.RequestedBy, run.StartedAt, run.EndedAt, run.Message, run.JobName);
@@ -168,8 +254,23 @@ public static class PlannerEndpoints
             return NobodyNamed();
         }
 
+        if (DayChoice(body.Day) is { Day: null, Schedule: null })
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["day"] = ["day is 'today', 'not today', 'tomorrow', 'next week', 'backlog' or empty."] });
+        }
+
         var result = await planner.OpenIssueAsync(
             new PlannerNewIssue(body.Repository, body.Title, body.Body, body.Type, body.Fields ?? new Dictionary<string, string>()), actor, ct);
+
+        // Its day, right after: a refusal there leaves the issue open and says so.
+        if (result.ItemId is { } openedId && DayChoice(body.Day) is { } choice)
+        {
+            var planned = choice.Day is { } day
+                ? await planner.SetDayAsync(openedId, day, actor, ct)
+                : await planner.ScheduleAsync(openedId, choice.Schedule!.Value, actor, ct);
+
+            result = result with { Message = $"{result.Message}; {planned.Message}", Snapshot = planned.Snapshot, Outcome = planned.Done ? result.Outcome : PlannerActionOutcome.Refused };
+        }
 
         TriageStartResponse? asked = null;
 
@@ -278,7 +379,8 @@ public static class PlannerEndpoints
         entry.Item.Comments,
         [.. entry.Item.Labels.Select(l => l.Name)],
         entry.Item.CreatedAt,
-        entry.DayAt);
+        entry.DayAt,
+        entry.PlannedFor);
 
     private static PlannerDay? Day(string? word) => word?.Trim().ToLowerInvariant() switch
     {

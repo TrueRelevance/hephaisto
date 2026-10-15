@@ -131,7 +131,7 @@ public sealed record GitHubAssignment(GitHubAccount Assignee, string? Actor, Dat
 
 /// <summary>
 /// What the agent asks of GitHub. Eleven calls for issues as work, none of which deletes or
-/// closes; and ten for the planner (v0.15.0), each of whose writes is one person's click in the
+/// closes; and eleven for the planner (v0.15.0), each of whose writes is one person's click in the
 /// console - there, and only there, an issue is opened or closed.
 /// </summary>
 public interface IGitHubClient
@@ -213,6 +213,9 @@ public interface IGitHubClient
 
     /// <summary>Sets one single-select field of one project item. Ids, all four: GitHub takes no names here.</summary>
     Task<GitHubResult<bool>> SetProjectFieldAsync(string projectId, string itemId, string fieldId, string optionId, CancellationToken ct);
+
+    /// <summary>Sets a date field of one project item to a day, or empties it with null.</summary>
+    Task<GitHubResult<bool>> SetProjectDateAsync(string projectId, string itemId, string fieldId, DateOnly? date, CancellationToken ct);
 
     /// <summary>Closes an issue, by its node id, as completed or as not planned.</summary>
     Task<GitHubResult<bool>> CloseIssueAsync(string issueId, bool notPlanned, CancellationToken ct);

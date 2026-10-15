@@ -74,7 +74,7 @@ public sealed class GitHubClientTests
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
                 && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(f => System.Text.RegularExpressions.Regex.IsMatch(
-                File.ReadAllText(f), @"\.(CloseIssueAsync|RemoveLabelAsync|RemoveAssigneeAsync|SetProjectFieldAsync|AddLabelAsync|AddAssigneeAsync|CreateIssueAsync|AddProjectItemAsync)\("))
+                File.ReadAllText(f), @"\.(CloseIssueAsync|RemoveLabelAsync|RemoveAssigneeAsync|SetProjectFieldAsync|AddLabelAsync|AddAssigneeAsync|CreateIssueAsync|AddProjectItemAsync|SetProjectDateAsync)\("))
             .Select(f => Path.GetFileName(f))
             .ToList();
 

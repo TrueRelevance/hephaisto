@@ -28,6 +28,9 @@ const ITEMS: Record<string, string> = {
   carried: 'acme/scraper#57',
   leftoverYesterday: 'acme/web#250',
   leftoverOlder: 'acme/api#452',
+  later: 'acme/infra#31',
+  plannedToday: 'acme/billing#92',
+  plannedLater: 'acme/web#251',
   closeDone: 'acme/api#431',
   closeNotPlanned: 'acme/web#240',
   closeFromToday: 'acme/api#440',
@@ -45,7 +48,7 @@ type Item = {
   reason: string; emptyFields: string[]; day: string; carriedOver: boolean;
   fields: Record<string, string>; assignees: string[]; parentUrl: string | null;
   subIssues: number; subIssuesDone: number; pullRequests: Pull[];
-  body: string | null; comments: number; labels: string[]; createdAt: string; dayAt: string | null;
+  body: string | null; comments: number; labels: string[]; createdAt: string; dayAt: string | null; plannedFor: string | null;
 };
 
 /** The newest walks' order: by when the issue was opened, newest first, then by reference. */
@@ -72,7 +75,7 @@ async function standInIssue(request: APIRequestContext, reference: string): Prom
 const FAKE_LABEL = 'bug';
 
 /** What the other side says about one issue. */
-type Truth = { state: string; closedAs: string | null; fields: Record<string, string>; labels: string[]; assignees: string[] };
+type Truth = { state: string; closedAs: string | null; fields: Record<string, string>; labels: string[]; assignees: string[]; dates?: Record<string, string> };
 
 const ref = (i: { repository: string; number: number }) => `${i.repository}#${i.number}`;
 
@@ -98,7 +101,7 @@ async function truth(request: APIRequestContext, reference: string): Promise<Tru
     expect(res.ok()).toBeTruthy();
     const found = (await res.json()).items.find((i: { repository: string; number: number }) => ref(i) === reference);
     expect(found, `${reference} is not on the stand-in's board`).toBeTruthy();
-    return { state: found.state, closedAs: found.closedAs, fields: found.fields, labels: found.labels, assignees: found.assignees };
+    return { state: found.state, closedAs: found.closedAs, fields: found.fields, labels: found.labels, assignees: found.assignees, dates: found.dates };
   }
 
   const [owner, name] = repository.split('/');
@@ -637,17 +640,161 @@ test.describe('planner', () => {
       await expect(page.locator(`[data-testid="planner-today-row"][data-item="${yesterday.itemId}"]`)).toHaveCount(1);
       expect((await item(page.request, 'leftoverYesterday')).carriedOver).toBe(false);
 
-      // Taken off the plan: neither label is left on the issue.
-      await row(older).getByTestId('planner-leftover-off').click();
-      await said(page, `${ref(older)}: not decided`);
+      // Back into the backlog: neither label is left on the issue, and its status says so.
+      await row(older).getByTestId('planner-leftover-backlog').click();
+      await said(page, `${ref(older)}: back in the backlog`);
       await expect(row(older)).toHaveCount(0);
       await expect.poll(async () => (await truth(page.request, ref(older))).labels.filter(l => l === 'today' || l === 'not today'), { timeout: 30_000 }).toEqual([]);
+      expect((await truth(page.request, ref(older))).fields.Status).toBe('Backlog');
       expect((await item(page.request, 'leftoverOlder')).day).toBe('Undecided');
 
       // Nothing left over, nothing shown.
       if (leftovers.length === 2) {
         await expect(page.getByTestId('planner-leftover')).toHaveCount(0);
       }
+    });
+
+    /** The day as GitHub's date field holds it: yyyy-mm-dd, a UTC day. */
+    const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+    const daysFromNow = (n: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return isoDay(d); };
+    const nextMonday = () => { const d = new Date(); const add = ((1 - d.getUTCDay() + 7) % 7) || 7; d.setUTCDate(d.getUTCDate() + add); return isoDay(d); };
+
+    test('an issue is planned for tomorrow, next week or the backlog by the board\'s day field, and comes back for today on its day', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the live tier\'s board has no day field of its own; the stand-in has one');
+
+      // The board's own plans: a day field of today counts as today, a later one as later.
+      const board = await planner(page.request, true);
+      const today = board.items.find(i => ref(i) === ITEMS.plannedToday)!;
+      const later = board.items.find(i => ref(i) === ITEMS.plannedLater)!;
+      expect([today.day, today.carriedOver, today.plannedFor]).toEqual(['Today', false, daysFromNow(0)]);
+      expect([later.day, later.plannedFor]).toEqual(['Later', daysFromNow(3)]);
+
+      const target = await item(page.request, 'later');
+      let card = await openItem(page, target.itemId);
+
+      await card.locator('[data-testid="planner-schedule"][data-when="tomorrow"]').click();
+      await said(page, new RegExp(`${ref(target)}: planned for `));
+      await expect.poll(async () => (await truth(page.request, ref(target))).dates?.['Planned for'], { timeout: 30_000 }).toBe(daysFromNow(1));
+      expect((await truth(page.request, ref(target))).labels.filter(l => l === 'today' || l === 'not today')).toEqual([]);
+      expect(await item(page.request, 'later')).toMatchObject({ day: 'Later', plannedFor: daysFromNow(1) });
+
+      // The today view lists it under the later days, and "today" brings it forward: label on, date off.
+      await open(page, '/planner?view=today');
+      const laterRow = page.locator(`[data-testid="planner-later-row"][data-item="${target.itemId}"]`);
+      await expect(laterRow.getByTestId('planner-later-on')).not.toHaveText('--');
+      await expect(page.locator(`[data-testid="planner-today-row"][data-item="${today.itemId}"]`)).toHaveCount(1);
+      await expect(laterRow.getByTestId('planner-later-today')).toBeEnabled();
+      await laterRow.getByTestId('planner-later-today').click();
+      await said(page, `${ref(target)}: today`);
+      await expect(laterRow).toHaveCount(0);
+      await expect.poll(async () => (await truth(page.request, ref(target))).dates?.['Planned for'] ?? null, { timeout: 30_000 }).toBeNull();
+      expect((await truth(page.request, ref(target))).labels).toContain('today');
+
+      // Next week is the next Monday; the backlog empties the day and sets the status.
+      card = await openItem(page, target.itemId);
+      await card.locator('[data-testid="planner-schedule"][data-when="next week"]').click();
+      await said(page, new RegExp(`${ref(target)}: planned for `));
+      await expect.poll(async () => (await truth(page.request, ref(target))).dates?.['Planned for'], { timeout: 30_000 }).toBe(nextMonday());
+
+      card = await openItem(page, target.itemId);
+      await expect(card.getByTestId('planner-item-planned')).toBeVisible();
+      await card.locator('[data-testid="planner-schedule"][data-when="backlog"]').click();
+      await said(page, `${ref(target)}: back in the backlog`);
+      await expect.poll(async () => await truth(page.request, ref(target)), { timeout: 30_000 }).toMatchObject({ fields: { Status: 'Backlog' }, dates: {} });
+    });
+
+    test('a new issue is given its day when it is opened', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in tier only');
+
+      const board = await planner(page.request);
+      await open(page, '/planner?view=new');
+
+      let previous = '';
+
+      for (const [day, check] of [['today', 'today'], ['tomorrow', 'tomorrow']] as const) {
+        const title = `Planned at birth: ${day} ${Date.now()}`;
+
+        await settle(async () => {
+          await page.getByTestId('planner-new-title').fill(title);
+          await expect(page.getByTestId('planner-new-submit')).toBeEnabled({ timeout: 3_000 });
+        });
+        await page.locator(`[data-testid="planner-new-day-option"][data-day="${day}"]`).click();
+        await expect(page.locator(`[data-testid="planner-new-day-option"][data-day="${day}"]`)).toHaveAttribute('data-current', 'true');
+
+        if (board.triage) {
+          await page.getByTestId('planner-new-triage').uncheck();
+        }
+
+        await page.getByTestId('planner-new-submit').click();
+        const opened = page.getByTestId('planner-new-opened');
+        // The banner of the issue before stays until this one is open: wait for the new one.
+        await expect(opened).toBeVisible();
+        await expect(opened).not.toHaveAttribute('data-reference', previous);
+        const reference = (await opened.getAttribute('data-reference'))!;
+        previous = reference;
+        await said(page, `${reference} opened`);
+
+        const truthOf = await truth(page.request, reference);
+        if (check === 'today') {
+          expect(truthOf.labels).toContain('today');
+          expect((await planner(page.request)).items.find(i => ref(i) === reference)!.day).toBe('Today');
+        } else {
+          expect(truthOf.dates?.['Planned for']).toBe(daysFromNow(1));
+          expect((await planner(page.request)).items.find(i => ref(i) === reference)!.day).toBe('Later');
+        }
+      }
+    });
+
+    test('search finds open and closed issues, a closed one opens in detail, and a comment is posted on it', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in tier only');
+
+      const closed = 'acme/planning#10';
+      await open(page, '/planner?view=search');
+      const input = page.getByTestId('planner-search-input');
+
+      // Open issues by default; every word must be in it.
+      await settle(async () => {
+        await input.fill('dashboards scraping');
+        await expect(page.getByTestId('planner-search-row')).toHaveCount(0, { timeout: 3_000 });
+      });
+      await page.locator('[data-testid="planner-search-state-option"][data-state="closed"]').click();
+      const hit = page.locator(`[data-testid="planner-search-row"][data-reference="${closed}"]`);
+      await expect(hit).toHaveCount(1);
+      await expect(hit).toHaveAttribute('data-open', 'false');
+
+      // By number, among all.
+      await page.locator('[data-testid="planner-search-state-option"][data-state="all"]').click();
+      await input.fill('#88');
+      await expect(page.getByTestId('planner-search-row')).toHaveCount(1);
+      await expect(page.getByTestId('planner-search-row').first()).toHaveAttribute('data-reference', 'acme/billing#88');
+
+      // The API answers the same.
+      const api = await (await page.request.get('/api/planner/search?q=dashboards%20scraping&state=closed')).json();
+      expect(api.map((h: { repository: string; number: number }) => ref(h))).toContain(closed);
+
+      // The closed issue in detail: its card offers nothing, and a comment can still be written.
+      await input.fill('dashboards scraping');
+      await page.locator('[data-testid="planner-search-state-option"][data-state="closed"]').click();
+      await hit.getByTestId('planner-row-title').click();
+      const detail = page.getByTestId('planner-detail');
+      await expect(detail.getByTestId('planner-item')).toHaveAttribute('data-open', 'false');
+      await expect(detail.getByTestId('planner-item-closed')).toBeVisible();
+
+      const comments = detail.getByTestId('planner-comments');
+      const text = `A closing remark ${Date.now()}`;
+      await settle(async () => {
+        await comments.getByTestId('planner-comment-draft').fill(text);
+        await expect(comments.getByTestId('planner-comment-post')).toBeEnabled({ timeout: 3_000 });
+      });
+      await comments.getByTestId('planner-comment-post').click();
+      await expect(comments.getByTestId('planner-comment-message')).toContainText('the comment is on the issue');
+      await expect(comments.getByTestId('planner-comment-body').last()).toContainText(text);
+      await expect(comments.getByTestId('planner-comment-draft')).toHaveValue('');
+
+      const posted = (await (await page.request.get(`${STANDIN}/github/control/comments`)).json())
+        .filter((c: { repository: string; number: number }) => ref(c) === closed);
+      expect(posted.at(-1).body).toContain(text);
+      expect(posted.at(-1).body).toContain(`Written by ${NAME} in Hephaisto's planner.`);
     });
 
     for (const [role, how, reason, word] of [

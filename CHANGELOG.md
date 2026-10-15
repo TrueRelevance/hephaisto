@@ -55,6 +55,17 @@ turn it on - the project, the token, the values - is one page:
   to read and no repository - that answers labels, a summary, an analysis, steps and questions.
   The agent puts on the labels the repository has (never another, never `today` or `not today`)
   and posts the rest as one comment; `planner.triage` and `planner.triaged` record who asked.
+- **A later day.** Tomorrow, next week (the next Monday) and backlog beside today and not today,
+  on the card, on every left-over row and for a new issue. A later day is the board's date field
+  `github.planner.dayField` (default *Planned for*): on that day the issue is planned for today by
+  itself, and left over when the day passed with it open. Backlog empties the day and sets Status
+  to `github.planner.backlogStatus`. The today view lists what is planned for later.
+- **A new issue gets its day when it is opened**: none, today, not today, tomorrow, next week or
+  backlog.
+- **Search** over the board's issues, open, closed or both, by words or `#number`; a closed issue
+  opens in detail too.
+- **Comments in the detail view**: the issue's comments as text, and a box to write one, posted by
+  the agent's account and signed with the person's name (`planner.comment`).
 - **Left over from an earlier day.** The today view opens with what was planned on an earlier
   day and is still open - the oldest first, with when it was planned - and decides each again:
   keep it for today, put it away until tomorrow, take it off the plan, or close it. The day's
@@ -93,6 +104,8 @@ turn it on - the project, the token, the values - is one page:
 - **A new issue needs the token to open issues** in the repositories it is opened in (classic
   `repo`; fine-grained "Issues: read and write") and to add items to the project (the same
   "Projects: read and write" as above).
+- **Planning a later day needs a Date field on the board** named as `github.planner.dayField`
+  (default *Planned for*). Without it tomorrow and next week are refused; nothing else changes.
 - **Asking Claude needs `codeFix.enabled`** - the chart refuses `github.planner.triage.enabled`
   without it - and a coder image of this release: an older image does not know the `triage`
   phase and answers every such Job with a failure. It runs on the coder's model credential; with

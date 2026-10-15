@@ -34,11 +34,11 @@ public sealed class PlannerRoutesTests
     private static string? Policy(RouteEndpoint e) => e.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).SingleOrDefault();
 
     [Fact]
-    public void Reading_the_planner_is_two_gets_and_needs_no_approver()
+    public void Reading_the_planner_is_four_gets_and_needs_no_approver()
     {
         var gets = Routes().Where(e => Verb(e) == "GET").ToList();
 
-        gets.Select(e => e.RoutePattern.RawText).Should().Equal("/api/planner", "/api/planner/analysis");
+        gets.Select(e => e.RoutePattern.RawText).Should().BeEquivalentTo("/api/planner", "/api/planner/search", "/api/planner/comments", "/api/planner/analysis");
         gets.Should().OnlyContain(e => Policy(e) == null, "the console's read policy is the group's, as for every other read");
     }
 
@@ -53,6 +53,8 @@ public sealed class PlannerRoutesTests
             "/api/planner/items/{itemId}/close",
             "/api/planner/items/{itemId}/day",
             "/api/planner/items/{itemId}/assignee",
+            "/api/planner/items/{itemId}/schedule",
+            "/api/planner/comments",
             "/api/planner/issues",
             "/api/planner/triage",
         ]);

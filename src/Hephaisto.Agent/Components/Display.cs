@@ -247,6 +247,7 @@ public static class Display
         PlannerDay.Today => "today",
         PlannerDay.NotToday => "not today",
         PlannerDay.Undecided => "not decided yet",
+        PlannerDay.Later => "a later day",
         _ => "unknown",
     };
 
@@ -255,6 +256,7 @@ public static class Display
         PlannerDay.Today => "*",
         PlannerDay.NotToday => "-",
         PlannerDay.Undecided => ".",
+        PlannerDay.Later => ">",
         _ => "?",
     };
 

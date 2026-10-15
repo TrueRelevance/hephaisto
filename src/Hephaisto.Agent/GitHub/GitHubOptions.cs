@@ -194,6 +194,16 @@ public sealed partial class GitHubPlannerOptions
     /// </summary>
     public List<string> Repositories { get; set; } = [];
 
+    /// <summary>
+    /// The board's date field an issue is planned for a later day by - tomorrow, next week. On
+    /// that day it is planned for today; a day that passed with the issue open makes it left
+    /// over. A board without a date field of this name plans by the two labels only.
+    /// </summary>
+    public string DayField { get; set; } = "Planned for";
+
+    /// <summary>The option of the Status field that "backlog" sets.</summary>
+    public string BacklogStatus { get; set; } = "Backlog";
+
     /// <summary>Claude labels an issue and writes an analysis of it, when a person asks (v0.15.0).</summary>
     public GitHubPlannerTriageOptions Triage { get; set; } = new();
 

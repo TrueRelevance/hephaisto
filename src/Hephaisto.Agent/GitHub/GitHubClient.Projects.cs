@@ -40,12 +40,16 @@ public sealed partial class GitHubClient
             issueTypes(first: 25) { nodes { name isEnabled } }
             projectV2(number: $number) {
               id title url
-              fields(first: 50) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } }
+              fields(first: 50) { nodes {
+                ... on ProjectV2SingleSelectField { id name options { id name } }
+                ... on ProjectV2Field { id name dataType } } }
               items(first: 50, after: $after) {
                 pageInfo { hasNextPage endCursor }
                 nodes {
                   id
-                  fieldValues(first: 20) { nodes { ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } } } }
+                  fieldValues(first: 20) { nodes {
+                    ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } }
+                    ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2Field { name } } } } }
                   content { __typename ... on Issue {
                     id number title url state createdAt updatedAt closedAt
                     body
@@ -78,6 +82,20 @@ public sealed partial class GitHubClient
           updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field, value: {singleSelectOptionId: $option}}) {
             projectV2Item { id }
           }
+        }
+        """;
+
+    private const string SetDateMutation = """
+        mutation($project: ID!, $item: ID!, $field: ID!, $date: Date!) {
+          updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field, value: {date: $date}}) {
+            projectV2Item { id }
+          }
+        }
+        """;
+
+    private const string ClearFieldMutation = """
+        mutation($project: ID!, $item: ID!, $field: ID!) {
+          clearProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: $field}) { projectV2Item { id } }
         }
         """;
 
@@ -140,6 +158,16 @@ public sealed partial class GitHubClient
             "updateProjectV2ItemFieldValue",
             "projectV2Item",
             ct);
+
+    public Task<GitHubResult<bool>> SetProjectDateAsync(string projectId, string itemId, string fieldId, DateOnly? date, CancellationToken ct) =>
+        date is { } day
+            ? WriteAsync(
+                SetDateMutation,
+                new { project = projectId, item = itemId, field = fieldId, date = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },
+                "updateProjectV2ItemFieldValue",
+                "projectV2Item",
+                ct)
+            : WriteAsync(ClearFieldMutation, new { project = projectId, item = itemId, field = fieldId }, "clearProjectV2ItemFieldValue", "projectV2Item", ct);
 
     public Task<GitHubResult<bool>> CloseIssueAsync(string issueId, bool notPlanned, CancellationToken ct) =>
         WriteAsync(
@@ -322,6 +350,11 @@ public sealed partial class GitHubClient
                 [.. f.GetProperty("options").EnumerateArray().Select(o => new BoardOption(Text(o, "id") ?? string.Empty, Text(o, "name") ?? string.Empty))]))
             .ToList();
 
+        var dates = Nodes(project, "fields")
+            .Where(f => string.Equals(Text(f, "dataType"), "DATE", StringComparison.OrdinalIgnoreCase))
+            .Select(f => new BoardDateField(Text(f, "id") ?? string.Empty, Text(f, "name") ?? string.Empty))
+            .ToList();
+
         var items = Nodes(project, "items").Select(BoardItemOf).Where(i => i is not null).Select(i => i!).ToList();
 
         var next = project.TryGetProperty("items", out var connection)
@@ -339,7 +372,7 @@ public sealed partial class GitHubClient
             .Select(t => t!)
             .ToList();
 
-        return new(new Board(Text(project, "id") ?? string.Empty, Text(project, "title") ?? string.Empty, Text(project, "url") ?? string.Empty, fields, [], types), items, next);
+        return new(new Board(Text(project, "id") ?? string.Empty, Text(project, "title") ?? string.Empty, Text(project, "url") ?? string.Empty, fields, [], types, dates), items, next);
     }
 
     /// <summary>
@@ -358,10 +391,21 @@ public sealed partial class GitHubClient
         var timeline = Nodes(issue, "timelineItems");
 
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var dates = new Dictionary<string, DateOnly>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var value in Nodes(item, "fieldValues"))
         {
-            if (Text(value, "name") is { } option && value.TryGetProperty("field", out var field) && Text(field, "name") is { } name)
+            if (!value.TryGetProperty("field", out var field) || Text(field, "name") is not { } name)
+            {
+                continue;
+            }
+
+            if (Text(value, "date") is { } date
+                && DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+            {
+                dates[name] = day;
+            }
+            else if (Text(value, "name") is { } option)
             {
                 fields[name] = option;
             }
@@ -416,7 +460,8 @@ public sealed partial class GitHubClient
             Text(issue, "body") is { Length: > 0 } body && !string.IsNullOrWhiteSpace(body)
                 ? body.Length <= MaxIssueBody ? body : string.Concat(body.AsSpan(0, MaxIssueBody), "\n…")
                 : null,
-            issue.TryGetProperty("comments", out var comments) ? Count(comments, "totalCount") : 0);
+            issue.TryGetProperty("comments", out var comments) ? Count(comments, "totalCount") : 0,
+            dates);
     }
 
     private static BoardPullRequest? BoardPullOf(JsonElement pull)

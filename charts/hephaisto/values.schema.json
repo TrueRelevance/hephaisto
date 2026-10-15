@@ -1389,6 +1389,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "dayField": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The board's date field tomorrow and next week plan an issue by."
+            },
+            "backlogStatus": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Status option backlog sets."
+            },
             "repositories": {
               "type": "array",
               "items": {

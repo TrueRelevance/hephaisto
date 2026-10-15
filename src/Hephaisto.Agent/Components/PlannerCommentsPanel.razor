@@ -1,0 +1,156 @@
+@using Hephaisto.Agent.GitHub
+@using Hephaisto.Agent.Planner
+@inject PlannerService Service
+@implements IDisposable
+@preservewhitespace true
+
+@*
+    The comments of one issue in the planner's detail view (v0.15.0), and a box to write one.
+
+    Every comment is somebody else's text - or a model's - and is shown as its markdown source,
+    never rendered. A comment written here is posted by the agent's account and ends by naming
+    the person who wrote it; the audit trail names them too.
+*@
+
+<section class="hp-planner-comments" data-testid="planner-comments" data-reference="@Reference">
+    <h3>comments <span class="hp-count" data-testid="planner-comments-count">@(_comments?.Count ?? 0)</span></h3>
+
+    @if (_loading)
+    {
+        <p class="hp-muted">reading the comments…</p>
+    }
+    else if (_comments is null)
+    {
+        <p class="hp-error" data-testid="planner-comments-unreadable"><span class="glyph">!!</span> The comments could not be read.</p>
+    }
+    else if (_comments.Count == 0)
+    {
+        <p class="hp-muted" data-testid="planner-comments-none">Nobody has commented yet.</p>
+    }
+    else
+    {
+        @foreach (var comment in _comments)
+        {
+            <article class="hp-planner-comment" @key="comment.Id" data-testid="planner-comment">
+                <div class="hp-planner-ids">
+                    <span class="mono">@comment.Author.Login</span>
+                    <span class="hp-muted">@Display.Ago(comment.CreatedAt, DateTimeOffset.UtcNow)</span>
+                    @if (Display.HttpUrl(comment.Url) is { } url)
+                    {
+                        <a class="hp-muted" href="@url" target="_blank" rel="noopener">on GitHub</a>
+                    }
+                </div>
+                <div class="hp-excerpt hp-planner-body" data-testid="planner-comment-body">@comment.Body</div>
+            </article>
+        }
+    }
+
+    <div class="hp-planner-comment-new">
+        <textarea rows="4" maxlength="@PlannerService.MaxComment" @bind="_draft" @bind:event="oninput" disabled="@_posting"
+                  placeholder="write a comment - markdown; it is posted by the agent's account and signed with your name"
+                  data-testid="planner-comment-draft"></textarea>
+        <div class="hp-planner-ids">
+            <button type="button" class="hp-submit" data-testid="planner-comment-post" title="@LockedBecause"
+                    disabled="@(_posting || Locked || string.IsNullOrWhiteSpace(_draft))" @onclick="PostAsync">post comment</button>
+            @if (LockedBecause is { } locked)
+            {
+                <span class="hp-muted">@locked</span>
+            }
+            @if (_message is { } message)
+            {
+                <span class="@(message.Ok ? "hp-yes" : "hp-error")" data-testid="planner-comment-message"><span class="glyph">@(message.Ok ? "+" : "!!")</span> @message.Text</span>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Repository { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public int Number { get; set; }
+
+    /// <summary>Who is writing: the page's actor, signed in or named.</summary>
+    [Parameter]
+    public string Actor { get; set; } = string.Empty;
+
+    /// <summary>Why writing is not possible for this person, or null.</summary>
+    [Parameter]
+    public string? LockedBecause { get; set; }
+
+    private IReadOnlyList<GitHubComment>? _comments;
+    private bool _loading = true;
+    private bool _posting;
+    private string _draft = string.Empty;
+    private (bool Ok, string Text)? _message;
+    private string? _loadedFor;
+    private readonly CancellationTokenSource _cts = new();
+
+    private string Reference => $"{Repository}#{Number}";
+
+    private bool Locked => LockedBecause is not null || string.IsNullOrWhiteSpace(Actor);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Reference)
+        {
+            return;
+        }
+
+        _loadedFor = Reference;
+        _draft = string.Empty;
+        _message = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+
+        try
+        {
+            _comments = await Service.CommentsAsync(Repository, Number, _cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        _loading = false;
+    }
+
+    private async Task PostAsync()
+    {
+        if (_posting || Locked || string.IsNullOrWhiteSpace(_draft))
+        {
+            return;
+        }
+
+        _posting = true;
+
+        try
+        {
+            var (outcome, message, comment) = await Service.CommentAsync(Repository, Number, _draft, Actor.Trim(), _cts.Token);
+
+            _message = (outcome == PlannerActionOutcome.Done, message);
+
+            if (comment is not null)
+            {
+                _draft = string.Empty;
+                _comments = [.. _comments ?? [], comment];
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _posting = false;
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}
