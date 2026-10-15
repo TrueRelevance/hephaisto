@@ -26,6 +26,8 @@ const ITEMS: Record<string, string> = {
   fields: 'acme/billing#88',
   day: 'acme/planning#21',
   carried: 'acme/scraper#57',
+  leftoverYesterday: 'acme/web#250',
+  leftoverOlder: 'acme/api#452',
   closeDone: 'acme/api#431',
   closeNotPlanned: 'acme/web#240',
   closeFromToday: 'acme/api#440',
@@ -43,7 +45,7 @@ type Item = {
   reason: string; emptyFields: string[]; day: string; carriedOver: boolean;
   fields: Record<string, string>; assignees: string[]; parentUrl: string | null;
   subIssues: number; subIssuesDone: number; pullRequests: Pull[];
-  body: string | null; comments: number; labels: string[]; createdAt: string;
+  body: string | null; comments: number; labels: string[]; createdAt: string; dayAt: string | null;
 };
 
 /** The newest walks' order: by when the issue was opened, newest first, then by reference. */
@@ -571,8 +573,16 @@ test.describe('planner', () => {
       const board = await planner(page.request);
       const row = page.locator(`[data-testid="planner-today-row"][data-item="${target.itemId}"]`);
       await expect(row).toHaveCount(1);
-      await expect(page.getByTestId('planner-today-row')).toHaveCount(board.items.filter(i => i.day === 'Today').length);
-      await expect(page.locator('[data-testid="planner-stat"][data-stat="today"] .hp-stat-value')).toHaveText(String(board.items.filter(i => i.day === 'Today').length));
+      // Planned today is the list; what was planned on an earlier day is the left-overs above it.
+      const plannedToday = board.items.filter(i => i.day === 'Today' && !i.carriedOver);
+      await expect(page.getByTestId('planner-today-row')).toHaveCount(plannedToday.length);
+      await expect(page.locator('[data-testid="planner-stat"][data-stat="today"] .hp-stat-value')).toHaveText(String(plannedToday.length));
+      await expect(page.locator('[data-testid="planner-stat"][data-stat="leftover"] .hp-stat-value')).toHaveText(String(board.items.filter(i => i.day === 'Today' && i.carriedOver).length));
+
+      // A row reads by its title, which leads to the issue's details.
+      const title = row.getByTestId('planner-row-title');
+      await expect(title).toHaveText(target.title);
+      await expect(title).toHaveAttribute('href', new RegExp(`detail=${encodeURIComponent(target.itemId)}`));
       await expect(page.locator('[data-testid="planner-stat"][data-stat="away"] .hp-stat-value')).toHaveText(String(board.items.filter(i => i.day === 'NotToday').length));
       await expect(page.locator('[data-testid="planner-stat"][data-stat="done"] .hp-stat-value')).toHaveText(String(board.closedToday.length));
 
@@ -596,6 +606,48 @@ test.describe('planner', () => {
 
       await expect.poll(async () => (await truth(page.request, ref(target))).state, { timeout: 30_000 }).toBe('closed');
       expect((await planner(page.request)).closedToday.map(ref)).toContain(ref(target));
+    });
+
+    test('what was planned on an earlier day and not finished is left over, and each is decided again', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: a label of an earlier day cannot be made on github.com; the stand-in seeds two');
+
+      const board = await planner(page.request, true);
+      const leftovers = board.items.filter(i => i.day === 'Today' && i.carriedOver);
+      const yesterday = await item(page.request, 'leftoverYesterday');
+      const older = await item(page.request, 'leftoverOlder');
+      expect([yesterday.carriedOver, older.carriedOver]).toEqual([true, true]);
+
+      await open(page, '/planner?view=today');
+      const section = page.getByTestId('planner-leftover');
+      await expect(section.getByTestId('planner-leftover-row')).toHaveCount(leftovers.length);
+
+      // The oldest first, each saying when it was planned, by its title.
+      const first = section.getByTestId('planner-leftover-row').first();
+      await expect(first).toHaveAttribute('data-reference', ref(older));
+      const row = (i: Item) => section.locator(`[data-testid="planner-leftover-row"][data-item="${i.itemId}"]`);
+      await expect(row(yesterday).getByTestId('planner-leftover-since')).toHaveText('planned yesterday');
+      await expect(row(older).getByTestId('planner-leftover-since')).toContainText('planned on ');
+      await expect(row(yesterday).getByTestId('planner-row-title')).toHaveText(yesterday.title);
+
+      // Kept for today: it joins the day's list, its label dated today.
+      await expect(row(yesterday).getByTestId('planner-leftover-today')).toBeEnabled();
+      await row(yesterday).getByTestId('planner-leftover-today').click();
+      await said(page, `${ref(yesterday)}: today`);
+      await expect(row(yesterday)).toHaveCount(0);
+      await expect(page.locator(`[data-testid="planner-today-row"][data-item="${yesterday.itemId}"]`)).toHaveCount(1);
+      expect((await item(page.request, 'leftoverYesterday')).carriedOver).toBe(false);
+
+      // Taken off the plan: neither label is left on the issue.
+      await row(older).getByTestId('planner-leftover-off').click();
+      await said(page, `${ref(older)}: not decided`);
+      await expect(row(older)).toHaveCount(0);
+      await expect.poll(async () => (await truth(page.request, ref(older))).labels.filter(l => l === 'today' || l === 'not today'), { timeout: 30_000 }).toEqual([]);
+      expect((await item(page.request, 'leftoverOlder')).day).toBe('Undecided');
+
+      // Nothing left over, nothing shown.
+      if (leftovers.length === 2) {
+        await expect(page.getByTestId('planner-leftover')).toHaveCount(0);
+      }
     });
 
     for (const [role, how, reason, word] of [
@@ -725,7 +777,7 @@ test.describe('planner', () => {
       test.skip(LIVE, 'PRECONDITION: asking Claude on github.com is not part of the live tier');
 
       const board = await planner(page.request, true);
-      const target = board.items.find(i => i.day === 'Today');
+      const target = board.items.find(i => i.day === 'Today' && !i.carriedOver);
       test.skip(!target, 'PRECONDITION: nothing is planned for today on this board');
 
       await open(page, '/planner?view=today');
@@ -744,9 +796,11 @@ test.describe('planner', () => {
 
       // The walk's buttons, in the detail view: a field is set and the board says so.
       await expect(card.getByTestId('planner-day').first()).toBeEnabled();
-      await card.locator('[data-testid="planner-option"][data-field="Area"][data-option="Web"]').click();
-      await said(page, `${ref(target!)}: Area set to Web`);
-      await expect.poll(async () => (await truth(page.request, ref(target!))).fields.Area, { timeout: 30_000 }).toBe('Web');
+      // An option it does not have yet: clicking the current one takes nothing back here.
+      const area = board.fields.find(f => f.name === 'Area')!.options.map(o => o.name).find(o => o !== target!.fields.Area)!;
+      await card.locator(`[data-testid="planner-option"][data-field="Area"][data-option="${area}"]`).click();
+      await said(page, `${ref(target!)}: Area set to ${area}`);
+      await expect.poll(async () => (await truth(page.request, ref(target!))).fields.Area, { timeout: 30_000 }).toBe(area);
 
       // The line for Claude Code, and its copy button.
       const claude = detail.getByTestId('planner-claude');

@@ -1889,6 +1889,37 @@ details > summary {
     margin-right: 0.4rem;
 }
 
+/* A row of the today view reads by its title: large and in the reading face, the reference,
+   type and reason small and faint beneath it. */
+.hp-planner-row-title {
+    display: block;
+    font-size: var(--text-2xl);
+    font-weight: 600;
+    color: var(--fg);
+    text-decoration: none;
+    line-height: 1.3;
+}
+
+a.hp-planner-row-title:hover {
+    text-decoration: underline;
+}
+
+.hp-planner-row-ref,
+.hp-planner-row-ref a {
+    font-size: var(--text-xs);
+    color: var(--fg-faint);
+}
+
+.hp-planner-row-ref {
+    margin-top: 0.15rem;
+}
+
+.hp-table tr.is-away .hp-planner-row-title,
+.hp-table tr.is-done .hp-planner-row-title {
+    color: var(--fg-faint);
+    font-weight: 500;
+}
+
 .hp-planner-detail .hp-planner-walk h2 {
     margin: 0;
     padding: 0;

@@ -30,6 +30,7 @@ public sealed record PlannerView(
 /// <param name="Body">The issue's description, as markdown source. Somebody else's text; null when there is none.</param>
 /// <param name="Labels">Every label of the issue, the two of the day among them.</param>
 /// <param name="CreatedAt">When the issue was opened: what the newest walks go by.</param>
+/// <param name="DayAt">When the label of <paramref name="Day"/> was put on; with <paramref name="CarriedOver"/>, the earlier day it was planned on.</param>
 public sealed record PlannerItemView(
     string ItemId,
     string Repository,
@@ -51,7 +52,8 @@ public sealed record PlannerItemView(
     string? Body,
     int Comments,
     IReadOnlyList<string> Labels,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? DayAt);
 
 public sealed record PlannerClosedView(string ItemId, string Repository, int Number, string Title, string Url, DateTimeOffset? ClosedAt);
 
@@ -275,7 +277,8 @@ public static class PlannerEndpoints
         entry.Item.Body,
         entry.Item.Comments,
         [.. entry.Item.Labels.Select(l => l.Name)],
-        entry.Item.CreatedAt);
+        entry.Item.CreatedAt,
+        entry.DayAt);
 
     private static PlannerDay? Day(string? word) => word?.Trim().ToLowerInvariant() switch
     {

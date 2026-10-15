@@ -55,6 +55,11 @@ turn it on - the project, the token, the values - is one page:
   to read and no repository - that answers labels, a summary, an analysis, steps and questions.
   The agent puts on the labels the repository has (never another, never `today` or `not today`)
   and posts the rest as one comment; `planner.triage` and `planner.triaged` record who asked.
+- **Left over from an earlier day.** The today view opens with what was planned on an earlier
+  day and is still open - the oldest first, with when it was planned - and decides each again:
+  keep it for today, put it away until tomorrow, take it off the plan, or close it. The day's
+  list holds what was planned today. Rows read by the issue's title, which links to its
+  details; the reference is small beneath it. `GET /api/planner` gives each item its `dayAt`.
 - **Newest first.** Two more walks through the board: every open issue by when it was opened,
   the newest first, and the same for those not planned yet - what came in since the last look.
   `/planner?walk=newest` links to it; `GET /api/planner` gives each item its `createdAt`.

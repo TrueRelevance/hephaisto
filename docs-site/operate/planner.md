@@ -22,8 +22,12 @@ The issue's description is shown under its title as its markdown source — some
 is shown as text, never rendered — with its comment count and its labels. *Hide description* puts
 it away for the whole walk, and the browser remembers that.
 
-**Today.** What is planned, by priority, with *close* and *not today* on each row; what was closed
-today; what was put away, each with *back to today*. *Details* on a row opens the issue beside the
+**Today.** First what is **left over**: planned on an earlier day and still open, the oldest
+first, each saying when it was planned (*yesterday*, or the day) with *today* (keep it for today),
+*not today* (until tomorrow), *off the plan* (neither label), *close: done* and *details*. Then
+what is planned today, by priority, with *close* and *not today* on each row; what was closed
+today; what was put away, each with *back to today*. A row reads by the issue's title, which
+leads to its details; the reference, type and reason are small beneath it. *Details* on a row opens the issue beside the
 list: its description, its labels, the same buttons as *plan the day*, Claude's newest analysis of
 it, and the line that hands it to Claude Code - `Execute github issue owner/repo#n` - with a copy
 button. The address carries the issue (`/planner?view=today&detail=<item>`), so it can be linked.

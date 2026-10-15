@@ -161,6 +161,12 @@ public static partial class GitHubStandIn
             Add("acme/scraper", 57, "Task", "Robots rules are fetched once per URL", "Ready", "P2", "API");
             Label("acme/scraper", 57, "today", now.AddDays(-2));
 
+            // Planned yesterday and three days ago, and not finished: the today view's left-overs.
+            Add("acme/web", 250, "Bug", "Invoice PDF misses the VAT id", "Ready", "P1", "Web");
+            Label("acme/web", 250, "today", now.AddDays(-1));
+            Add("acme/api", 452, "Task", "Rotate the export signing key", "Backlog", "P2", "API");
+            Label("acme/api", 452, "today", now.AddDays(-3));
+
             Add("acme/infra", 31, "Bug", "mongo-3 cannot keep up with replication", "Backlog", "P1", "Infra");
             Label("acme/infra", 31, "not today", now);
 

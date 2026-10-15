@@ -267,7 +267,8 @@ else
         else if (ViewName == ViewToday)
         {
             <div class="hp-status-grid">
-                <div class="hp-stat" data-testid="planner-stat" data-stat="today"><span class="hp-stat-label">for today</span><span class="hp-stat-value">@ForToday.Count</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="today"><span class="hp-stat-label">for today</span><span class="hp-stat-value">@PlannedToday.Count</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="leftover"><span class="hp-stat-label">left over</span><span class="hp-stat-value">@LeftOver.Count</span><span class="hp-muted">from an earlier day</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="done"><span class="hp-stat-label">done today</span><span class="hp-stat-value">@_snapshot.ClosedToday.Count</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="away"><span class="hp-stat-label">put away</span><span class="hp-stat-value">@PutAway.Count</span><span class="hp-muted">come back tomorrow</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="undecided"><span class="hp-stat-label">not decided</span><span class="hp-stat-value">@_snapshot.Entries.Count(e => e.Day == PlannerDay.Undecided)</span><span class="hp-muted"><a href="planner">go on planning</a></span></div>
@@ -307,9 +308,41 @@ else
                 </section>
             }
 
+            @if (LeftOver.Count > 0)
+            {
+                <section class="hp-section hp-planner-leftover" data-testid="planner-leftover">
+                    <h2>left over from an earlier day <span class="hp-count">@LeftOver.Count</span></h2>
+                    <p class="hp-muted">
+                        Planned on an earlier day and still open. Keep each for today, put it away until tomorrow, or take it off
+                        the plan; closing it is here too.
+                    </p>
+                    <table class="hp-table">
+                        <tbody>
+                            @foreach (var e in LeftOver)
+                            {
+                                var item = e.Item;
+
+                                <tr @key="item.ItemId" class="is-today" data-testid="planner-leftover-row" data-item="@item.ItemId" data-reference="@item.Reference">
+                                    <td class="c-prio"><span class="mono @PriorityClass(board, e)">@(item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
+                                    <td>@IssueCell(e)</td>
+                                    <td class="c-time" data-testid="planner-leftover-since">planned @PlannedWhen(e)</td>
+                                    <td class="c-act">
+                                        <button type="button" class="hp-submit" data-testid="planner-leftover-today" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Today, false)">today</button>
+                                        <button type="button" data-testid="planner-leftover-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
+                                        <button type="button" data-testid="planner-leftover-off" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Undecided, false)">off the plan</button>
+                                        <button type="button" data-testid="planner-leftover-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
+                                        <a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-leftover-detail">details</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </section>
+            }
+
             <section class="hp-section">
-                <h2>for today <span class="hp-count">@ForToday.Count</span></h2>
-                @if (ForToday.Count == 0)
+                <h2>for today <span class="hp-count">@PlannedToday.Count</span></h2>
+                @if (PlannedToday.Count == 0)
                 {
                     <p class="hp-empty" data-testid="planner-today-empty">Nothing is planned for today yet. <a href="planner">Plan the day</a>, or pick items from <a href="planner?view=all">all open</a>.</p>
                 }
@@ -320,30 +353,13 @@ else
                             <tr><th class="c-prio">prio</th><th>issue</th><th>parent</th><th>status</th><th>pull requests</th><th class="c-act">this day</th></tr>
                         </thead>
                         <tbody>
-                            @foreach (var e in ForToday)
+                            @foreach (var e in PlannedToday)
                             {
                                 var item = e.Item;
 
                                 <tr @key="item.ItemId" data-testid="planner-today-row" data-item="@item.ItemId" data-reference="@item.Reference">
                                     <td class="c-prio"><span class="mono @PriorityClass(board, e)">@(item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
-                                    <td>
-                                        <span class="hp-planner-ids">
-                                            <a class="mono" href="@WalkHref(e)">@item.Reference</a>
-                                            @if (item.Type is { Length: > 0 } type)
-                                            {
-                                                <span class="hp-chip">@type</span>
-                                            }
-                                            @if (e.NeedsDecision)
-                                            {
-                                                <span class="hp-state @Display.PlannerReasonClass(e.Reason)"><span class="glyph">@Display.PlannerReasonGlyph(e.Reason)</span> @Display.PlannerReasonWord(e.Reason)</span>
-                                            }
-                                            @if (e.CarriedOver)
-                                            {
-                                                <span class="hp-chip" data-testid="planner-carried" title="Scheduled on an earlier day and still open">from an earlier day</span>
-                                            }
-                                        </span>
-                                        <span class="hp-cf-line">@item.Title</span>
-                                    </td>
+                                    <td>@IssueCell(e)</td>
                                     <td>
                                         @if (item.ParentUrl is { } parentUrl)
                                         {
@@ -383,7 +399,10 @@ else
                             {
                                 <tr @key="item.ItemId" class="is-done" data-testid="planner-done-row" data-item="@item.ItemId" data-reference="@item.Reference">
                                     <td class="c-prio"><span class="hp-yes"><span class="glyph">+</span></span></td>
-                                    <td><span class="mono">@item.Reference</span> @item.Title</td>
+                                    <td>
+                                        <span class="hp-planner-row-title" data-testid="planner-row-title">@item.Title</span>
+                                        <span class="hp-planner-row-ref mono">@item.Reference</span>
+                                    </td>
                                     <td class="c-act">closed at <span class="mono">@(item.ClosedAt is { } at ? Display.TimeOnly(at) : "--")</span></td>
                                 </tr>
                             }
@@ -406,7 +425,7 @@ else
                             {
                                 <tr @key="e.Item.ItemId" class="is-away" data-testid="planner-away-row" data-item="@e.Item.ItemId" data-reference="@e.Item.Reference">
                                     <td class="c-prio"><span class="mono">@(e.Item.Field(PlannerQueue.PriorityField) ?? "--")</span></td>
-                                    <td><a class="mono" href="@WalkHref(e)">@e.Item.Reference</a> @e.Item.Title</td>
+                                    <td>@IssueCell(e)</td>
                                     <td class="c-act"><a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-away-detail">details</a> <button type="button" data-testid="planner-away-back" disabled="@RowLocked" @onclick="() => DayAsync(e.Item.ItemId, PlannerDay.Today, false)">back to today</button></td>
                                 </tr>
                             }
@@ -762,6 +781,12 @@ else
     private IReadOnlyList<PlannerEntry> ForToday =>
         [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Today).OrderBy(e => _snapshot.Board is { } b ? PlannerQueue.PriorityRank(b, e.Item) : 0)];
 
+    /// <summary>Planned on an earlier day and still open: what was not finished, to decide about again.</summary>
+    private IReadOnlyList<PlannerEntry> LeftOver => [.. ForToday.Where(e => e.CarriedOver).OrderBy(e => e.DayAt ?? DateTimeOffset.MinValue)];
+
+    /// <summary>Planned today.</summary>
+    private IReadOnlyList<PlannerEntry> PlannedToday => [.. ForToday.Where(e => !e.CarriedOver)];
+
     private IReadOnlyList<PlannerEntry> PutAway => [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.NotToday)];
 
     private string HeadCount => ViewName switch
@@ -1097,6 +1122,35 @@ else
         entry.Item.ParentUrl is { } url ? _snapshot.Entries.FirstOrDefault(e => string.Equals(e.Item.Url, url, StringComparison.OrdinalIgnoreCase)) : null;
 
     private static string WalkHref(PlannerEntry entry) => $"planner?item={Uri.EscapeDataString(entry.Item.ItemId)}";
+
+    /// <summary>When an issue that is left over was planned: yesterday, or the day.</summary>
+    private string PlannedWhen(PlannerEntry entry) => entry.DayAt is not { } at
+        ? "on an earlier day"
+        : (_now.UtcDateTime.Date - at.UtcDateTime.Date).Days switch
+        {
+            1 => "yesterday",
+            _ => "on " + at.UtcDateTime.ToString("dddd d MMMM", CultureInfo.InvariantCulture),
+        };
+
+    /// <summary>
+    /// An issue in a row of the today view: its title first and large - that is what a person
+    /// reads - linked to its details; its reference, type and reason small beneath it.
+    /// </summary>
+    private RenderFragment IssueCell(PlannerEntry e) =>
+        @<text>
+            <a class="hp-planner-row-title" href="@DetailHref(e)" data-testid="planner-row-title">@e.Item.Title</a>
+            <span class="hp-planner-row-ref hp-planner-ids">
+                <a class="mono" href="@WalkHref(e)" title="open it in the walk">@e.Item.Reference</a>
+                @if (e.Item.Type is { Length: > 0 } type)
+                {
+                    <span class="hp-chip">@type</span>
+                }
+                @if (e.NeedsDecision)
+                {
+                    <span class="hp-state @Display.PlannerReasonClass(e.Reason)"><span class="glyph">@Display.PlannerReasonGlyph(e.Reason)</span> @Display.PlannerReasonWord(e.Reason)</span>
+                }
+            </span>
+        </text>;
 
     private static string DetailHref(PlannerEntry entry) => $"planner?view=today&detail={Uri.EscapeDataString(entry.Item.ItemId)}";
 
