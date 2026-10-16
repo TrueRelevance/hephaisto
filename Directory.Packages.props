@@ -24,8 +24,8 @@
          different things. The browser gets the authorization-code flow and a cookie; a script
          or the e2e harness gets a bearer token, which is the only way to call the API without
          a browser. One IdP, one set of roles, two front doors. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup Label="LLM">
@@ -34,7 +34,7 @@
     <!-- Google.GenAI ships AsIChatClient(model) in-box, so no adapter layer. -->
     <PackageVersion Include="Google.GenAI" Version="1.25.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.11.0" />
     <!-- The OpenAI wire format, which is what DeepSeek, OpenRouter, Ollama and LM Studio all
          speak. One adapter, every non-Gemini provider. Microsoft.Extensions.AI.OpenAI 10.9.0
          pins OpenAI to [2.12.0, 2.13.0), so 2.12.0 is not a free choice. -->
@@ -72,8 +72,8 @@
   </ItemGroup>
 
   <ItemGroup Label="Hosting">
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.11" />
   </ItemGroup>
 
@@ -90,8 +90,8 @@
   </ItemGroup>
 
   <ItemGroup Label="Core (abstractions only - Hephaisto.Core must stay I/O-free)">
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
     <PackageVersion Include="System.Linq.Async" Version="6.0.3" />
