@@ -180,6 +180,14 @@ public static partial class GitHubStandIn
             Add("acme/api", 452, "Task", "Rotate the export signing key", "Backlog", "P2", "API");
             Label("acme/api", 452, "today", now.AddDays(-3));
 
+            // Planned for today, for the one issue worked on at a time. The second has a description
+            // longer than a screen.
+            Add("acme/web", 262, "Bug", "Checkout button hides behind the cookie banner", "Ready", "P1", "Web");
+            Label("acme/web", 262, "today", now.AddHours(-2));
+            Add("acme/api", 461, "Task", "Retry the invoice webhook with backoff", "Ready", "P1", "API",
+                body: "## Retry plan\n\n" + string.Join("\n", Enumerable.Range(1, 80).Select(i => $"{i}. Step {i}: wait {i * 2} s, then post the invoice again.")));
+            Label("acme/api", 461, "today", now.AddHours(-2));
+
             Add("acme/infra", 31, "Bug", "mongo-3 cannot keep up with replication", "Backlog", "P1", "Infra");
             Label("acme/infra", 31, "not today", now);
 

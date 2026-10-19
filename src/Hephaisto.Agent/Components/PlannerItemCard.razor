@@ -73,6 +73,11 @@
         <div class="hp-planner-ids">
             <button type="button" data-testid="planner-description-toggle" aria-expanded="@Pressed(DescriptionOpen)"
                     @onclick="() => OnToggleDescription.InvokeAsync()">@(DescriptionOpen ? "hide description" : "show description")</button>
+            @if (DescriptionOpen && Item.Body is { Length: > 0 })
+            {
+                <button type="button" data-testid="planner-description-full" aria-pressed="@Pressed(_fullDescription)"
+                        @onclick="() => _fullDescription = !_fullDescription">@(_fullDescription ? "shorter" : "full length")</button>
+            }
             <span class="hp-muted" data-testid="planner-item-comments">@CommentsWord</span>
             @foreach (var label in OtherLabels)
             {
@@ -83,7 +88,7 @@
         {
             @if (Item.Body is { Length: > 0 } body)
             {
-                <div class="hp-excerpt hp-planner-body hp-markdown" data-testid="planner-item-description">@SafeMarkdown.Render(body, Item.Repository, IssueLink)</div>
+                <div class="hp-excerpt hp-planner-body hp-planner-description hp-markdown @(_fullDescription ? "is-full" : null)" data-testid="planner-item-description">@SafeMarkdown.Render(body, Item.Repository, IssueLink)</div>
             }
             else
             {
@@ -394,6 +399,9 @@
     [Parameter]
     public EventCallback OnToggleDescription { get; set; }
 
+    /// <summary>The description at its full length, without the cap of three quarters of a screen.</summary>
+    private bool _fullDescription;
+
     /// <summary>Why nothing here can be clicked, when that is so: no approver role, nobody named.</summary>
     [Parameter]
     public string? LockedBecause { get; set; }
@@ -440,7 +448,8 @@
     private IEnumerable<string> OtherLabels => Item.Labels
         .Select(l => l.Name)
         .Where(l => !string.Equals(l, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase));
+            && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(l, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase));
 
     private bool SuggestsClose => Entry.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone;
 

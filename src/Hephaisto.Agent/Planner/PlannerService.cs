@@ -42,6 +42,9 @@ public sealed record PlannerSnapshot(
     public IReadOnlyList<string> NewIssueRepositories => Repositories ?? [];
 
     public PlannerEntry? Entry(string itemId) => Entries.FirstOrDefault(e => e.Item.ItemId == itemId);
+
+    /// <summary>What is being worked on right now, when anything is.</summary>
+    public PlannerEntry? Active => Entries.FirstOrDefault(e => e.Active);
 }
 
 public enum PlannerActionOutcome
@@ -116,6 +119,7 @@ public sealed class PlannerService(
     public const string AuditTriaged = "planner.triaged";
     public const string AuditSchedule = "planner.schedule";
     public const string AuditComment = "planner.comment";
+    public const string AuditActive = "planner.active";
 
     public const int MaxComment = 60_000;
 
@@ -228,46 +232,147 @@ public sealed class PlannerService(
 
             await AuditAsync(AuditDay, actor, $"{item.Reference}: {word}", item, new { day = word, was = DayWord(entry.Day) }, ct).ConfigureAwait(false);
 
-            var labels = item.Labels.ToList();
+            var (refused, changed) = await ApplyDayAsync(client, board, item, day, ct).ConfigureAwait(false);
 
-            foreach (var label in new[] { PlannerQueue.TodayLabel, PlannerQueue.NotTodayLabel })
+            return refused is not null
+                ? (PlannerActionOutcome.Refused, refused, changed)
+                : (PlannerActionOutcome.Done, word, changed);
+        });
+
+    /// <summary>
+    /// The labels of the day as <paramref name="day"/> says, and the board's day field emptied.
+    /// A day other than today takes <see cref="PlannerQueue.ActiveLabel"/> off too: what is not
+    /// planned for today is not worked on today. The item as it is now, also after a refusal.
+    /// </summary>
+    private async Task<(string? Refused, BoardItem Item)> ApplyDayAsync(IGitHubClient client, Board board, BoardItem item, PlannerDay day, CancellationToken ct)
+    {
+        var labels = item.Labels.ToList();
+        string[] off = day == PlannerDay.Today
+            ? [PlannerQueue.TodayLabel, PlannerQueue.NotTodayLabel]
+            : [PlannerQueue.TodayLabel, PlannerQueue.NotTodayLabel, PlannerQueue.ActiveLabel];
+
+        foreach (var label in off)
+        {
+            if (labels.FirstOrDefault(l => string.Equals(l.Name, label, StringComparison.OrdinalIgnoreCase)) is not { } present)
             {
-                if (labels.FirstOrDefault(l => string.Equals(l.Name, label, StringComparison.OrdinalIgnoreCase)) is not { } present)
+                continue;
+            }
+
+            var removed = await client.RemoveLabelAsync(item.Repository, item.Number, present.Name, ct).ConfigureAwait(false);
+
+            // Not found: somebody took it off on GitHub since the board was read. That is what was wanted.
+            if (!removed.Ok && removed.Outcome != GitHubOutcome.NotFound)
+            {
+                return (removed.Describe(), item with { Labels = labels });
+            }
+
+            labels.Remove(present);
+        }
+
+        if (day != PlannerDay.Undecided)
+        {
+            var name = day == PlannerDay.Today ? PlannerQueue.TodayLabel : PlannerQueue.NotTodayLabel;
+            var added = await client.AddLabelAsync(item.Repository, item.Number, name, ct).ConfigureAwait(false);
+
+            if (!added.Ok)
+            {
+                return (added.Describe(), item with { Labels = labels });
+            }
+
+            labels.Add(new BoardLabel(name, clock.UtcNow));
+        }
+
+        // A day decided now replaces a later day planned before: the date would make it
+        // planned again, or left over, on a day nobody chose any more.
+        var (cleared, dates) = await ClearPlannedAsync(client, board, item, ct).ConfigureAwait(false);
+
+        return cleared is { } refused
+            ? (refused, item with { Labels = labels })
+            : (null, item with { Labels = labels, Dates = dates });
+    }
+
+    /// <summary>
+    /// Starts or stops working on an item: <see cref="PlannerQueue.ActiveLabel"/> on it, and off
+    /// every other open issue of the board - one thing at a time. Only an item planned for today
+    /// can be started; one left over from an earlier day is planned for today again with it.
+    /// </summary>
+    public Task<PlannerActionResult> SetActiveAsync(string itemId, bool active, string actor, CancellationToken ct) =>
+        ActManyAsync(itemId, actor, ct, async (client, board, entry) =>
+        {
+            var item = entry.Item;
+            var label = item.Labels.FirstOrDefault(l => string.Equals(l.Name, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase));
+
+            if (!active)
+            {
+                if (label is null)
+                {
+                    return (PlannerActionOutcome.Done, "it was not being worked on", []);
+                }
+
+                await AuditAsync(AuditActive, actor, $"{item.Reference}: no longer worked on", item, new { active = false }, ct).ConfigureAwait(false);
+
+                var removed = await client.RemoveLabelAsync(item.Repository, item.Number, label.Name, ct).ConfigureAwait(false);
+
+                return !removed.Ok && removed.Outcome != GitHubOutcome.NotFound
+                    ? (PlannerActionOutcome.Refused, removed.Describe(), [])
+                    : (PlannerActionOutcome.Done, "no longer worked on", [item with { Labels = [.. item.Labels.Where(l => !ReferenceEquals(l, label))] }]);
+            }
+
+            if (entry.Day != PlannerDay.Today)
+            {
+                // Like a field the board does not have: refused before anything is written, not by GitHub.
+                return (PlannerActionOutcome.NotFound, "only an issue planned for today can be worked on now: plan it for today first", []);
+            }
+
+            var was = kept?.Active;
+
+            await AuditAsync(AuditActive, actor, $"{item.Reference}: worked on now", item,
+                new { active = true, was = was is null || was.Item.ItemId == item.ItemId ? null : was.Item.Reference }, ct).ConfigureAwait(false);
+
+            var changed = new List<BoardItem>();
+
+            // Off the others first: should GitHub refuse halfway, nothing shows two at once.
+            foreach (var other in board.Items.Where(i => i.Open && i.ItemId != item.ItemId).ToList())
+            {
+                if (other.Labels.FirstOrDefault(l => string.Equals(l.Name, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase)) is not { } on)
                 {
                     continue;
                 }
 
-                var removed = await client.RemoveLabelAsync(item.Repository, item.Number, present.Name, ct).ConfigureAwait(false);
+                var removed = await client.RemoveLabelAsync(other.Repository, other.Number, on.Name, ct).ConfigureAwait(false);
 
-                // Not found: somebody took it off on GitHub since the board was read. That is what was wanted.
                 if (!removed.Ok && removed.Outcome != GitHubOutcome.NotFound)
                 {
-                    return (PlannerActionOutcome.Refused, removed.Describe(), item with { Labels = labels });
+                    return (PlannerActionOutcome.Refused, $"{other.Reference} is still worked on: {removed.Describe()}", changed);
                 }
 
-                labels.Remove(present);
+                changed.Add(other with { Labels = [.. other.Labels.Where(l => !ReferenceEquals(l, on))] });
             }
 
-            if (day != PlannerDay.Undecided)
+            if (entry.CarriedOver)
             {
-                var name = day == PlannerDay.Today ? PlannerQueue.TodayLabel : PlannerQueue.NotTodayLabel;
-                var added = await client.AddLabelAsync(item.Repository, item.Number, name, ct).ConfigureAwait(false);
+                var (refused, planned) = await ApplyDayAsync(client, board, item, PlannerDay.Today, ct).ConfigureAwait(false);
+                item = planned;
+
+                if (refused is not null)
+                {
+                    return (PlannerActionOutcome.Refused, refused, [.. changed, item]);
+                }
+            }
+
+            if (label is null)
+            {
+                var added = await client.AddLabelAsync(item.Repository, item.Number, PlannerQueue.ActiveLabel, ct).ConfigureAwait(false);
 
                 if (!added.Ok)
                 {
-                    return (PlannerActionOutcome.Refused, added.Describe(), item with { Labels = labels });
+                    return (PlannerActionOutcome.Refused, added.Describe(), [.. changed, item]);
                 }
 
-                labels.Add(new BoardLabel(name, clock.UtcNow));
+                item = item with { Labels = [.. item.Labels, new BoardLabel(PlannerQueue.ActiveLabel, clock.UtcNow)] };
             }
 
-            // A day decided now replaces a later day planned before: the date would make it
-            // planned again, or left over, on a day nobody chose any more.
-            var (cleared, dates) = await ClearPlannedAsync(client, board, item, ct).ConfigureAwait(false);
-
-            return cleared is { } refused
-                ? (PlannerActionOutcome.Refused, refused, item with { Labels = labels })
-                : (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = dates });
+            return (PlannerActionOutcome.Done, "worked on now", [.. changed, item]);
         });
 
     public Task<PlannerActionResult> AssignAsync(string itemId, string login, bool assign, string actor, CancellationToken ct) =>
@@ -475,7 +580,8 @@ public sealed class PlannerService(
         var labels = result.Labels
             .Select(l => repositoryLabels.FirstOrDefault(r => string.Equals(r.Name, l?.Trim(), StringComparison.OrdinalIgnoreCase))?.Name)
             .Where(l => l is not null && !string.Equals(l, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(l, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(l, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase))
             .Select(l => l!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(10)
@@ -602,7 +708,8 @@ public sealed class PlannerService(
     /// <summary>
     /// Plans an item for a later day - the board's date field set to tomorrow or to next
     /// Monday - or puts it back into the backlog: no day, and Status <c>BacklogStatus</c>. The
-    /// two labels of the day come off in every case: what was decided for today no longer holds.
+    /// two labels of the day come off in every case, and the one of being worked on: what was
+    /// decided for today no longer holds.
     /// </summary>
     public Task<PlannerActionResult> ScheduleAsync(string itemId, PlannerSchedule schedule, string actor, CancellationToken ct) =>
         ActAsync(itemId, actor, ct, async (client, board, entry) =>
@@ -639,7 +746,8 @@ public sealed class PlannerService(
             var labels = item.Labels.ToList();
 
             foreach (var present in labels.Where(l => string.Equals(l.Name, PlannerQueue.TodayLabel, StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(l.Name, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase)).ToList())
+                         || string.Equals(l.Name, PlannerQueue.NotTodayLabel, StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(l.Name, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase)).ToList())
             {
                 var removed = await client.RemoveLabelAsync(item.Repository, item.Number, present.Name, ct).ConfigureAwait(false);
 
@@ -847,11 +955,24 @@ public sealed class PlannerService(
     /// a sentence, and the item as it is now when something of it changed - also after a refusal
     /// halfway, when a label came off and the next one did not go on.
     /// </summary>
-    private async Task<PlannerActionResult> ActAsync(
+    private Task<PlannerActionResult> ActAsync(
         string itemId,
         string actor,
         CancellationToken ct,
-        Func<IGitHubClient, Board, PlannerEntry, Task<(PlannerActionOutcome Outcome, string Message, BoardItem? Changed)>> act)
+        Func<IGitHubClient, Board, PlannerEntry, Task<(PlannerActionOutcome Outcome, string Message, BoardItem? Changed)>> act) =>
+        ActManyAsync(itemId, actor, ct, async (client, board, entry) =>
+        {
+            var (outcome, message, changed) = await act(client, board, entry).ConfigureAwait(false);
+
+            return (outcome, message, changed is null ? [] : [changed]);
+        });
+
+    /// <summary>One click that may change more than its own item: starting work on one stops it on another.</summary>
+    private async Task<PlannerActionResult> ActManyAsync(
+        string itemId,
+        string actor,
+        CancellationToken ct,
+        Func<IGitHubClient, Board, PlannerEntry, Task<(PlannerActionOutcome Outcome, string Message, IReadOnlyList<BoardItem> Changed)>> act)
     {
         var who = actor?.Trim() ?? string.Empty;
         ArgumentException.ThrowIfNullOrWhiteSpace(who);
@@ -890,10 +1011,12 @@ public sealed class PlannerService(
 
             var (outcome, message, changed) = await act(client, board, entry).ConfigureAwait(false);
 
-            if (changed is not null)
+            if (changed.Count > 0)
             {
+                var byId = changed.GroupBy(i => i.ItemId).ToDictionary(g => g.Key, g => g.Last());
+
                 snapshot = kept = Present(
-                    board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] },
+                    board with { Items = [.. board.Items.Select(i => byId.TryGetValue(i.ItemId, out var now) ? now : i)] },
                     snapshot.ReadAt ?? clock.UtcNow,
                     snapshot.Problem);
 

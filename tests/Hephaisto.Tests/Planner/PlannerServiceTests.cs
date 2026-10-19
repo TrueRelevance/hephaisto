@@ -264,6 +264,72 @@ public sealed class PlannerServiceTests
         result.Snapshot.Entry("PVTI_57")!.Day.Should().Be(PlannerDay.Today);
     }
 
+    // --- what is worked on now ---------------------------------------------------------------
+
+    [Fact]
+    public async Task Only_an_issue_planned_for_today_is_worked_on_and_starting_one_stops_the_other()
+    {
+        var (planner, github, _, audit) = Build();
+        await planner.ReadAsync(false, Ct);
+        github.Calls.Clear();
+
+        // #57 was put away yesterday: not planned for today.
+        var refused = await planner.SetActiveAsync("PVTI_57", true, "flo", Ct);
+        refused.Outcome.Should().Be(PlannerActionOutcome.NotFound);
+        refused.Message.Should().Contain("planned for today");
+        audit.Rows.Should().BeEmpty();
+        github.Calls.Should().BeEmpty();
+
+        await planner.SetDayAsync("PVTI_431", PlannerDay.Today, "flo", Ct);
+        var first = await planner.SetActiveAsync("PVTI_431", true, "flo", Ct);
+
+        first.Outcome.Should().Be(PlannerActionOutcome.Done, first.Message);
+        first.Snapshot.Active!.Item.Number.Should().Be(431);
+
+        // #240 is left over from two days ago: started, it is planned for today again.
+        github.Calls.Clear();
+        var second = await planner.SetActiveAsync("PVTI_240", true, "flo", Ct);
+
+        second.Outcome.Should().Be(PlannerActionOutcome.Done, second.Message);
+        github.Calls.Should().Equal("unlabel acme/api#431 active", "unlabel acme/web#240 today", "label acme/web#240 today", "label acme/web#240 active");
+        second.Snapshot.Entries.Where(e => e.Active).Should().ContainSingle().Which.Should().Match<PlannerEntry>(e => e.Item.Number == 240 && !e.CarriedOver);
+        audit.Rows.Last().Should().Match<AuditEvent>(r => r.Type == PlannerService.AuditActive && r.Summary == "acme/web#240: worked on now");
+    }
+
+    [Fact]
+    public async Task Stopping_or_moving_the_issue_off_today_takes_the_label_off()
+    {
+        var (planner, github, _, _) = Build();
+        await planner.ReadAsync(false, Ct);
+        await planner.SetDayAsync("PVTI_431", PlannerDay.Today, "flo", Ct);
+        await planner.SetActiveAsync("PVTI_431", true, "flo", Ct);
+
+        github.Calls.Clear();
+        var stopped = await planner.SetActiveAsync("PVTI_431", false, "flo", Ct);
+
+        stopped.Message.Should().Be("no longer worked on");
+        github.Calls.Should().Equal("unlabel acme/api#431 active");
+        stopped.Snapshot.Active.Should().BeNull();
+        stopped.Snapshot.Entry("PVTI_431")!.Day.Should().Be(PlannerDay.Today, "stopping is not putting it away");
+
+        (await planner.SetActiveAsync("PVTI_431", false, "flo", Ct)).Message.Should().Be("it was not being worked on");
+
+        await planner.SetActiveAsync("PVTI_431", true, "flo", Ct);
+        github.Calls.Clear();
+        var away = await planner.SetDayAsync("PVTI_431", PlannerDay.NotToday, "flo", Ct);
+
+        github.Calls.Should().Equal("unlabel acme/api#431 today", "unlabel acme/api#431 active", "label acme/api#431 not today");
+        away.Snapshot.Active.Should().BeNull();
+
+        await planner.SetDayAsync("PVTI_431", PlannerDay.Today, "flo", Ct);
+        await planner.SetActiveAsync("PVTI_431", true, "flo", Ct);
+        github.Calls.Clear();
+        var later = await planner.ScheduleAsync("PVTI_431", PlannerSchedule.Tomorrow, "flo", Ct);
+
+        github.Calls.Should().Contain("unlabel acme/api#431 active");
+        later.Snapshot.Active.Should().BeNull();
+    }
+
     // --- assigning ----------------------------------------------------------------------------
 
     [Fact]

@@ -36,6 +36,8 @@ const ITEMS: Record<string, string> = {
   closeFromToday: 'acme/api#440',
   assign: 'acme/planning#17',
   row: 'acme/planning#9',
+  activeFirst: 'acme/web#262',
+  activeSecond: 'acme/api#461',
   ...JSON.parse(process.env.PLANNER_E2E_ITEMS ?? '{}'),
 };
 
@@ -48,7 +50,7 @@ type Item = {
   reason: string; emptyFields: string[]; day: string; carriedOver: boolean;
   fields: Record<string, string>; assignees: string[]; parentUrl: string | null;
   subIssues: number; subIssuesDone: number; pullRequests: Pull[];
-  body: string | null; comments: number; labels: string[]; createdAt: string; dayAt: string | null; plannedFor: string | null;
+  body: string | null; comments: number; labels: string[]; createdAt: string; dayAt: string | null; plannedFor: string | null; active: boolean;
 };
 
 /** The newest walks' order: by when the issue was opened, newest first, then by reference. */
@@ -595,7 +597,8 @@ test.describe('planner', () => {
       await expect(row).toHaveCount(1);
       // Planned today is the list; what was planned on an earlier day is the left-overs above it.
       const plannedToday = board.items.filter(i => i.day === 'Today' && !i.carriedOver);
-      await expect(page.getByTestId('planner-today-row')).toHaveCount(plannedToday.length);
+      // What is worked on right now is above everything, and in neither list.
+      await expect(page.getByTestId('planner-today-row')).toHaveCount(plannedToday.filter(i => !i.active).length);
       await expect(page.locator('[data-testid="planner-stat"][data-stat="today"] .hp-stat-value')).toHaveText(String(plannedToday.length));
       await expect(page.locator('[data-testid="planner-stat"][data-stat="leftover"] .hp-stat-value')).toHaveText(String(board.items.filter(i => i.day === 'Today' && i.carriedOver).length));
 
@@ -626,6 +629,86 @@ test.describe('planner', () => {
 
       await expect.poll(async () => (await truth(page.request, ref(target))).state, { timeout: 30_000 }).toBe('closed');
       expect((await planner(page.request)).closedToday.map(ref)).toContain(ref(target));
+    });
+
+    test('one issue is worked on at a time: started from today\'s list, shown at the top, switched, and stopped', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in seeds the two issues planned for today');
+
+      const first = await item(page.request, 'activeFirst');
+      const second = await item(page.request, 'activeSecond');
+      const hasActive = async (i: Item) => (await truth(page.request, ref(i))).labels.includes('active');
+
+      await open(page, '/planner?view=today');
+      const active = page.getByTestId('planner-active');
+      await expect(active.getByTestId('planner-active-none')).toBeVisible();
+
+      // At the top: above the day's numbers and every list.
+      const top = async (testId: string) => (await page.getByTestId(testId).first().boundingBox())!.y;
+      expect(await top('planner-active')).toBeLessThan(await top('planner-stat'));
+
+      const row = (i: Item) => page.locator(`[data-testid="planner-today-row"][data-item="${i.itemId}"]`);
+      await expect(row(first).getByTestId('planner-today-start')).toBeEnabled();
+      await row(first).getByTestId('planner-today-start').click();
+      await said(page, `${ref(first)}: worked on now`);
+      await expect(active).toHaveAttribute('data-item', first.itemId);
+      await expect(active.getByTestId('planner-row-title')).toHaveText(first.title);
+      await expect(row(first)).toHaveCount(0);
+      await expect.poll(() => hasActive(first), { timeout: 30_000 }).toBe(true);
+
+      // Starting another stops the first: one at a time, on GitHub too.
+      await row(second).getByTestId('planner-today-start').click();
+      await said(page, `${ref(second)}: worked on now`);
+      await expect(active).toHaveAttribute('data-item', second.itemId);
+      await expect(row(first)).toHaveCount(1);
+      await expect.poll(() => hasActive(first), { timeout: 30_000 }).toBe(false);
+      expect(await hasActive(second)).toBe(true);
+      expect((await planner(page.request)).items.filter(i => i.active).map(ref)).toEqual([ref(second)]);
+
+      // Stopped: back in the day's list, still planned for today.
+      await active.getByTestId('planner-active-stop').click();
+      await said(page, `${ref(second)}: no longer worked on`);
+      await expect(active.getByTestId('planner-active-none')).toBeVisible();
+      await expect(row(second)).toHaveCount(1);
+      await expect.poll(() => hasActive(second), { timeout: 30_000 }).toBe(false);
+
+      // Put away while worked on: it is no longer worked on either.
+      await row(first).getByTestId('planner-today-start').click();
+      await said(page, `${ref(first)}: worked on now`);
+      await active.getByTestId('planner-active-away').click();
+      await said(page, `${ref(first)}: not today`);
+      await expect(active.getByTestId('planner-active-none')).toBeVisible();
+      await expect.poll(async () => (await truth(page.request, ref(first))).labels.filter(l => ['today', 'not today', 'active'].includes(l)), { timeout: 30_000 }).toEqual(['not today']);
+
+      // Only what is planned for today can be started: the API says so and GitHub hears nothing.
+      const refused = await page.request.post(`/api/planner/items/${encodeURIComponent(first.itemId)}/active`, { data: { active: true, decidedBy: NAME } });
+      expect(refused.status()).toBe(404);
+      expect(await hasActive(first)).toBe(false);
+    });
+
+    test('a long description is three quarters of a screen high, can be dragged, and is shown at its full length', async ({ page }) => {
+      test.skip(LIVE, 'PRECONDITION: the stand-in seeds the long description');
+
+      const target = await item(page.request, 'activeSecond');
+      await open(page, `/planner?view=today&detail=${encodeURIComponent(target.itemId)}`);
+
+      const description = page.getByTestId('planner-detail').getByTestId('planner-item-description');
+      await expect(description).toContainText('Step 80');
+      const box = () => description.evaluate(e => ({ client: e.clientHeight, scroll: e.scrollHeight, resize: getComputedStyle(e).resize, viewport: window.innerHeight }));
+
+      const capped = await box();
+      expect(capped.resize).toBe('vertical');
+      expect(capped.client).toBeGreaterThan(capped.viewport * 0.6);
+      expect(capped.scroll).toBeGreaterThan(capped.client);
+
+      // A button that can be disabled is enabled once the circuit is live, and a click is heard.
+      await expect(page.getByTestId('planner-detail').getByTestId('planner-day').first()).toBeEnabled();
+      const full = page.getByTestId('planner-detail').getByTestId('planner-description-full');
+      await full.click();
+      await expect(description).toHaveClass(/is-full/);
+      await expect.poll(async () => { const b = await box(); return b.scroll - b.client; }).toBeLessThanOrEqual(2);
+
+      await full.click();
+      await expect(description).not.toHaveClass(/is-full/);
     });
 
     test('what was planned on an earlier day and not finished is left over, and each is decided again', async ({ page }) => {

@@ -1798,8 +1798,9 @@ details > summary {
     margin-left: auto;
 }
 
-/* The issue's own text under its title. Prose, so the reading face and not the mono one; as
-   high as a screen allows and no higher, because the buttons are below it. */
+/* The issue's own text under its title. Prose, so the reading face and not the mono one. A
+   description on GitHub can be pages long: three quarters of a screen, a corner to drag it
+   higher or lower, and at full length no cap at all. */
 .hp-planner-more {
     margin: 0 0 0.7rem;
 }
@@ -1810,6 +1811,16 @@ details > summary {
     max-height: 22rem;
     overflow: auto;
     font-size: var(--text-xl);
+}
+
+.hp-planner-description {
+    max-height: 75vh;
+    min-height: 4rem;
+    resize: vertical;
+}
+
+.hp-planner-description.is-full {
+    max-height: none;
 }
 
 .hp-planner-nobody {
@@ -2161,4 +2172,27 @@ a.hp-planner-row-title:hover {
 
 .hp-table td.c-sub2 {
     padding-left: 3.3rem;
+}
+
+/* What is being worked on right now, above everything else in the today view: one issue,
+   framed in the accent so it is found at a glance. */
+.hp-planner-active .hp-planner-active-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.2rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--accent);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+}
+
+.hp-planner-active-main {
+    flex: 1 1 24rem;
+    min-width: 0;
+}
+
+.hp-planner-active .hp-planner-row-title {
+    font-size: var(--text-3xl);
 }

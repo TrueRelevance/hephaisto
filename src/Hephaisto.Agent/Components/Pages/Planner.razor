@@ -270,9 +270,52 @@ else
         }
         else if (ViewName == ViewToday)
         {
+            <section class="hp-section hp-planner-active" data-testid="planner-active" data-item="@(Active?.Item.ItemId)">
+                <h2>active</h2>
+                @if (Active is { } a)
+                {
+                    var item = a.Item;
+
+                    <div class="hp-planner-active-item" data-testid="planner-active-item" data-reference="@item.Reference">
+                        <div class="hp-planner-active-main">
+                            @IssueCell(a)
+                            <div class="hp-planner-ids hp-muted">
+                                <span>prio <span class="mono @PriorityClass(board, a)">@(item.Field(PlannerQueue.PriorityField) ?? "--")</span></span>
+                                <span>status @(item.Field(PlannerQueue.StatusField) ?? "--")</span>
+                                @if (item.ParentUrl is { } parentUrl)
+                                {
+                                    <span>parent <span class="mono">@Display.ShortIssue(parentUrl)</span></span>
+                                }
+                                <span>@Pulls(item)</span>
+                                @if (a.CarriedOver)
+                                {
+                                    <span class="hp-warn" data-testid="planner-active-leftover">planned @PlannedWhen(a), still open</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="c-act">
+                            <a class="hp-planner-details" href="@DetailHref(a)" data-testid="planner-active-detail" aria-current="@(Detail == item.ItemId ? "true" : null)">details</a>
+                            @if (a.CarriedOver)
+                            {
+                                <button type="button" data-testid="planner-active-today" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Today, false)">today</button>
+                            }
+                            <button type="button" class="hp-submit" data-testid="planner-active-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
+                            <button type="button" data-testid="planner-active-stop" disabled="@RowLocked" @onclick="() => ActiveAsync(item.ItemId, false)">stop working on it</button>
+                            <button type="button" data-testid="planner-active-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <p class="hp-muted" data-testid="planner-active-none">
+                        Nothing is being worked on right now. Pick one of today's issues with <em>work on it</em>; there is only ever one.
+                    </p>
+                }
+            </section>
+
             <div class="hp-status-grid">
-                <div class="hp-stat" data-testid="planner-stat" data-stat="today"><span class="hp-stat-label">for today</span><span class="hp-stat-value">@PlannedToday.Count</span></div>
-                <div class="hp-stat" data-testid="planner-stat" data-stat="leftover"><span class="hp-stat-label">left over</span><span class="hp-stat-value">@LeftOver.Count</span><span class="hp-muted">from an earlier day</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="today"><span class="hp-stat-label">for today</span><span class="hp-stat-value">@ForToday.Count(e => !e.CarriedOver)</span></div>
+                <div class="hp-stat" data-testid="planner-stat" data-stat="leftover"><span class="hp-stat-label">left over</span><span class="hp-stat-value">@ForToday.Count(e => e.CarriedOver)</span><span class="hp-muted">from an earlier day</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="done"><span class="hp-stat-label">done today</span><span class="hp-stat-value">@_snapshot.ClosedToday.Count</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="away"><span class="hp-stat-label">put away</span><span class="hp-stat-value">@PutAway.Count</span><span class="hp-muted">come back tomorrow</span></div>
                 <div class="hp-stat" data-testid="planner-stat" data-stat="later"><span class="hp-stat-label">later</span><span class="hp-stat-value">@Later.Count</span><span class="hp-muted">tomorrow and on</span></div>
@@ -301,6 +344,7 @@ else
                                     <td class="c-time" data-testid="planner-leftover-since">planned @PlannedWhen(e)</td>
                                     <td class="c-act">
                                         <button type="button" class="hp-submit" data-testid="planner-leftover-today" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.Today, false)">today</button>
+                                        <button type="button" data-testid="planner-leftover-start" disabled="@RowLocked" title="keep it for today and work on it now" @onclick="() => ActiveAsync(item.ItemId, true)">work on it</button>
                                         <button type="button" data-testid="planner-leftover-away" disabled="@RowLocked" @onclick="() => DayAsync(item.ItemId, PlannerDay.NotToday, false)">not today</button>
                                         <button type="button" data-testid="planner-leftover-tomorrow" disabled="@RowLocked" @onclick="() => PlanLaterAsync(item.ItemId, PlannerSchedule.Tomorrow, false)">tomorrow</button>
                                         <button type="button" data-testid="planner-leftover-week" disabled="@RowLocked" @onclick="() => PlanLaterAsync(item.ItemId, PlannerSchedule.NextWeek, false)">next week</button>
@@ -348,6 +392,7 @@ else
                                     <td class="c-time">@(item.Field(PlannerQueue.StatusField) ?? "--")</td>
                                     <td>@Pulls(item)</td>
                                     <td class="c-act">
+                                        <button type="button" class="hp-submit" data-testid="planner-today-start" disabled="@RowLocked" title="work on it now - and on nothing else" @onclick="() => ActiveAsync(item.ItemId, true)">work on it</button>
                                         <a class="hp-planner-details" href="@DetailHref(e)" data-testid="planner-today-detail" aria-current="@(Detail == item.ItemId ? "true" : null)">details</a>
                                         <button type="button" class="@(e.Reason is PlannerReason.MergedStillOpen or PlannerReason.SubIssuesDone ? "hp-submit" : null)"
                                                 data-testid="planner-today-close" disabled="@RowLocked" @onclick="() => CloseAsync(item.ItemId, false, thenNext: false)">close: done</button>
@@ -878,11 +923,14 @@ else
     private IReadOnlyList<PlannerEntry> ForToday =>
         [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.Today).OrderBy(e => _snapshot.Board is { } b ? PlannerQueue.PriorityRank(b, e.Item) : 0)];
 
+    /// <summary>What is being worked on right now: shown above everything else, and in no list below.</summary>
+    private PlannerEntry? Active => _snapshot.Active;
+
     /// <summary>Planned on an earlier day and still open: what was not finished, to decide about again.</summary>
-    private IReadOnlyList<PlannerEntry> LeftOver => [.. ForToday.Where(e => e.CarriedOver).OrderBy(e => e.DayAt ?? DateTimeOffset.MinValue)];
+    private IReadOnlyList<PlannerEntry> LeftOver => [.. ForToday.Where(e => e.CarriedOver && !e.Active).OrderBy(e => e.DayAt ?? DateTimeOffset.MinValue)];
 
     /// <summary>Planned today.</summary>
-    private IReadOnlyList<PlannerEntry> PlannedToday => [.. ForToday.Where(e => !e.CarriedOver)];
+    private IReadOnlyList<PlannerEntry> PlannedToday => [.. ForToday.Where(e => !e.CarriedOver && !e.Active)];
 
     private IReadOnlyList<PlannerEntry> PutAway => [.. _snapshot.Entries.Where(e => e.Day == PlannerDay.NotToday)];
 
@@ -1097,6 +1145,9 @@ else
 
     private Task DayAsync(string itemId, PlannerDay day, bool thenNext) =>
         ActAsync(itemId, (actor, ct) => Service.SetDayAsync(itemId, day, actor, ct), thenNext);
+
+    private Task ActiveAsync(string itemId, bool active) =>
+        ActAsync(itemId, (actor, ct) => Service.SetActiveAsync(itemId, active, actor, ct), thenNext: false);
 
     private Task PlanLaterAsync(string itemId, PlannerSchedule when, bool thenNext) =>
         ActAsync(itemId, (actor, ct) => Service.ScheduleAsync(itemId, when, actor, ct), thenNext);

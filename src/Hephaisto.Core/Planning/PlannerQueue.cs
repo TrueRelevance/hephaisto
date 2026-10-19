@@ -59,6 +59,7 @@ public sealed record PlannerRules(IReadOnlyList<string> RequiredFields, TimeSpan
 /// <param name="CarriedOver">Scheduled on an earlier day and still open.</param>
 /// <param name="LastActivity">The newest of the issue's last change and its pull requests'.</param>
 /// <param name="PlannedFor">The day in the board's date field, when there is one.</param>
+/// <param name="Active">What is being worked on right now: at most one entry of a board, and one planned for today.</param>
 public sealed record PlannerEntry(
     BoardItem Item,
     PlannerReason Reason,
@@ -67,7 +68,8 @@ public sealed record PlannerEntry(
     bool CarriedOver,
     DateTimeOffset? DayAt,
     DateTimeOffset LastActivity,
-    DateOnly? PlannedFor = null)
+    DateOnly? PlannedFor = null,
+    bool Active = false)
 {
     public bool NeedsDecision => Reason != PlannerReason.None;
 }
@@ -103,11 +105,18 @@ public sealed record PlannerGroup(PlannerEntry? Epic, IReadOnlyList<PlannerRow> 
 /// the item still open makes it left over, as an old <see cref="TodayLabel"/> does. A label set
 /// today wins over the date.
 /// </para>
+/// <para>
+/// <b>What is worked on right now is a third label</b>, <see cref="ActiveLabel"/>, on one issue
+/// planned for today. The planner takes it off every other issue when it puts it on; should
+/// GitHub still show it on more than one, the newest counts, and on an issue not planned for
+/// today it counts for nothing.
+/// </para>
 /// </remarks>
 public static class PlannerQueue
 {
     public const string TodayLabel = "today";
     public const string NotTodayLabel = "not today";
+    public const string ActiveLabel = "active";
 
     /// <summary>The field every GitHub project has, by its default name. Its options are the board's columns.</summary>
     public const string StatusField = "Status";
@@ -132,9 +141,15 @@ public static class PlannerQueue
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return [.. board.Items
-            .Where(item => item.Open)
-            .Select(item => Entry(item, required, rules, now))
+        var entries = board.Items.Where(item => item.Open).Select(item => Entry(item, required, rules, now)).ToList();
+
+        var active = entries
+            .Where(e => e.Day == PlannerDay.Today && Label(e.Item, ActiveLabel) is not null)
+            .OrderByDescending(e => Label(e.Item, ActiveLabel)!.AddedAt ?? DateTimeOffset.MinValue)
+            .FirstOrDefault();
+
+        return [.. entries
+            .Select(entry => ReferenceEquals(entry, active) ? entry with { Active = true } : entry)
             .OrderBy(entry => (int)entry.Reason)
             .ThenBy(entry => PriorityRank(board, entry.Item))
             .ThenByDescending(entry => StatusRank(board, entry.Item))

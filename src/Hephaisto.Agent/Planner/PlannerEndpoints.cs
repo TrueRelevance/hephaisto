@@ -32,6 +32,7 @@ public sealed record PlannerView(
 /// <param name="CreatedAt">When the issue was opened: what the newest walks go by.</param>
 /// <param name="DayAt">When the label of <paramref name="Day"/> was put on; with <paramref name="CarriedOver"/>, the earlier day it was planned on.</param>
 /// <param name="PlannedFor">The day in the board's day field, when there is one.</param>
+/// <param name="Active">What is being worked on right now: true for one item at most.</param>
 public sealed record PlannerItemView(
     string ItemId,
     string Repository,
@@ -55,7 +56,8 @@ public sealed record PlannerItemView(
     IReadOnlyList<string> Labels,
     DateTimeOffset CreatedAt,
     DateTimeOffset? DayAt,
-    DateOnly? PlannedFor);
+    DateOnly? PlannedFor,
+    bool Active);
 
 public sealed record PlannerClosedView(string ItemId, string Repository, int Number, string Title, string Url, DateTimeOffset? ClosedAt);
 
@@ -66,6 +68,9 @@ public sealed record PlannerCloseRequest(bool NotPlanned, string? DecidedBy);
 
 /// <param name="Day"><c>today</c>, <c>not today</c>, or <c>none</c> to take the decision back.</param>
 public sealed record PlannerDayRequest(string? Day, string? DecidedBy);
+
+/// <param name="Active">True to work on the item now - and on no other - false to stop.</param>
+public sealed record PlannerActiveRequest(bool Active, string? DecidedBy);
 
 public sealed record PlannerAssigneeRequest(string? Login, bool Assign, string? DecidedBy);
 
@@ -153,6 +158,11 @@ public static class PlannerEndpoints
                     : Task.FromResult<Results<Ok<PlannerActionResponse>, NotFound<PlannerActionResponse>, Conflict<PlannerActionResponse>, ValidationProblem>>(
                         TypedResults.ValidationProblem(new Dictionary<string, string[]> { ["when"] = ["when is 'tomorrow', 'next week' or 'backlog'."] })))
             .WithName("SchedulePlannerItem")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        item.MapPost("/active", (string itemId, PlannerActiveRequest body, HttpContext http, PlannerService planner, CancellationToken ct) =>
+                ActAsync(itemId, body.DecidedBy, http, actor => planner.SetActiveAsync(itemId, body.Active, actor, ct)))
+            .WithName("SetPlannerActive")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
         app.MapGet("/api/planner/search", (string? q, string? state, PlannerService planner) =>
@@ -380,7 +390,8 @@ public static class PlannerEndpoints
         [.. entry.Item.Labels.Select(l => l.Name)],
         entry.Item.CreatedAt,
         entry.DayAt,
-        entry.PlannedFor);
+        entry.PlannedFor,
+        entry.Active);
 
     private static PlannerDay? Day(string? word) => word?.Trim().ToLowerInvariant() switch
     {

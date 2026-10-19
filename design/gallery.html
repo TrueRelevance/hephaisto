@@ -1103,10 +1103,11 @@ Closes acme/api#412
           <div class="hp-planner-more">
             <div class="hp-planner-ids">
               <button type="button" aria-expanded="true">hide description</button>
+              <button type="button" aria-pressed="false">full length</button>
               <span class="hp-muted">4 comments</span>
               <span class="hp-chip">customer</span>
             </div>
-            <div class="hp-excerpt hp-planner-body hp-markdown"><h2>What happens</h2>
+            <div class="hp-excerpt hp-planner-body hp-planner-description hp-markdown"><h2>What happens</h2>
 <p>After a price change the cart shows the old total until the entry expires.</p>
 <ol>
 <li>Change a price</li>
@@ -1258,6 +1259,29 @@ Closes acme/api#412
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <!-- The today view's top: the one issue worked on right now. -->
+      <section class="hp-section hp-planner-active" data-testid="planner-active">
+        <h2>active</h2>
+        <div class="hp-planner-active-item">
+          <div class="hp-planner-active-main">
+            <a class="hp-planner-row-title" href="#">Retry the invoice webhook with backoff</a>
+            <span class="hp-planner-row-ref hp-planner-ids"><a class="mono" href="#">acme/api#461</a><span class="hp-chip">Task</span></span>
+            <div class="hp-planner-ids hp-muted">
+              <span>prio <span class="mono">P1</span></span>
+              <span>status Ready</span>
+              <span>parent <span class="mono">acme/planning#17</span></span>
+              <span><span class="hp-faint">none</span></span>
+            </div>
+          </div>
+          <div class="c-act">
+            <a class="hp-planner-details" href="#">details</a>
+            <button type="button" class="hp-submit">close: done</button>
+            <button type="button">stop working on it</button>
+            <button type="button">not today</button>
+          </div>
+        </div>
       </section>
     </section>
 

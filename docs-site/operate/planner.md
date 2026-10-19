@@ -31,7 +31,11 @@ GitHub. Inside code and inside a link nothing becomes one. The card lists an iss
 the same way, each a link, and its parent is a link back up. *Hide description* puts
 it away for the whole walk, and the browser remembers that.
 
-**Today.** First what is **left over**: planned on an earlier day and still open, the oldest
+**Today.** At the top is what is **active**: the one issue being worked on right now, with
+*details*, *close: done*, *stop working on it* and *not today*. *Work on it* on any row planned
+for today makes that one active and stops the one before - there is only ever one, for the whole
+board, as the day is the board's. A left-over issue is planned for today again when it is started.
+The active issue is in no list below it. Then what is **left over**: planned on an earlier day and still open, the oldest
 first, each saying when it was planned (*yesterday*, or the day) with *today* (keep it for today),
 *not today* (until tomorrow), *off the plan* (neither label), *close: done* and *details*. Then
 what is planned today, by priority, with *close* and *not today* on each row; what was closed
@@ -118,10 +122,12 @@ front of the person. `/planner?walk=newest` (or `newest-unplanned`) opens the pa
 | **today** | puts the label `today` on the issue, and takes `not today` off |
 | **not today** | puts the label `not today` on the issue, and takes `today` off |
 | the marked one of the two, again | takes the label off |
+| **work on it** | puts the label `active` on the issue and takes it off every other open issue of the board; on a left-over issue, sets `today` again first |
+| **stop working on it** | takes `active` off; not today, tomorrow, next week and backlog take it off too |
 | an account under *assignee* | assigns the issue to it, or takes it off |
 
 Everything is done by the **agent's account**. The audit trail records the person who clicked: a
-row `planner.field`, `planner.close`, `planner.day` or `planner.assign` is written *before* GitHub
+row `planner.field`, `planner.close`, `planner.day`, `planner.active` or `planner.assign` is written *before* GitHub
 is called, and a refusal is a second row, `planner.refused`. Nothing here can be clicked by
 somebody without the approver role, or — where sign-in is off — without a name.
 
@@ -184,6 +190,10 @@ planned on an earlier day and is still open says so, *from an earlier day*, and 
 keeps it for today. `not today` counts only on the day it was set: an issue that was put away
 comes back the next morning by itself, and the old label is replaced the next time the issue is
 planned. A day is a UTC day.
+
+What is worked on right now is a third label, `active`. It counts only on an issue planned for
+today; should GitHub show it on more than one - somebody put it on by hand - the newest counts,
+and the next *work on it* takes it off the others.
 
 GitHub creates a label a repository does not have, so nobody has to prepare the repositories.
 
@@ -283,6 +293,8 @@ newest analysis on the issue, and the line for Claude Code. A later day is
 issue takes `day` with any of those or `today` / `not today`. `GET /api/planner/search?q=&state=`
 searches the board, `GET` and `POST /api/planner/comments` read and write an issue's comments.
 `POST /api/workitems/{id}/codefix/{attemptId}/replan` asks for a new plan, beside `/approve` and `/deny`.
+`POST /api/planner/items/{itemId}/active` (`active`: true or false) starts or stops working on an
+issue; one not planned for today is refused with 404 before GitHub hears of it.
 
 ```sh
 kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in progress

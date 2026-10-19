@@ -648,6 +648,9 @@ minutes - so a red live run is read request by request before it is believed.
 - **The day is two labels and their age**, from the newest `labeled` event of the issue's
   timeline. Setting a day takes BOTH labels off first, also the one that is asked for: a label
   that is already there keeps its old date, and the date is what says which day it is for.
+  `active` is a third label - the one issue worked on now, for the whole board: `SetActiveAsync`
+  takes it off every other open issue, and a day other than today takes it off its own. A click
+  that changes more than one item goes through `ActManyAsync`, which patches all of them.
 - **GraphQL answers 200 with `errors`**, its rate limit included (`GraphQlAnswer`). A read with
   an error beside a usable answer is an answer; a write with any error wrote nothing.
 - **Razor drops the spaces around a conditional block.** Pieces that sit on one line go into

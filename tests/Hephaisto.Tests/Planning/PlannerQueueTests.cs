@@ -223,6 +223,23 @@ public sealed class PlannerQueueTests
     }
 
     [Fact]
+    public void One_issue_at_most_is_worked_on_the_newest_label_counts_and_only_on_an_issue_planned_for_today()
+    {
+        var entries = PlannerQueue.Build(BoardOf(
+            Item(1, labels: [new("today", Now.AddHours(-3)), new("active", Now.AddHours(-2))]),
+            Item(2, labels: [new("today", Now.AddHours(-3)), new("Active", Now.AddHours(-1))]),
+            Item(3, labels: [new("not today", Now.AddHours(-1)), new("active", Now)]),
+            Item(4, labels: [new("active", Now)])), Rules, Now);
+
+        entries.Where(e => e.Active).Should().ContainSingle().Which.Item.Number.Should().Be(2, "of two on today's issues the newer label counts");
+        entries.Single(e => e.Item.Number == 3).Active.Should().BeFalse("an issue put away for today is not worked on");
+        entries.Single(e => e.Item.Number == 4).Active.Should().BeFalse("nor is one nobody planned");
+
+        PlannerQueue.Build(BoardOf(Item(1, labels: [new("today", Now.AddDays(-1)), new("active", Now.AddDays(-1))])), Rules, Now)
+            .Should().ContainSingle().Which.Should().Match<PlannerEntry>(e => e.Active && e.CarriedOver, "left over from yesterday, and still what is worked on");
+    }
+
+    [Fact]
     public void A_day_is_a_utc_day()
     {
         var lateYesterday = new DateTimeOffset(2026, 10, 12, 23, 59, 0, TimeSpan.Zero);

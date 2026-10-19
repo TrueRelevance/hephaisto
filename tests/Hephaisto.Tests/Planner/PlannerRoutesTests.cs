@@ -54,6 +54,7 @@ public sealed class PlannerRoutesTests
             "/api/planner/items/{itemId}/day",
             "/api/planner/items/{itemId}/assignee",
             "/api/planner/items/{itemId}/schedule",
+            "/api/planner/items/{itemId}/active",
             "/api/planner/comments",
             "/api/planner/issues",
             "/api/planner/triage",

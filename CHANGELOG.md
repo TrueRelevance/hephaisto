@@ -81,6 +81,14 @@ turn it on - the project, the token, the values - is one page:
   keep it for today, put it away until tomorrow, take it off the plan, or close it. The day's
   list holds what was planned today. Rows read by the issue's title, which links to its
   details; the reference is small beneath it. `GET /api/planner` gives each item its `dayAt`.
+- **Active: the one issue worked on right now**, at the top of the today view. *Work on it* on
+  any issue planned for today - a left-over one too, which is planned for today again with it -
+  makes it the active one and stops the one before: the label `active` goes on the issue and off
+  every other on the board. *Stop working on it* takes it off; not today, a later day and the
+  backlog take it off too. `POST /api/planner/items/{itemId}/active` (`active`: true or false);
+  `GET /api/planner` gives each item `active`. One for the whole board, as the day is.
+- **A long description is readable**: three quarters of a screen high instead of 22rem, with a
+  corner to drag it higher or lower, and *full length* shows it without any cap.
 - **Newest first.** Two more walks through the board: every open issue by when it was opened,
   the newest first, and the same for those not planned yet - what came in since the last look.
   `/planner?walk=newest` links to it; `GET /api/planner` gives each item its `createdAt`.
@@ -97,6 +105,8 @@ turn it on - the project, the token, the values - is one page:
   The token, the egress proxy, the rate-limit hold and "it retries nothing" are the REST calls'.
 
 ### Changed
+- **MessagePack is pinned to 2.5.303** for the dev-time Aspire host, past GHSA-qhrr-8q5h-9q3h;
+  nothing that is deployed uses it.
 - **The agent can close an issue now** - from the planner, on a person's click, and from nowhere
   else. Until this release its GitHub client held "nothing that deletes or closes"; it still
   deletes nothing, and a test holds that only the planner's service calls what closes, labels or
