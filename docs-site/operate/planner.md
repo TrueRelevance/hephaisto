@@ -8,8 +8,11 @@ console, `/planner`, that goes through the open issues of **one GitHub project**
 one issue at a time, with the reason it is in front of them and every action it can take.
 
 It needs [GitHub issues as work](./github-issues) to be enabled, because it uses the agent's GitHub
-token. It reads the board when somebody opens the page — never on a timer — and every write is one
-click of a person who holds the console's approver role.
+token. It reads the board at startup and every two minutes after, so opening the page takes the
+board it already has instead of waiting for GitHub (a board of 170 issues is about 13 seconds of
+paged GraphQL, roughly four points of the token's GraphQL budget). Those reads are the only thing
+it does by itself: every write is one click of a person who holds the console's approver role, and
+"refresh" reads while you wait.
 
 ## Three views of one board, and a new issue
 
@@ -280,8 +283,8 @@ curl -s https://hephaisto.example.com/api/planner | jq '{state, problem, title, 
 
 `state` is `Off`, `Read`, or `Unreadable` with `problem` saying why. With `Read` and a `problem`,
 the newest read failed and the items are an older board's: the page keeps the last good one and
-says that it is old. `?refresh=true` asks GitHub now; otherwise the answer may be half a minute
-old.
+says that it is old. `?refresh=true` asks GitHub now; otherwise the answer is the board read in the
+background, at most about three minutes old.
 
 The writes are `POST /api/planner/items/{itemId}/field`, `/close`, `/day` and `/assignee`, behind
 the approver policy, with `decidedBy` in the body where nobody is signed in. A new issue is

@@ -84,17 +84,26 @@ public sealed record PlannerAnalysis(string Body, DateTimeOffset At, string Url)
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Nothing here runs by itself.</b> There is no timer and no pass: a read is a page load or
-/// the API being asked, a write is a click. That is why the agent's mode does not gate it - like
-/// closing an incident, it is the person's act and not the agent's - and why this file is the only
-/// place that may call the client's writes for a project, a label or an assignee
+/// <b>Nothing here writes by itself.</b> A write is a click. That is why the agent's mode does not
+/// gate it - like closing an incident, it is the person's act and not the agent's - and why this
+/// file is the only place that may call the client's writes for a project, a label or an assignee
 /// (<c>GitHubClientTests</c> holds that).
 /// </para>
 /// <para>
-/// <b>The last read is kept for <see cref="KeepFor"/></b>, because every page renders twice and a
-/// person who walks a board looks at it thirty times in a minute. A write does not read again: it
-/// changes the kept board the way GitHub was just told to, so the item shows what was clicked
-/// rather than what a read replica has not heard of yet.
+/// <b>The board is read ahead of anybody looking</b> (#306): a whole board is a GraphQL page per 50
+/// items, one after the other, and TR Planning's 169 items took 13 seconds - which a page load
+/// used to wait for after every start and every half minute of quiet. <see cref="PlannerWarmer"/>
+/// reads it at startup and every <see cref="WarmEvery"/> through <see cref="WarmAsync"/>, which
+/// fetches without holding the gate, so a click or a page load is never queued behind it. Four
+/// GraphQL points a read; reads only.
+/// </para>
+/// <para>
+/// <b>The last read is served for <see cref="KeepFor"/></b>, a little longer than the warm period, so
+/// a page load takes the kept board and a late warm read does not make anybody wait. "Refresh"
+/// still reads while the person waits. A write does not read again: it changes the kept board the
+/// way GitHub was just told to, so the item shows what was clicked rather than what a read replica
+/// has not heard of yet - and a warm read that was already on its way when a click landed is
+/// dropped rather than allowed to put the click back (<c>patches</c>).
 /// </para>
 /// <para>
 /// <b>No audit, no action.</b> The row is written before GitHub is called, under the person's
@@ -107,7 +116,11 @@ public sealed class PlannerService(
     IClock clock,
     ILogger<PlannerService> logger)
 {
-    public static readonly TimeSpan KeepFor = TimeSpan.FromSeconds(30);
+    /// <summary>How long a read is served without asking GitHub again. Longer than <see cref="WarmEvery"/>, so a warm board is never older than this.</summary>
+    public static readonly TimeSpan KeepFor = TimeSpan.FromMinutes(3);
+
+    /// <summary>How often <see cref="PlannerWarmer"/> reads the board while the planner is on.</summary>
+    public static readonly TimeSpan WarmEvery = TimeSpan.FromMinutes(2);
 
     public const string AuditField = "planner.field";
     public const string AuditClose = "planner.close";
@@ -135,6 +148,10 @@ public sealed class PlannerService(
 
     private PlannerSnapshot? kept;
     private string? botLogin;
+
+    // How many times a click has changed the kept board. Under the gate, like kept itself: a warm
+    // read notes it before fetching and drops what it fetched if it moved meanwhile.
+    private long patches;
 
     /// <summary>
     /// The kept board changed: it was read, or a click changed it. For the navigation's badge,
@@ -538,6 +555,7 @@ public sealed class PlannerService(
                 fields, [.. opened.Labels.Select(l => new BoardLabel(l, now))], [], [], body);
 
             snapshot = kept = Present(board with { Items = [.. board.Items.Where(i => i.ItemId != item.ItemId), item] }, snapshot.ReadAt ?? now, snapshot.Problem);
+            patches++;
             Changed?.Invoke();
 
             if (failed.Count > 0)
@@ -618,6 +636,7 @@ public sealed class PlannerService(
                 var changed = item with { Labels = on, Comments = item.Comments + (comment.Ok ? 1 : 0) };
 
                 kept = Present(board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] }, kept.ReadAt ?? now, kept.Problem);
+                patches++;
                 Changed?.Invoke();
             }
         }
@@ -875,6 +894,7 @@ public sealed class PlannerService(
             {
                 var changed = current with { Comments = current.Comments + 1 };
                 kept = Present(board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] }, kept.ReadAt ?? clock.UtcNow, kept.Problem);
+                patches++;
                 Changed?.Invoke();
             }
         }
@@ -1020,6 +1040,7 @@ public sealed class PlannerService(
                     snapshot.ReadAt ?? clock.UtcNow,
                     snapshot.Problem);
 
+                patches++;
                 Changed?.Invoke();
             }
 
@@ -1038,6 +1059,59 @@ public sealed class PlannerService(
         }
     }
 
+    /// <summary>
+    /// Reads the board ahead of anybody looking, for <see cref="PlannerWarmer"/>. With nothing kept
+    /// yet it reads under the gate, so a page opened meanwhile waits for this read instead of
+    /// starting a second one; after that it fetches without the gate and keeps what it fetched
+    /// only if no click changed the kept board in the meantime.
+    /// </summary>
+    public async Task WarmAsync(CancellationToken ct)
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        long before;
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (kept is not { Board: not null })
+            {
+                await ReadLockedAsync(refresh: true, ct).ConfigureAwait(false);
+                return;
+            }
+
+            before = patches;
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        var at = clock.UtcNow;
+        var (read, login) = await FetchAsync(ct).ConfigureAwait(false);
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (patches != before)
+            {
+                logger.LogDebug("A click changed the planner's board during a warm read; the read is dropped and the next one is the retry.");
+                return;
+            }
+
+            Keep(read, login, at);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private async Task<PlannerSnapshot> ReadLockedAsync(bool refresh, CancellationToken ct)
     {
         var now = clock.UtcNow;
@@ -1047,21 +1121,42 @@ public sealed class PlannerService(
             return kept;
         }
 
+        var (read, login) = await FetchAsync(ct).ConfigureAwait(false);
+
+        return Keep(read, login, now);
+    }
+
+    /// <summary>One read of the board from GitHub. Touches nothing kept, so it may run outside the gate. Null when there is no client.</summary>
+    private async Task<(GitHubResult<Board>? Read, string? Login)> FetchAsync(CancellationToken ct)
+    {
         var planner = options.CurrentValue.Planner;
 
         await using var scope = scopes.CreateAsyncScope();
 
         if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
         {
+            return (null, null);
+        }
+
+        var login = botLogin ?? await BotLoginAsync(client, ct).ConfigureAwait(false);
+        var read = await client.GetProjectAsync(planner.Owner.Trim(), planner.Number, ct).ConfigureAwait(false);
+
+        return (read, login);
+    }
+
+    /// <summary>Makes a read the kept board. Under the gate.</summary>
+    private PlannerSnapshot Keep(GitHubResult<Board>? fetched, string? login, DateTimeOffset readAt)
+    {
+        if (fetched is not { } read)
+        {
             return PlannerSnapshot.Off;
         }
 
-        botLogin ??= await BotLoginAsync(client, ct).ConfigureAwait(false);
-
-        var read = await client.GetProjectAsync(planner.Owner.Trim(), planner.Number, ct).ConfigureAwait(false);
+        botLogin ??= login;
 
         if (!read.Ok)
         {
+            var planner = options.CurrentValue.Planner;
             var problem = read.Outcome == GitHubOutcome.NotFound
                 ? $"GitHub knows no project {planner.Number} of the organisation {planner.Owner}, or the token may not see it ({read.Detail})"
                 : read.Describe();
@@ -1074,7 +1169,7 @@ public sealed class PlannerService(
                 : new PlannerSnapshot(PlannerState.Unreadable, problem, null, null, [], [], [], [], botLogin);
         }
 
-        kept = Present(read.Value!, now, problem: null);
+        kept = Present(read.Value!, readAt, problem: null);
         Changed?.Invoke();
 
         return kept;

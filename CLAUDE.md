@@ -633,7 +633,10 @@ minutes - so a red live run is read request by request before it is believed.
   call them from the poller.
 - **A click acts on the kept board and does not read again.** The kept board is patched the way
   GitHub was told to; reading first cost seconds per click and could hand back a replica that had
-  not heard of the click before. A page load reads again after `PlannerService.KeepFor`.
+  not heard of the click before. A page load serves the kept board for `PlannerService.KeepFor`.
+- **The board is read ahead** (#306): `PlannerWarmer` calls `PlannerService.WarmAsync` at startup
+  and every `WarmEvery`. It fetches outside the gate and drops its result if `patches` moved -
+  a click landed meanwhile - so it can neither block a click nor put one back.
 - **The walk keeps its own order** (`_order` in `Planner.razor`): a click changes an issue's
   reason and its place in the queue, and the issue a person looks at must not move away. Today,
   not today and closing go on to the next issue; a closed issue's card is one step back, from

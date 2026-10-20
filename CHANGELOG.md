@@ -27,7 +27,9 @@ turn it on - the project, the token, the values - is one page:
   issue at a time - why it is in front of the person, the facts, and a button for everything
   that can be done about it. *Today* is the day's plan with what was closed and what was put
   away. *All open* groups everything under its top-level issue, by priority, sub-issues under
-  their parent. The board is read when the page opens and on "refresh", never on a timer.
+  their parent. The board is read at startup and every two minutes in the background, so the page
+  opens on the board it has instead of waiting for GitHub - a 170-issue board is 13 seconds of
+  reading ([#306](https://github.com/TrueRelevance/hephaisto/issues/306)); "refresh" reads now.
   The card shows the issue's description as its markdown source, with its comment count and
   labels, and it can be put away for the whole walk. Today, not today and closing go on to the
   next issue.

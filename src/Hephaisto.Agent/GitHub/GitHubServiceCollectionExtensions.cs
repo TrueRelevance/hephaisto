@@ -66,6 +66,10 @@ public static class GitHubServiceCollectionExtensions
         // It follows the Jobs somebody started with a click, and does nothing while there are none.
         services.AddHostedService(sp => sp.GetRequiredService<Planner.TriageRunner>());
 
+        // The planner's board, read ahead so its page does not wait on GitHub (#306). Asks nothing
+        // while the planner is off.
+        services.AddHostedService<Planner.PlannerWarmer>();
+
         return services;
     }
 

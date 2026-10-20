@@ -26,6 +26,56 @@ public sealed class PlannerServiceTests
     // --- reading ------------------------------------------------------------------------------
 
     [Fact]
+    public async Task A_warm_read_is_there_before_anybody_looks_and_a_page_load_then_asks_github_nothing()
+    {
+        var (planner, github, clock, _) = Build();
+
+        await planner.WarmAsync(Ct);
+
+        planner.Kept!.State.Should().Be(PlannerState.Read);
+        github.Calls.Count(c => c == "project acme/3").Should().Be(1);
+
+        // Two minutes on - the warm period - the page still takes the kept board.
+        clock.UtcNow = clock.UtcNow.Add(PlannerService.WarmEvery);
+        (await planner.ReadAsync(refresh: false, Ct)).Entries.Should().NotBeEmpty();
+        github.Calls.Count(c => c == "project acme/3").Should().Be(1);
+
+        // The next warm read reads again, and "refresh" always does.
+        await planner.WarmAsync(Ct);
+        await planner.ReadAsync(refresh: true, Ct);
+        github.Calls.Count(c => c == "project acme/3").Should().Be(3);
+        planner.Kept!.ReadAt.Should().Be(clock.UtcNow);
+    }
+
+    [Fact]
+    public async Task A_click_during_a_warm_read_is_not_queued_behind_it_and_not_undone_by_it()
+    {
+        var (planner, github, _, _) = Build();
+        await planner.WarmAsync(Ct);
+
+        // #57 carries a "not today" of yesterday; the board GitHub answers with still says so.
+        PlannerActionResult? click = null;
+        github.DuringProject = async () => click = await planner.SetDayAsync("PVTI_57", PlannerDay.Today, "flo", Ct);
+
+        // Would deadlock if the warm read held the gate while it fetched.
+        await planner.WarmAsync(Ct).WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        click!.Outcome.Should().Be(PlannerActionOutcome.Done);
+        planner.Kept!.Entry("PVTI_57")!.Day.Should().Be(PlannerDay.Today, "the read that was on its way when the click landed is dropped");
+    }
+
+    [Fact]
+    public async Task A_warm_read_asks_nothing_while_the_planner_is_off()
+    {
+        var (planner, github, _, _) = Build(enabled: false);
+
+        await planner.WarmAsync(Ct);
+
+        github.Calls.Should().BeEmpty();
+        planner.Kept.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Off_asks_github_nothing()
     {
         var (planner, github, _, _) = Build(enabled: false);
@@ -38,7 +88,7 @@ public sealed class PlannerServiceTests
     }
 
     [Fact]
-    public async Task A_read_is_kept_for_half_a_minute_unless_a_person_asks_again()
+    public async Task A_read_is_kept_for_a_while_unless_a_person_asks_again()
     {
         var (planner, github, clock, _) = Build();
 
@@ -886,6 +936,9 @@ public sealed class PlannerServiceTests
 
         public Action? OnWrite { get; set; }
 
+        /// <summary>Run while a board read is in flight, once: what a person does during a warm read.</summary>
+        public Func<Task>? DuringProject { get; set; }
+
         private Task<GitHubResult<bool>> Write(string call, bool value = true)
         {
             OnWrite?.Invoke();
@@ -894,11 +947,17 @@ public sealed class PlannerServiceTests
             return Task.FromResult(FailWrite ?? new GitHubResult<bool>(GitHubOutcome.Ok, value));
         }
 
-        public Task<GitHubResult<Board>> GetProjectAsync(string owner, int number, CancellationToken ct)
+        public async Task<GitHubResult<Board>> GetProjectAsync(string owner, int number, CancellationToken ct)
         {
             Calls.Add($"project {owner}/{number}");
 
-            return Task.FromResult(FailProject ?? new GitHubResult<Board>(GitHubOutcome.Ok, TheBoard()));
+            if (DuringProject is { } during)
+            {
+                DuringProject = null;
+                await during();
+            }
+
+            return FailProject ?? new GitHubResult<Board>(GitHubOutcome.Ok, TheBoard());
         }
 
         public Task<GitHubResult<bool>> SetProjectFieldAsync(string projectId, string itemId, string fieldId, string optionId, CancellationToken ct) =>
