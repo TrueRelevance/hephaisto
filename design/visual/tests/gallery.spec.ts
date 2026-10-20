@@ -27,10 +27,10 @@ test.describe('the design language', () => {
     // would keep passing forever afterwards.
     await page.evaluate(() => document.fonts.ready);
     const loaded = await page.evaluate(() => ({
-      archivo: document.fonts.check('16px Archivo'),
+      gabarito: document.fonts.check('16px Gabarito'),
       jetbrains: document.fonts.check('16px "JetBrains Mono"'),
     }));
-    expect(loaded.archivo, 'Archivo did not load; this shot would be of the fallback stack').toBe(true);
+    expect(loaded.gabarito, 'Gabarito did not load; this shot would be of the fallback stack').toBe(true);
     expect(loaded.jetbrains, 'JetBrains Mono did not load; this shot would be of the fallback stack').toBe(true);
   });
 

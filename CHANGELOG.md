@@ -105,6 +105,16 @@ turn it on - the project, the token, the values - is one page:
   The token, the egress proxy, the rate-limit hold and "it retries nothing" are the REST calls'.
 
 ### Changed
+- **The console wears True Relevance v3.** Hephaisto is now as much the place a team plans its
+  work as an incident console, and every page was redesigned to be comfortable to read for an
+  hour: ink on white and off-white, the brand face Gabarito for every word (JetBrains Mono stays
+  for ids, keys, logs and timestamps), pill-shaped buttons, chips and navigation, soft rounded
+  cards with a light shadow, the brand's four colours only as transparent washes, a 15px root
+  instead of 13.5px, and a page measure instead of edge-to-edge tables. The mark is the same
+  wedge, now in ink on a Clarity Blue circle. Dark mode remains, derived from the brand's ink,
+  and both themes keep the same contrast checks. The landing page, docs and demo share the token
+  file and change with it. Nothing about what is shown, or where, changed; the e2e suite reads the
+  same markup.
 - **MessagePack is pinned to 2.5.303** for the dev-time Aspire host, past GHSA-qhrr-8q5h-9q3h;
   nothing that is deployed uses it.
 - **The agent can close an issue now** - from the planner, on a person's click, and from nowhere

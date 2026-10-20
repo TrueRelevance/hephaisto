@@ -1,5 +1,5 @@
 // theme-without-fonts, not theme: the default bundles Inter as fourteen woff2 files, and
-// custom.css re-points --vp-font-family-base at Archivo, so every one of them would ship
+// custom.css re-points --vp-font-family-base at Gabarito, so every one of them would ship
 // unreferenced. This repo self-hosts exactly two faces on every surface and this keeps that true.
 import DefaultTheme from 'vitepress/theme-without-fonts'
 import { useData } from 'vitepress'

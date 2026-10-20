@@ -449,7 +449,7 @@ public class DesignTokenTests
     /// <summary>The two faces every surface ships, self-hosted, with no CDN anywhere.</summary>
     private static readonly string[] ShippedFaces =
     [
-        "archivo-latin.woff2",
+        "gabarito-latin.woff2",
         "jetbrains-mono-latin.woff2",
     ];
 

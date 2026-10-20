@@ -280,8 +280,8 @@ function page({ title, description, body, depth }) {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}" />
-<meta name="theme-color" content="#131519" media="(prefers-color-scheme: dark)" />
-<meta name="theme-color" content="#faf8f5" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#212123" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f8f7f8" media="(prefers-color-scheme: light)" />
 <link rel="icon" href="${up}favicon.svg" type="image/svg+xml" />
 <link rel="stylesheet" href="${up}tokens.css" />
 <link rel="stylesheet" href="${up}app.css" />

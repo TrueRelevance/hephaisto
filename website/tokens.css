@@ -17,6 +17,28 @@
  *      v0.4.0: a landing page brings evaluators, and some of them open the console in a bright
  *      room in a meeting about whether to trust it.
  *
+ * THE DIRECTION (v0.15.0): True Relevance v3. Hephaisto stopped being only an incident console -
+ * the planner and the work items made it the place a team decides what to do next - and the
+ * dense, monospace, ember-on-black console read like a pager at 3am on every page, including
+ * the ones nobody is paged for. The brand it now wears is calm on purpose:
+ *
+ *   - Ink on white and off-white. The brand's own black is #2F2F2F, never pure black.
+ *   - The four brand hues - Empathy Pink, Impulse Yellow, Clarity Blue, Human Lime - are NEVER
+ *     painted solid. They appear as transparent washes (--wash-*), the brand's whole thesis of
+ *     overlapping layers. The one solid exception is a colour circle behind an icon, which is
+ *     what --brand-* is for and the only thing it is for.
+ *   - Gabarito for every word a person reads; JetBrains Mono stays for what is compared character
+ *     by character (ids, workload keys, log excerpts, timestamps), because that need did not go
+ *     away with the incident framing.
+ *   - Circles and pills: controls are capsules, cards are softly rounded with a low diffuse
+ *     shadow, and no title carries a rule beneath it.
+ *
+ * The status hues (red .. cyan) are NOT brand colours. They are the console's state vocabulary,
+ * tuned to sit beside the brand without being mistaken for it, and held to the contrast bars
+ * below. Dark is not part of the brand book; it is derived from the brand's ink so a reader who
+ * asked for it still gets the same system, and it is where the brand hues may be the state
+ * colours themselves (the yellow and the lime clear 3:1 on ink, they do not on white).
+ *
  * Still no CDN and no build step. This is a plain stylesheet the pod serves from its own
  * wwwroot, so an egress-free cluster loads it and `tilt live_update` syncs an edit without a
  * rebuild. It is a second file rather than a second ORIGIN - the rule in app.css's header is
@@ -29,22 +51,23 @@
  * the installs that are hardest to debug. These two files are in this repository, served by
  * this pod, and reachable by a browser that can reach nothing else.
  *
- * Latin subsets only - 66KB for both, against roughly 300KB for the full set. This console
- * renders Kubernetes object names, log excerpts and timestamps; the Cyrillic and Greek ranges
- * would be bytes shipped to every operator forever on the chance that one workload is named in
- * them, and the browser falls back per-glyph if that ever happens.
+ * Latin subsets only - about 80KB for both. This console renders Kubernetes object names, log
+ * excerpts and timestamps; the Cyrillic and Greek ranges would be bytes shipped to every reader
+ * forever on the chance that one workload is named in them, and the browser falls back
+ * per-glyph if that ever happens.
  *
- * Both are variable across 400-700, which is why there is one file per family rather than four.
- * Both are OFL-1.1; the licences ship beside them in fonts/, because shipping a font without
- * its licence is a compliance bug in an AGPL repository and not a tidiness one.
+ * Both are variable: Gabarito across 400-900 (the brand sets headlines at 700 and has no light
+ * cut, so body copy is its 400), JetBrains Mono across 400-700. Both are OFL-1.1; the licences
+ * ship beside them in fonts/, because shipping a font without its licence is a compliance bug
+ * in an AGPL repository and not a tidiness one.
  *
  * font-display: swap - the files are local so the swap window is short, but a console that
  * renders nothing while a font loads is worse than one that reflows once.
  */
 @font-face {
-    font-family: "Archivo";
-    src: url("fonts/archivo-latin.woff2") format("woff2");
-    font-weight: 400 700;
+    font-family: "Gabarito";
+    src: url("fonts/gabarito-latin.woff2") format("woff2");
+    font-weight: 400 900;
     font-style: normal;
     font-display: swap;
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
@@ -63,54 +86,82 @@
                    U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* The dark theme, and the default the light blocks below override. Derived from the brand's ink
+   rather than taken from the book, which has no dark: neutral greys with no warm or cool cast,
+   the brand hues as the accent and as the calm states. */
 :root {
-    --bg: #131519;
-    --bg-raised: #1b1e24;
-    --bg-sunken: #0e1013;
-    --bg-hover: #23272e;
-    --border: #2b3037;
-    --border-strong: #3e454e;
+    --bg: #212123;
+    --bg-raised: #2a2a2d;
+    --bg-sunken: #1a1a1c;
+    --bg-hover: #323236;
+    --border: #38383c;
+    --border-strong: #4f4f54;
 
-    --fg: #e4e1db;
-    --fg-dim: #a49d92;
-    --fg-faint: #7d7669;
+    --fg: #f3f2f3;
+    --fg-dim: #b8b7bb;
+    --fg-faint: #8f8e93;
 
-    --accent: #ff8a3d;
+    --accent: #4ec2df;
 
-    --red: #e33a35;
-    --orange: #a85f1e;
-    --yellow: #ffd97a;
-    --green: #57c7a0;
-    --blue: #7fa8d8;
-    --purple: #b998e8;
-    --cyan: #45bfbf;
+    --red: #e9667a;
+    --orange: #d07a2e;
+    --yellow: #f3dd6a;
+    --green: #9dcf57;
+    --blue: #97a8f2;
+    --purple: #c4a3f1;
+    --cyan: #5fd3c2;
+
+    /* The brand hues as transparent fields: a selected tab, a chip, the issue worked on now, a
+       hover. Never a ground for small text in their own hue - the text on a wash is --fg. Dark
+       takes them a little stronger, because the same alpha over ink reads weaker than over
+       white. */
+    --wash-pink: rgb(245 97 159 / 24%);
+    --wash-yellow: rgb(241 215 81 / 22%);
+    --wash-blue: rgb(78 194 223 / 24%);
+    --wash-lime: rgb(157 207 87 / 22%);
+
+    /* The brand hues solid, for the ONE place the book allows it: a circle behind an icon (the
+       mark, the profile initial). Identical in both themes - it is the brand, not the theme. */
+    --brand-pink: #f5619f;
+    --brand-yellow: #f1d751;
+    --brand-blue: #4ec2df;
+    --brand-lime: #9dcf57;
+
+    /* The brand's focus treatment is a transparent Clarity Blue ring. It is drawn as well as,
+       never instead of, the solid --accent outline: a 35% ring alone does not reach 3:1. */
+    --focus-ring: rgb(78 194 223 / 38%);
 
     --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-    --sans: "Archivo", ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --sans: "Gabarito", "Nunito Sans", ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
 
-    --row: 1.55rem;
+    --row: 1.9rem;
 
     /* Text on a --red ground. NOT a fixed near-black: --red is a light pink in dark mode and a
-       dark crimson in light, so one literal cannot sit on both. It was a literal for three
-       releases and the light-mode error banner was near-black on dark red the whole time. */
-    --on-alert: #0a0703;
+       deep red in light, so one literal cannot sit on both. It was a literal for three releases
+       and the light-mode error banner was near-black on dark red the whole time. */
+    --on-alert: #1a1a1b;
 
     /* The reconnect scrim and the dialog it dims for. A scrim darkens in both themes - it is
        not a background, it is an absence of one - but light needs less of it. */
-    --scrim: rgb(10 8 6 / 82%);
-    --shadow-modal: 0 12px 40px rgb(0 0 0 / 58%);
+    --scrim: rgb(12 12 13 / 78%);
+    --shadow-modal: 0 18px 48px rgb(0 0 0 / 55%);
+
+    /* A card's edge. Light draws a card with a shadow and barely a line; a shadow does not show
+       on ink, so dark keeps the line. */
+    --card-border: #343438;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-lift: 0 6px 18px rgb(0 0 0 / 35%);
 
     /* ---- radius ------------------------------------------------------------------------
-       Three values were in use across about twenty declarations - 2px, 3px and 4px - with no
-       rule about which went where. Read back off the rules that actually use them: 2px is on
-       small or thin things (a step badge, the confidence bar, the meter track), 4px is on large
-       containers (the empty state, the investigation panel, the feedback form, the reconnect
-       box), and 3px is the default for everything else with a border. Named after the job
-       rather than the size, so a direction that squares everything off changes three values
-       instead of twenty. */
-    --radius-sm: 2px;
-    --radius: 3px;
-    --radius-lg: 4px;
+       Named after the job rather than the size, which is what let the redesign change four
+       values instead of forty declarations. The brand's shape vocabulary is circles and pills:
+       --radius-pill is every control a person presses and every chip; --radius-sm is a small
+       inset thing (a code span, a step row); --radius is a field and a nested panel; --radius-lg
+       is a card. No 0-radius corner anywhere a person looks. */
+    --radius-sm: 6px;
+    --radius: 10px;
+    --radius-lg: 16px;
+    --radius-pill: 999px;
 
     /* ---- elevation ---------------------------------------------------------------------
        Two layers, and they are the only two: something pinned over the page (the error banner,
@@ -120,22 +171,19 @@
     --z-sticky: 20;
     --z-overlay: 1000;
 
+    /* ---- motion ------------------------------------------------------------------------
+       The brand's motion is quiet: a soft ease and short durations, a small lift on hover and
+       nothing that loops on content. */
+    --ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+    --dur-fast: 140ms;
+
     /* ---- type --------------------------------------------------------------------------
-       A 13px root, and note that almost every step is BELOW it: this is a dense console and
-       most of its text is smaller than the browser default, which is why the scale reads
-       downward from --text-root rather than upward from a base.
-
-       Read back off 42 declarations rather than invented. Eight were 0.78rem and seven were
-       0.75rem, so the shape was already there; what was missing was names. The one real smell
-       it exposed: 0.8rem and 0.82rem were both in use for what is visibly the same role, which
-       is what happens when two people pick a number because there is nothing to reach for.
-       They are collapsed to one step here, and the visual baselines were the arbiter rather
-       than the argument - the difference is 0.26px at this root size and they confirmed it
-       renders identically.
-
-       Deliberately NOT renumbered into a neat ratio. That would change the rendering of every
-       surface in the console, and it is a decision to make on purpose rather than to smuggle
-       in while extracting tokens. */
+       The scale reads downward from --text-root, because most of a table's text is smaller
+       than the body. It was read back off 42 declarations when it was extracted and is kept
+       step for step: the redesign changed the ROOT, which moves every step together, rather
+       than renumbering the steps under every surface at once. --text-5xl is new, for the one
+       heading per page - the brand sets its headlines large and bold, and a page title the size
+       of a table row is the console look this release leaves. */
     --text-2xs: 0.7rem;
     --text-xs: 0.72rem;
     --text-sm: 0.75rem;
@@ -146,30 +194,30 @@
     --text-2xl: 1.05rem;
     --text-3xl: 1.25rem;
     --text-4xl: 1.35rem;
+    --text-5xl: 1.85rem;
 
     /* ---- density -----------------------------------------------------------------------
        The root size is the density lever for the whole console, and it is a one-line lever
-       because every length in app.css is already expressed in rem. Forge runs a half-step
-       looser than the 13px this shipped with for three releases: more legible at 3am on
-       whatever monitor is in the room, at a cost of roughly one incident row per screen.
+       because every length in app.css is already expressed in rem. 13px shipped for three
+       releases and 13.5px for six more - right for a nine-column incident table read at 3am,
+       tiring for a planner read for an hour. 15px is the comfortable reading size Gabarito is
+       drawn for, at a cost of about two incident rows per screen.
 
-       THERE IS NO SPACING SCALE, and that is a finding rather than an omission. The paddings
-       in app.css are hand-tuned per component - 0.5/0.7, 0.5/0.8, 0.25/0.5, 0.7/0.9, 0.6/0.8 -
-       and no ratio joins them. Extracting a scale here would mean INVENTING one and renumbering
-       about thirty declarations, which changes the rendering of every surface in the console.
-       That is a real improvement and a real decision, and it is not one to make silently while
-       moving tokens around. Left for the milestone that can measure it.
+       THERE IS NO SPACING SCALE, and that is still a finding rather than an omission: the
+       paddings are hand-tuned per component and no ratio joins them. The redesign loosened them
+       per component, measured against the visual baselines, rather than inventing a scale.
 
        The table cell is the exception, because it IS the density of the product's main screen
-       and Forge sets it deliberately rather than inheriting it from the root change. */
-    --root-size: 13.5px;
-    --cell-y: 0.44rem;
-    --cell-x: 0.5rem;
+       and is set deliberately rather than inherited from the root change. */
+    --root-size: 15px;
+    --cell-y: 0.62rem;
+    --cell-x: 0.85rem;
 }
 
 /* Light mode was "a courtesy, not the design target" for three releases. It is not any more:
-   both themes are contrast-checked and both are photographed by the visual baselines. A
-   component is not done until it is correct in both.
+   both themes are contrast-checked and both are photographed by the visual baselines. Since
+   v0.15.0 it is also the brand's own theme - the book is white and off-white - and dark is the
+   derivation. A component is not done until it is correct in both.
 
    THREE STATES, TWO PALETTES. `:root` above is the dark one and stays the default, so only
    light is written twice - once for an operating system that asked for it, once for a reader
@@ -186,66 +234,94 @@
      light  + dark OS   -> query does not match, explicit rule does  light
      light  + light OS  -> both apply, both light                    light
 
-   The two light blocks are identical by assertion rather than by care - DesignTokenTests. */
+   The two light blocks are identical by assertion rather than by care - DesignTokenTests.
+
+   The accent is Clarity Blue taken deep enough to be read as a link (7:1 on the page), and the
+   status hues sit at a lighter step than it on purpose: the accent has to stay 1.5:1 away from
+   red, orange and yellow, or a link and a warning read as one colour. */
 @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-        --bg: #faf8f5;
+        --bg: #f8f7f8;
         --bg-raised: #ffffff;
-        --bg-sunken: #f2ede6;
-        --bg-hover: #ece5db;
-        --border: #e0d9cf;
-        --border-strong: #c3b9ab;
+        --bg-sunken: #f1f0f2;
+        --bg-hover: #efeef1;
+        --border: #e0dfe2;
+        --border-strong: #c9c8cc;
 
-        --fg: #1c1a17;
-        --fg-dim: #5f5850;
-        --fg-faint: #7a7266;
+        --fg: #2f2f2f;
+        --fg-dim: #666666;
+        --fg-faint: #858585;
 
-        --accent: #b8500a;
-        --red: #8e1a12;
-        --orange: #6d420c;
-        --yellow: #5c4300;
-        --green: #0d6f5a;
-        --blue: #2f5c9e;
-        --purple: #6d3fb0;
-        --cyan: #0e6d78;
+        --accent: #0e5a75;
+        --red: #d1394f;
+        --orange: #b5620c;
+        --yellow: #957700;
+        --green: #3b7a24;
+        --blue: #4757b0;
+        --purple: #7b47b3;
+        --cyan: #0d7466;
+
+        --wash-pink: rgb(245 97 159 / 18%);
+        --wash-yellow: rgb(241 215 81 / 30%);
+        --wash-blue: rgb(78 194 223 / 20%);
+        --wash-lime: rgb(157 207 87 / 22%);
+
+        --brand-pink: #f5619f;
+        --brand-yellow: #f1d751;
+        --brand-blue: #4ec2df;
+        --brand-lime: #9dcf57;
+
+        --focus-ring: rgb(78 194 223 / 35%);
 
         --on-alert: #ffffff;
-        --scrim: rgb(28 26 23 / 55%);
-        --shadow-modal: 0 12px 40px rgb(60 48 34 / 20%);
+        --scrim: rgb(47 47 47 / 45%);
+        --shadow-modal: 0 18px 48px rgb(47 47 47 / 16%);
+
+        --card-border: #ecebee;
+        --shadow-card: 0 1px 2px rgb(47 47 47 / 5%), 0 4px 14px rgb(47 47 47 / 5%);
+        --shadow-lift: 0 8px 24px rgb(47 47 47 / 9%);
     }
 }
 
 /* An explicit light choice, which must beat a dark operating system. */
 :root[data-theme="light"] {
-    --bg: #faf8f5;
+    --bg: #f8f7f8;
     --bg-raised: #ffffff;
-    --bg-sunken: #f2ede6;
-    --bg-hover: #ece5db;
-    --border: #e0d9cf;
-    --border-strong: #c3b9ab;
+    --bg-sunken: #f1f0f2;
+    --bg-hover: #efeef1;
+    --border: #e0dfe2;
+    --border-strong: #c9c8cc;
 
-    --fg: #1c1a17;
-    --fg-dim: #5f5850;
-    --fg-faint: #7a7266;
+    --fg: #2f2f2f;
+    --fg-dim: #666666;
+    --fg-faint: #858585;
 
-    --accent: #b8500a;
-    --red: #8e1a12;
-    --orange: #6d420c;
-    --yellow: #5c4300;
-    --green: #0d6f5a;
-    --blue: #2f5c9e;
-    --purple: #6d3fb0;
-    --cyan: #0e6d78;
+    --accent: #0e5a75;
+    --red: #d1394f;
+    --orange: #b5620c;
+    --yellow: #957700;
+    --green: #3b7a24;
+    --blue: #4757b0;
+    --purple: #7b47b3;
+    --cyan: #0d7466;
+
+    --wash-pink: rgb(245 97 159 / 18%);
+    --wash-yellow: rgb(241 215 81 / 30%);
+    --wash-blue: rgb(78 194 223 / 20%);
+    --wash-lime: rgb(157 207 87 / 22%);
+
+    --brand-pink: #f5619f;
+    --brand-yellow: #f1d751;
+    --brand-blue: #4ec2df;
+    --brand-lime: #9dcf57;
+
+    --focus-ring: rgb(78 194 223 / 35%);
 
     --on-alert: #ffffff;
-    --scrim: rgb(28 26 23 / 55%);
-    --shadow-modal: 0 12px 40px rgb(60 48 34 / 20%);
+    --scrim: rgb(47 47 47 / 45%);
+    --shadow-modal: 0 18px 48px rgb(47 47 47 / 16%);
+
+    --card-border: #ecebee;
+    --shadow-card: 0 1px 2px rgb(47 47 47 / 5%), 0 4px 14px rgb(47 47 47 / 5%);
+    --shadow-lift: 0 8px 24px rgb(47 47 47 / 9%);
 }
-
-
-/*
- * Deliberately NOT here: a spacing, radius, type or z-index scale. They do not exist yet - the
- * stylesheet hardcodes 2px/3px/4px radii about forty times and every font-size is a literal -
- * and a token with no reader is config that behaves like a comment. They land with their
- * consumers, in the commit that gives them one.
- */

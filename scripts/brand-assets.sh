@@ -22,8 +22,8 @@ docker run --rm --init -v "$REPO":/work -w /work/design/visual \
             const p = await b.newPage({ viewport: { width: 1280, height: 640 }, deviceScaleFactor: 1, colorScheme: \"dark\" });
             await p.goto(\"file:///work/design/brand/social-preview.html\");
             await p.evaluate(() => document.fonts.ready);
-            const ok = await p.evaluate(() => document.fonts.check(\"16px Archivo\"));
-            if (!ok) { console.error(\"Archivo did not load; refusing to render the card\"); process.exit(1); }
+            const ok = await p.evaluate(() => document.fonts.check(\"16px Gabarito\"));
+            if (!ok) { console.error(\"Gabarito did not load; refusing to render the card\"); process.exit(1); }
             await p.screenshot({ path: \"/work/design/brand/social-preview.png\" });
             await b.close();
           })();

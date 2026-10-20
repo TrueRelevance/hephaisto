@@ -763,6 +763,10 @@ by tests rather than by goodwill, and the first two will fail your build:
 - **A token needs a consumer in the same commit** - the design form of the config rule above.
 - Both themes are held to the same contrast bar, asserted in tests.
 - State is never colour alone: glyph, word, then colour.
+- **Since v0.15.0 the language is True Relevance v3** (docs/design.md says what that means): brand
+  hues only as `--wash-*` fields, solid only as `--brand-*` circles behind a glyph; controls are
+  pills, cards are `--radius-lg` with `--shadow-card`, no coloured left stripes and no rule under a
+  heading. `.hp-submit` is ink as a form's primary and the yellow wash inside an `.hp-field` row.
 
 Half the system is in C#. `Components/Display.cs` owns the glyph vocabulary, the enum-to-class
 mapping and every number format; changing what a state looks like usually means touching both files.

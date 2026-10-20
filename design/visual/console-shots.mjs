@@ -34,8 +34,8 @@ await go('/')
 
 // A screenshot in a fallback face is a picture of a different product, and it is not obvious
 // in a thumbnail. Same refusal as scripts/brand-assets.sh.
-if (!(await page.evaluate(() => document.fonts.check('16px Archivo')))) {
-    throw new Error('Archivo did not load; refusing to photograph the console')
+if (!(await page.evaluate(() => document.fonts.check('16px Gabarito')))) {
+    throw new Error('Gabarito did not load; refusing to photograph the console')
 }
 
 // data-testid, not an href pattern: the console's links are RELATIVE, so a[href^="/incidents/"]

@@ -92,7 +92,52 @@ each took a different position on it and the choice between them settled it.
 
 ---
 
-## The direction that was chosen: Forge
+## The direction since v0.15.0: True Relevance v3
+
+Forge (below) was drawn for one reader on one night: somebody paged at 3am, reading a dense table
+on whatever monitor was in the room. By v0.15.0 that was no longer most of the product. The work
+items and the planner made Hephaisto the place a team decides what to do next - pages read for an
+hour in daylight, not scanned for thirty seconds in the dark - and an ember-on-black console with
+monospace navigation read like a pager on every one of them.
+
+So the console wears the house brand, **True Relevance v3** (the design system artifact of that
+name; its README is the brand book). What that means here, rule by rule:
+
+- **Ink on white and off-white.** `--fg` is the brand's ink `#2F2F2F`, never pure black; `--bg` is
+  its off-white and `--bg-raised` white. Light is the brand's own theme now; dark is derived from
+  the ink, with neutral greys and no warm cast.
+- **The four brand hues are never solid.** Empathy Pink, Impulse Yellow, Clarity Blue and Human
+  Lime appear only as transparent washes, `--wash-*`: the selected nav item and segment, a chip, a
+  note, a decision that waits, the issue worked on now. The one solid exception the book allows -
+  a colour circle behind a glyph - is `--brand-*`, and it is used for exactly that: the mark (the
+  escalation wedge in ink on a Clarity Blue circle), a dot, the profile's initial.
+- **The accent is Clarity Blue taken deep** (`#0E5A75` light, the brand blue itself on ink), so a
+  link reads as the brand and still clears 7:1. The status hues are not brand colours; they stay
+  the console's state vocabulary and keep every contrast rule below, including the 1.5:1 distance
+  from the accent that Forge introduced.
+- **Gabarito for every word a person reads**, headlines bold and tight; JetBrains Mono only for
+  what is compared character by character. Navigation, buttons, fields, state words and form
+  labels moved off the mono face.
+- **Circles and pills.** Every control a person presses is a capsule (`--radius-pill`), cards are
+  rounded large (`--radius-lg`, 16px) and lifted by a soft shadow (`--shadow-card`) rather than
+  boxed by a line, and no heading carries a rule beneath it - the book forbids underlines under
+  titles, and the old `h2` border was one.
+- **No stripes.** Callouts, live investigations, code-fix attempts and the today marker used a
+  coloured left edge; each is now a tinted field with a matching edge, or a dot. The state is
+  still in the glyph and the word, so nothing was carried by the stripe alone.
+- **One emphasis per meaning.** `.hp-submit` is the form's primary: solid ink, the one solid fill
+  a control gets (ink is a neutral). Inside a row of choices the same class means "this field asks
+  for an answer", which is a person deciding, so there it takes the yellow wash.
+- **Sentence case, drawn.** The console's labels are lower case in the markup, where the e2e suite
+  and screen readers read them; CSS draws the first letter as a capital. Headings that are data -
+  an issue's title, an incident's - keep their own case.
+- **Comfort over density.** The root went from 13.5px to 15px, table cells and card insets
+  loosened, and the page has a measure (96rem) instead of running edge to edge.
+
+What did not change: rule 1 (state is never colour alone), one token file for every surface,
+self-hosted faces, both themes held to the same contrast bar, and the visual baselines as the net.
+
+## The direction before it: Forge (v0.4.0 - v0.14.0)
 
 Three complete directions were drawn and judged side by side. **Forge** was picked.
 
@@ -311,19 +356,18 @@ is exposed to tests as `data-testid` and `data-*` attributes instead.
 
 | Role | Face | Notes |
 |---|---|---|
-| prose, headings, UI | **Archivo** 400/700 | a grotesque drawn for signage and small sizes; slightly condensed, which buys a nine-column table about a column of room |
+| prose, headings, UI | **Gabarito** 400-900 (variable) | the True Relevance brand face since v0.15.0; headlines at 700, body at 400 (the family has no light cut). Archivo, the face before it, was slightly condensed for the nine-column table; Gabarito is wider and rounder, and the table pays about a column of room for it |
 | ids, workload keys, log excerpts, timestamps, anything compared character by character | **JetBrains Mono** 400/700 | drawn for long terminal sessions |
 
 **Both are self-hosted, and that is a hard constraint rather than a preference.** The pod may run
 in a cluster with no egress, so a CDN webfont is a stylesheet that falls back silently to a system
-stack on exactly the installs that are hardest to debug. Latin subsets only: 66KB for both, against
-roughly 300KB for the full set.
+stack on exactly the installs that are hardest to debug. Latin subsets only: about 80KB for both.
 
 The landing page accepts the same constraint even though it does not have it. *The landing page
 looks like the product* is not a claim you can make while setting it in a typeface the product
 cannot load.
 
-The scale is `--text-2xs` through `--text-4xl` around `--text-root`, and note that almost every step
+The scale is `--text-2xs` through `--text-5xl` around `--text-root` (`--text-5xl` is the page title, new in v0.15.0), and note that almost every step
 is **below** the root: this is a dense console and most of its text is smaller than the browser
 default.
 

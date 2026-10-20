@@ -16,8 +16,8 @@ const GALLERY = pathToFileURL(path.resolve(__dirname, '../../gallery.html')).hre
  * Both projects run this file, so each case is checked under both `prefers-color-scheme`
  * values and the project name is the OS half of the pair.
  */
-const LIGHT_BG = 'rgb(250, 248, 245)'; // --bg, light
-const DARK_BG = 'rgb(19, 21, 25)';     // --bg, dark
+const LIGHT_BG = 'rgb(248, 247, 248)'; // --bg, light
+const DARK_BG = 'rgb(33, 33, 35)';     // --bg, dark
 
 async function backgroundWith(page: import('@playwright/test').Page, choice: string | null) {
   await page.goto(GALLERY);

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 262 40" role="img" aria-label="Hephaisto">
   <!--
-    The lockup: mark plus wordmark. The word is Archivo 700, the console's display face, and the
-    trailing period is the accent - a full stop, because the agent's claim is that it finishes
-    things or says who has to.
+    The lockup: mark plus wordmark. The word is Gabarito 800, the brand face, in sentence case
+    as the True Relevance book sets a name, and the trailing period is the accent - a full stop,
+    because the agent's claim is that it finishes things or says who has to.
 
     THE WORD CARRIES BOTH THEMES. The first version of this file hardcoded the dark-theme
     foreground and was invisible on a light page, which is the same defect the token set exists
@@ -11,11 +11,12 @@
     inside the file is what makes one asset work on both grounds.
   -->
   <style>
-    .word { fill: #e4e1db; }
-    @media (prefers-color-scheme: light) { .word { fill: #1c1a17; } }
+    .word { fill: #f3f2f3; }
+    .stop { fill: #4ec2df; }
+    @media (prefers-color-scheme: light) { .word { fill: #2f2f2f; } .stop { fill: #0e5a75; } }
   </style>
-  <rect x="4" y="4" width="32" height="32" rx="6" fill="#1b1e24"/>
-  <path d="M20 9.2 L31.4 30.2 L25.6 30.2 L20 19.6 L14.4 30.2 L8.6 30.2 Z" fill="#ff8a3d"/>
-  <text x="48" y="28" class="word" font-family="Archivo, ui-sans-serif, system-ui, sans-serif"
-        font-size="24" font-weight="700" letter-spacing="0.5">hephaisto<tspan fill="#ff8a3d">.</tspan></text>
+  <circle cx="20" cy="20" r="16" fill="#4ec2df"/>
+  <path d="M20 10.6 L29.4 28.6 L24.8 28.6 L20 19.6 L15.2 28.6 L10.6 28.6 Z" fill="#2f2f2f"/>
+  <text x="46" y="28.5" class="word" font-family="Gabarito, ui-sans-serif, system-ui, sans-serif"
+        font-size="25" font-weight="800" letter-spacing="-0.2">Hephaisto<tspan class="stop">.</tspan></text>
 </svg>

@@ -25,8 +25,8 @@ test.describe('the landing page', () => {
     expect(styled, 'tokens.css or site.css did not load').toBe(true);
 
     await page.evaluate(() => document.fonts.ready);
-    const loaded = await page.evaluate(() => document.fonts.check('16px Archivo'));
-    expect(loaded, 'Archivo did not load; the page is set in a fallback stack').toBe(true);
+    const loaded = await page.evaluate(() => document.fonts.check('16px Gabarito'));
+    expect(loaded, 'Gabarito did not load; the page is set in a fallback stack').toBe(true);
   });
 
   test('the whole page', async ({ page }) => {

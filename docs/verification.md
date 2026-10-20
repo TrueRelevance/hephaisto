@@ -279,7 +279,7 @@ on white — which is at least obvious, unlike the font case.
 In a browser, the honest check is one line in the console:
 
 ```js
-document.fonts.check('16px Archivo') && document.fonts.check('16px "JetBrains Mono"')
+document.fonts.check('16px Gabarito') && document.fonts.check('16px "JetBrains Mono"')
 // expect true
 ```
 

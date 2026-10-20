@@ -54,8 +54,8 @@ export default defineConfig({
         // reason App.razor and website/index.html are allowed theirs: theme-color paints the
         // browser's own chrome and is read before any CSS, so it cannot be a var(). A test asserts
         // they equal --bg in each theme.
-        ['meta', { name: 'theme-color', content: '#131519', media: '(prefers-color-scheme: dark)' }],
-        ['meta', { name: 'theme-color', content: '#faf8f5', media: '(prefers-color-scheme: light)' }],
+        ['meta', { name: 'theme-color', content: '#212123', media: '(prefers-color-scheme: dark)' }],
+        ['meta', { name: 'theme-color', content: '#f8f7f8', media: '(prefers-color-scheme: light)' }],
         ['meta', { property: 'og:type', content: 'website' }],
         ['meta', { property: 'og:site_name', content: 'Hephaisto' }],
         ['script', {}, THEME_SCRIPT],
