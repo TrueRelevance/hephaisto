@@ -145,6 +145,48 @@
       "description": "Get one work item in full by its id, or by repository and issue number: the GitHub issue handed to Hephaisto with its title, author, labels, text and URL, what became of it - its state and why it ended - why no plan was started when none was, and its code fix attempt with plan summary and pull request. Read only: a plan is answered by a person, on the issue or in the console."
     },
     {
+      "name": "list_planner_issues",
+      "needs": "reader",
+      "readOnly": true,
+      "description": "List the GitHub issues on the planning board (the GitHub project the planner shows, e.g. TR Planning): what is left for today, what is in the backlog, what is planned for a later day, what needs a decision, every open issue, or what was closed today. Each with its owner/repo#number, title, type, Status, Priority, Area and the other fields, the day it is planned for, whether it is worked on now, assignees, labels and pull requests. Filter by status, priority, repository, assignee and free text. Answers which issues are left for today, what is in the backlog and what to work on next."
+    },
+    {
+      "name": "get_planner_issue",
+      "needs": "reader",
+      "readOnly": true,
+      "description": "Get one GitHub issue of the planning board in full: title, fields, day, assignees, labels, pull requests, sub-issues, its description, the newest comments, Claude's analysis when somebody asked for one in the planner, and its page in the console. Open or closed."
+    },
+    {
+      "name": "lookup_planner_fields",
+      "needs": "reader",
+      "readOnly": true,
+      "description": "Look up what a GitHub issue on the planning board can be filled in with: the board's fields (Status, Priority, Area, ...) and their options, which fields the board asks for, the issue types (Bug, Feature, Task, Epic), the repositories a new issue can be opened in, the accounts it can be assigned to, and the days it can be planned for. Read before create_planner_issue to fill in every field."
+    },
+    {
+      "name": "create_planner_issue",
+      "needs": "write",
+      "readOnly": false,
+      "description": "Create a GitHub issue on the planning board, through Hephaisto's planner: opened in the repository, put on the board with its type and fields (Status, Priority, Area, ...), planned for a day (today, tomorrow, next week, backlog) and assigned. Use it instead of the gh CLI for a new issue or bug, so the issue is on the board and in today's plan at once. Fill in the type and the fields from lookup_planner_fields. Opened by Hephaisto's GitHub account; written to the audit trail as this token."
+    },
+    {
+      "name": "update_planner_issue",
+      "needs": "write",
+      "readOnly": false,
+      "description": "Update an open GitHub issue of the planning board: plan it for a day (today, not today, tomorrow, next week, backlog), set fields such as Status, Priority or Area, assign or unassign a person, mark it as worked on now or no longer, change its title or description. Several at once, in that order; stops at the first change GitHub refuses and says what was made. Written to the audit trail as this token."
+    },
+    {
+      "name": "close_planner_issue",
+      "needs": "write",
+      "readOnly": false,
+      "description": "Close a GitHub issue of the planning board as done (completed) or not planned, optionally with a closing comment first. Close only when the person asked; a closed issue can be reopened on GitHub. Issues are never deleted. Written to the audit trail as this token."
+    },
+    {
+      "name": "comment_on_planner_issue",
+      "needs": "write",
+      "readOnly": false,
+      "description": "Comment on a GitHub issue of the planning board, open or closed: posted by Hephaisto's GitHub account and signed as relayed by an agent, for the person named in onBehalfOf. Not taken as a person's answer to a code-fix plan. Written to the audit trail as this token."
+    },
+    {
       "name": "get_status",
       "needs": "reader",
       "readOnly": true,

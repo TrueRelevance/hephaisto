@@ -2,6 +2,7 @@ using System.Text.Json;
 using Hephaisto.Agent.CodeFix.Contract;
 using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Persistence.Repositories;
+using Hephaisto.Agent.Web;
 using Hephaisto.Core;
 using Hephaisto.Core.Abstractions;
 using Hephaisto.Core.Domain;
@@ -133,6 +134,7 @@ public sealed class PlannerService(
     public const string AuditSchedule = "planner.schedule";
     public const string AuditComment = "planner.comment";
     public const string AuditActive = "planner.active";
+    public const string AuditEdit = "planner.edit";
 
     public const int MaxComment = 60_000;
 
@@ -189,8 +191,8 @@ public sealed class PlannerService(
         }
     }
 
-    public Task<PlannerActionResult> SetFieldAsync(string itemId, string field, string option, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, board, entry) =>
+    public Task<PlannerActionResult> SetFieldAsync(string itemId, string field, string option, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             if (board.Field(field) is not { } boardField)
             {
@@ -206,7 +208,7 @@ public sealed class PlannerService(
             var before = item.Field(boardField.Name);
 
             await AuditAsync(AuditField, actor, $"{boardField.Name} of {item.Reference} set to {chosen.Name}", item,
-                new { field = boardField.Name, from = before, to = chosen.Name }, ct).ConfigureAwait(false);
+                new { field = boardField.Name, from = before, to = chosen.Name }, ct, origin).ConfigureAwait(false);
 
             var set = await client.SetProjectFieldAsync(board.Id, item.ItemId, boardField.Id, chosen.Id, ct).ConfigureAwait(false);
 
@@ -220,13 +222,13 @@ public sealed class PlannerService(
             return (PlannerActionOutcome.Done, $"{boardField.Name} set to {chosen.Name}", item with { Fields = fields });
         });
 
-    public Task<PlannerActionResult> CloseAsync(string itemId, bool notPlanned, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, _, entry) =>
+    public Task<PlannerActionResult> CloseAsync(string itemId, bool notPlanned, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, _, entry) =>
         {
             var item = entry.Item;
             var how = notPlanned ? "not planned" : "done";
 
-            await AuditAsync(AuditClose, actor, $"{item.Reference} closed as {how}", item, new { reason = how }, ct).ConfigureAwait(false);
+            await AuditAsync(AuditClose, actor, $"{item.Reference} closed as {how}", item, new { reason = how }, ct, origin).ConfigureAwait(false);
 
             var closed = await client.CloseIssueAsync(item.IssueId, notPlanned, ct).ConfigureAwait(false);
 
@@ -241,13 +243,13 @@ public sealed class PlannerService(
     /// asked for - a label that is already there would keep its old date, and the date is what
     /// says which day it is for.
     /// </summary>
-    public Task<PlannerActionResult> SetDayAsync(string itemId, PlannerDay day, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, board, entry) =>
+    public Task<PlannerActionResult> SetDayAsync(string itemId, PlannerDay day, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
             var word = DayWord(day);
 
-            await AuditAsync(AuditDay, actor, $"{item.Reference}: {word}", item, new { day = word, was = DayWord(entry.Day) }, ct).ConfigureAwait(false);
+            await AuditAsync(AuditDay, actor, $"{item.Reference}: {word}", item, new { day = word, was = DayWord(entry.Day) }, ct, origin).ConfigureAwait(false);
 
             var (refused, changed) = await ApplyDayAsync(client, board, item, day, ct).ConfigureAwait(false);
 
@@ -313,8 +315,8 @@ public sealed class PlannerService(
     /// every other open issue of the board - one thing at a time. Only an item planned for today
     /// can be started; one left over from an earlier day is planned for today again with it.
     /// </summary>
-    public Task<PlannerActionResult> SetActiveAsync(string itemId, bool active, string actor, CancellationToken ct) =>
-        ActManyAsync(itemId, actor, ct, async (client, board, entry) =>
+    public Task<PlannerActionResult> SetActiveAsync(string itemId, bool active, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActManyAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
             var label = item.Labels.FirstOrDefault(l => string.Equals(l.Name, PlannerQueue.ActiveLabel, StringComparison.OrdinalIgnoreCase));
@@ -326,7 +328,7 @@ public sealed class PlannerService(
                     return (PlannerActionOutcome.Done, "it was not being worked on", []);
                 }
 
-                await AuditAsync(AuditActive, actor, $"{item.Reference}: no longer worked on", item, new { active = false }, ct).ConfigureAwait(false);
+                await AuditAsync(AuditActive, actor, $"{item.Reference}: no longer worked on", item, new { active = false }, ct, origin).ConfigureAwait(false);
 
                 var removed = await client.RemoveLabelAsync(item.Repository, item.Number, label.Name, ct).ConfigureAwait(false);
 
@@ -344,7 +346,7 @@ public sealed class PlannerService(
             var was = kept?.Active;
 
             await AuditAsync(AuditActive, actor, $"{item.Reference}: worked on now", item,
-                new { active = true, was = was is null || was.Item.ItemId == item.ItemId ? null : was.Item.Reference }, ct).ConfigureAwait(false);
+                new { active = true, was = was is null || was.Item.ItemId == item.ItemId ? null : was.Item.Reference }, ct, origin).ConfigureAwait(false);
 
             var changed = new List<BoardItem>();
 
@@ -392,8 +394,8 @@ public sealed class PlannerService(
             return (PlannerActionOutcome.Done, "worked on now", [.. changed, item]);
         });
 
-    public Task<PlannerActionResult> AssignAsync(string itemId, string login, bool assign, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, _, entry) =>
+    public Task<PlannerActionResult> AssignAsync(string itemId, string login, bool assign, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, _, entry) =>
         {
             var item = entry.Item;
 
@@ -403,7 +405,7 @@ public sealed class PlannerService(
             }
 
             await AuditAsync(AuditAssign, actor, assign ? $"{item.Reference} assigned to {account}" : $"{account} taken off {item.Reference}", item,
-                new { login = account, assigned = assign }, ct).ConfigureAwait(false);
+                new { login = account, assigned = assign }, ct, origin).ConfigureAwait(false);
 
             var done = assign
                 ? await client.AddAssigneeAsync(item.Repository, item.Number, account, ct).ConfigureAwait(false)
@@ -430,11 +432,49 @@ public sealed class PlannerService(
         });
 
     /// <summary>
+    /// A new title, a new description, or both (#307); null leaves that one as it is, and an
+    /// empty description clears it. Only for an open issue of the board, like every other click.
+    /// </summary>
+    public Task<PlannerActionResult> EditAsync(string itemId, string? title, string? body, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, _, entry) =>
+        {
+            var item = entry.Item;
+            var newTitle = title?.Trim();
+
+            if (newTitle is null && body is null)
+            {
+                return (PlannerActionOutcome.NotFound, "nothing to change: give a title, a description or both", null);
+            }
+
+            if (newTitle is { } t && (t.Length == 0 || t.Length > MaxTitle || t.Contains('\n', StringComparison.Ordinal)))
+            {
+                return (PlannerActionOutcome.NotFound, $"a title is one line of 1 to {MaxTitle} characters", null);
+            }
+
+            if (body is { Length: > MaxBody })
+            {
+                return (PlannerActionOutcome.NotFound, $"a description holds at most {MaxBody} characters", null);
+            }
+
+            string[] changed = [.. new[] { newTitle is null ? null : "title", body is null ? null : "description" }.OfType<string>()];
+            var what = string.Join(" and ", changed);
+
+            await AuditAsync(AuditEdit, actor, $"{item.Reference}: {what} changed", item,
+                new { title = newTitle is null ? null : new { from = item.Title, to = newTitle }, description = body is null ? null : new { from = item.Body?.Length ?? 0, to = body.Length } }, ct, origin).ConfigureAwait(false);
+
+            var edited = await client.UpdateIssueAsync(item.Repository, item.Number, newTitle, body, ct).ConfigureAwait(false);
+
+            return edited.Ok
+                ? (PlannerActionOutcome.Done, $"{what} changed", item with { Title = newTitle ?? item.Title, Body = body is null ? item.Body : body.Length == 0 ? null : body, UpdatedAt = clock.UtcNow })
+                : (PlannerActionOutcome.Refused, edited.Describe(), null);
+        });
+
+    /// <summary>
     /// Opens an issue, puts it on the board and sets the fields that were chosen - three requests,
     /// each of which can fail after the one before it worked. The issue is never taken back: what
     /// failed is said, with the issue's number, and the issue is on GitHub to be fixed by hand.
     /// </summary>
-    public async Task<PlannerActionResult> OpenIssueAsync(PlannerNewIssue issue, string actor, CancellationToken ct)
+    public async Task<PlannerActionResult> OpenIssueAsync(PlannerNewIssue issue, string actor, CancellationToken ct, AuditOrigin? origin = null)
     {
         ArgumentNullException.ThrowIfNull(issue);
         var who = actor?.Trim() ?? string.Empty;
@@ -511,14 +551,14 @@ public sealed class PlannerService(
             }
 
             await AuditAsync(AuditCreate, who, $"issue '{title}' opened in {repository}", repository, null, null, null,
-                new { title, type, fields = chosen.ToDictionary(c => c.Field.Name, c => c.Option.Name) }, ct).ConfigureAwait(false);
+                new { title, type, fields = chosen.ToDictionary(c => c.Field.Name, c => c.Option.Name) }, ct, origin).ConfigureAwait(false);
 
             var body = string.IsNullOrWhiteSpace(issue.Body) ? null : issue.Body;
             var created = await client.CreateIssueAsync(repository, title, body, type, ct).ConfigureAwait(false);
 
             if (!created.Ok)
             {
-                return await RefusedAsync(who, repository, null, null, created.Describe(), snapshot, ct).ConfigureAwait(false);
+                return await RefusedAsync(who, repository, null, null, created.Describe(), snapshot, ct, origin).ConfigureAwait(false);
             }
 
             var opened = created.Value!;
@@ -528,7 +568,7 @@ public sealed class PlannerService(
             if (!added.Ok)
             {
                 return await RefusedAsync(who, repository, opened.Number, opened.Url,
-                    $"{reference} was opened, and GitHub would not put it on the board: {added.Describe()}", snapshot, ct).ConfigureAwait(false);
+                    $"{reference} was opened, and GitHub would not put it on the board: {added.Describe()}", snapshot, ct, origin).ConfigureAwait(false);
             }
 
             var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -563,7 +603,7 @@ public sealed class PlannerService(
                 var message = $"{reference} was opened and put on the board; GitHub would not set {string.Join(", ", failed)}";
 
                 logger.LogWarning("The planner opened {Issue} for {Actor}, and some fields were refused: {Detail}", reference, who, message);
-                await AuditAsync(AuditRefused, who, message, repository, opened.Number, opened.Url, item.ItemId, new { detail = message }, ct).ConfigureAwait(false);
+                await AuditAsync(AuditRefused, who, message, repository, opened.Number, opened.Url, item.ItemId, new { detail = message }, ct, origin).ConfigureAwait(false);
 
                 return new(PlannerActionOutcome.Refused, message, snapshot, item.ItemId, item);
             }
@@ -700,11 +740,11 @@ public sealed class PlannerService(
     public Task RecordAsync(string type, string actor, string summary, string repository, int number, string? url, object detail, CancellationToken ct) =>
         AuditAsync(type, actor, summary, repository, number, url, null, detail, ct);
 
-    private async Task<PlannerActionResult> RefusedAsync(string actor, string repository, int? number, string? url, string message, PlannerSnapshot snapshot, CancellationToken ct)
+    private async Task<PlannerActionResult> RefusedAsync(string actor, string repository, int? number, string? url, string message, PlannerSnapshot snapshot, CancellationToken ct, AuditOrigin? origin)
     {
         logger.LogWarning("The planner's new issue by {Actor} in {Repository} was refused: {Detail}", actor, repository, message);
 
-        await AuditAsync(AuditRefused, actor, $"{repository}: GitHub refused, {message}", repository, number, url, null, new { detail = message }, ct).ConfigureAwait(false);
+        await AuditAsync(AuditRefused, actor, $"{repository}: GitHub refused, {message}", repository, number, url, null, new { detail = message }, ct, origin).ConfigureAwait(false);
 
         return new(PlannerActionOutcome.Refused, message, snapshot);
     }
@@ -730,8 +770,8 @@ public sealed class PlannerService(
     /// two labels of the day come off in every case, and the one of being worked on: what was
     /// decided for today no longer holds.
     /// </summary>
-    public Task<PlannerActionResult> ScheduleAsync(string itemId, PlannerSchedule schedule, string actor, CancellationToken ct) =>
-        ActAsync(itemId, actor, ct, async (client, board, entry) =>
+    public Task<PlannerActionResult> ScheduleAsync(string itemId, PlannerSchedule schedule, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        ActAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
             var planner = options.CurrentValue.Planner;
@@ -760,7 +800,7 @@ public sealed class PlannerService(
             var word = day is { } on ? $"planned for {on.ToString("dddd d MMMM", System.Globalization.CultureInfo.InvariantCulture)}" : "back in the backlog";
 
             await AuditAsync(AuditSchedule, actor, $"{item.Reference}: {word}", item,
-                new { schedule = ScheduleWord(schedule), day = day?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), was = DayWord(entry.Day) }, ct).ConfigureAwait(false);
+                new { schedule = ScheduleWord(schedule), day = day?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture), was = DayWord(entry.Day) }, ct, origin).ConfigureAwait(false);
 
             var labels = item.Labels.ToList();
 
@@ -841,7 +881,7 @@ public sealed class PlannerService(
     /// posted by the agent's account - so it ends by saying whose words they are.
     /// </summary>
     public async Task<(PlannerActionOutcome Outcome, string Message, GitHubComment? Comment)> CommentAsync(
-        string repository, int number, string body, string actor, CancellationToken ct)
+        string repository, int number, string body, string actor, CancellationToken ct, AuditOrigin? origin = null)
     {
         var who = actor?.Trim() ?? string.Empty;
         ArgumentException.ThrowIfNullOrWhiteSpace(who);
@@ -875,13 +915,19 @@ public sealed class PlannerService(
             return (PlannerActionOutcome.Off, "the planner is off", null);
         }
 
-        await AuditAsync(AuditComment, who, $"{item.Reference}: a comment", item, new { length = text.Length }, ct).ConfigureAwait(false);
+        await AuditAsync(AuditComment, who, $"{item.Reference}: a comment", item, new { length = text.Length }, ct, origin).ConfigureAwait(false);
 
-        var posted = await client.CreateCommentAsync(item.Repository, item.Number, PlannerComment.Body(text, who), ct).ConfigureAwait(false);
+        // Through the MCP endpoint it is an agent's relay, not a person's comment in the planner:
+        // without the marker, a replan never passes it on as somebody's answer.
+        var posted = await client.CreateCommentAsync(
+            item.Repository,
+            item.Number,
+            origin is null ? PlannerComment.Body(text, who) : PlannerComment.Relayed(text, origin.ClaimedBy ?? (origin.TokenKind == Mcp.McpTokenOptions.Shared ? null : who)),
+            ct).ConfigureAwait(false);
 
         if (!posted.Ok)
         {
-            await AuditAsync(AuditRefused, who, $"{item.Reference}: GitHub refused the comment, {posted.Describe()}", item, new { detail = posted.Describe() }, ct).ConfigureAwait(false);
+            await AuditAsync(AuditRefused, who, $"{item.Reference}: GitHub refused the comment, {posted.Describe()}", item, new { detail = posted.Describe() }, ct, origin).ConfigureAwait(false);
 
             return (PlannerActionOutcome.Refused, posted.Describe(), null);
         }
@@ -978,9 +1024,10 @@ public sealed class PlannerService(
     private Task<PlannerActionResult> ActAsync(
         string itemId,
         string actor,
+        AuditOrigin? origin,
         CancellationToken ct,
         Func<IGitHubClient, Board, PlannerEntry, Task<(PlannerActionOutcome Outcome, string Message, BoardItem? Changed)>> act) =>
-        ActManyAsync(itemId, actor, ct, async (client, board, entry) =>
+        ActManyAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var (outcome, message, changed) = await act(client, board, entry).ConfigureAwait(false);
 
@@ -991,6 +1038,7 @@ public sealed class PlannerService(
     private async Task<PlannerActionResult> ActManyAsync(
         string itemId,
         string actor,
+        AuditOrigin? origin,
         CancellationToken ct,
         Func<IGitHubClient, Board, PlannerEntry, Task<(PlannerActionOutcome Outcome, string Message, IReadOnlyList<BoardItem> Changed)>> act)
     {
@@ -1048,7 +1096,7 @@ public sealed class PlannerService(
             {
                 logger.LogWarning("The planner's click by {Actor} on {Item} was refused: {Detail}", who, entry.Item.Reference, message);
 
-                await AuditAsync(AuditRefused, who, $"{entry.Item.Reference}: GitHub refused, {message}", entry.Item, new { detail = message }, ct).ConfigureAwait(false);
+                await AuditAsync(AuditRefused, who, $"{entry.Item.Reference}: GitHub refused, {message}", entry.Item, new { detail = message }, ct, origin).ConfigureAwait(false);
             }
 
             return new(outcome, message, snapshot);
@@ -1219,10 +1267,11 @@ public sealed class PlannerService(
         return user.Ok ? user.Value!.Login : null;
     }
 
-    private Task AuditAsync(string type, string actor, string summary, BoardItem item, object detail, CancellationToken ct) =>
-        AuditAsync(type, actor, summary, item.Repository, item.Number, item.Url, item.ItemId, detail, ct);
+    private Task AuditAsync(string type, string actor, string summary, BoardItem item, object detail, CancellationToken ct, AuditOrigin? origin = null) =>
+        AuditAsync(type, actor, summary, item.Repository, item.Number, item.Url, item.ItemId, detail, ct, origin);
 
-    private async Task AuditAsync(string type, string actor, string summary, string repository, int? number, string? url, string? itemId, object detail, CancellationToken ct)
+    /// <param name="origin">Where the change came from when it was not the console: an agent through the MCP endpoint (#307).</param>
+    private async Task AuditAsync(string type, string actor, string summary, string repository, int? number, string? url, string? itemId, object detail, CancellationToken ct, AuditOrigin? origin = null)
     {
         await using var scope = scopes.CreateAsyncScope();
 
@@ -1233,8 +1282,8 @@ public sealed class PlannerService(
                 Type = type,
                 Actor = actor,
                 Summary = summary,
-                Detail = JsonSerializer.Serialize(
-                    new { repository, number, url, item = itemId, change = detail }, AuditJson),
+                Detail = AuditOrigin.Attach(JsonSerializer.Serialize(
+                    new { repository, number, url, item = itemId, change = detail }, AuditJson), origin),
                 TraceId = System.Diagnostics.Activity.Current?.TraceId.ToString(),
                 SpanId = System.Diagnostics.Activity.Current?.SpanId.ToString(),
             },

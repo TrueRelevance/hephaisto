@@ -672,13 +672,27 @@ minutes - so a red live run is read request by request before it is believed.
   column. Both are in `scripts/e2e/planner-live.sh` and its spec, which is why they look the way
   they do.
 
+- **MCP (#307): `McpPlannerTools` -> `McpPlanner` -> `PlannerService`**, nothing else.
+  `McpPlanner` is the third facade `McpToolSurfaceTests` allows; it may not take anything from Web,
+  CodeFix or Persistence. Its writes are the planner's methods with an `AuditOrigin` (the optional
+  last parameter of every planner write, attached to the audit detail), authorised by
+  `McpIncidentActions.Authorise`. A comment with an origin is `PlannerComment.Relayed` - NO marker,
+  or a replan would pass an agent's words on as a person's. Edits of a title or description are
+  `IGitHubClient.UpdateIssueAsync` (PATCH, only the fields that change). Several changes in one
+  call stop at the first refusal (`StepsAsync`); a refusal of the first throws, a later one is
+  `refused` in the answer beside `done`.
+
 Locally: `"github": "stand-in"` turns the planner on against the stand-in's seeded board
 (`infra/e2e/notification-receiver/GitHubStandIn.Project.cs`;
 `curl http://$H:8110/github/control/project`) - with `"coder": true` also asking Claude, as the
 scripted `coder/fake-scripts/default.triage.json` when `"coder-sdk": "fake"` - and
 `HEPHAISTO_URL=http://$H:8100 GITHUB_STANDIN_URL=http://$H:8110 scripts/e2e/ui/run.sh planner.spec.ts`
 is how a change to it is accepted. After changing the stand-in, rebuild its image in the VM and
-restart `deploy/teams-stand-in`. `scripts/e2e/planner-live.sh` is the same suite against
+restart `deploy/teams-stand-in`. The MCP tools' spec, `planner-mcp.spec.ts`, also needs `"mcp": true`
+and the pager tokens: `eval "$(scripts/e2e/mcp-secrets.sh --print)"`, then
+`HEPHAISTO_MCP_URL=http://$H:8183/mcp HEPHAISTO_MCP_TOKEN=$PAGER_MCP_TOKEN_SHARED
+HEPHAISTO_MCP_TOKEN_READONLY=$PAGER_MCP_TOKEN_READONLY` beside the two URLs above.
+`scripts/e2e/planner-live.sh` is the same suite against
 github.com and needs a token that can see the project - the bot's cannot; its header says how.
 
 ## The Teams bot, as of v0.9.0-rc4

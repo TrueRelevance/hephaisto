@@ -818,14 +818,14 @@ public sealed class PlannerServiceTests
         }
     }
 
-    private static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null, string dayField = "Planned for")
+    internal static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null, string dayField = "Planned for")
     {
         var (planner, github, clock, audit, _, _) = Parts(enabled, repositories ?? [], triage: false, dayField);
 
         return (planner, github, clock, audit);
     }
 
-    private static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit, IServiceScopeFactory Scopes, GitHubOptions Options) Parts(
+    internal static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit, IServiceScopeFactory Scopes, GitHubOptions Options) Parts(
         bool enabled, string[] repositories, bool triage, string dayField = "Planned for")
     {
         var github = new FakeGitHub();
@@ -891,7 +891,7 @@ public sealed class PlannerServiceTests
             true, Given.Now.AddDays(-9), Given.Now.AddDays(-3), null, null, 0, 0, fields, labels ?? [], [], pulls ?? []);
     }
 
-    private sealed class StaticOptions<T>(T value) : IOptionsMonitor<T>
+    internal sealed class StaticOptions<T>(T value) : IOptionsMonitor<T>
     {
         public T CurrentValue => value;
 
@@ -900,7 +900,7 @@ public sealed class PlannerServiceTests
         public IDisposable? OnChange(Action<T, string?> listener) => null;
     }
 
-    private sealed class FakeAudit : IAuditRepository
+    internal sealed class FakeAudit : IAuditRepository
     {
         public List<AuditEvent> Rows { get; } = [];
 
@@ -922,7 +922,7 @@ public sealed class PlannerServiceTests
             Task.FromResult<IReadOnlyList<AuditEvent>>([]);
     }
 
-    private sealed class FakeGitHub : IGitHubClient
+    internal sealed class FakeGitHub : IGitHubClient
     {
         public List<string> Calls { get; } = [];
 
@@ -1034,6 +1034,17 @@ public sealed class PlannerServiceTests
                 ? new GitHubResult<GitHubIssue>(failing.Outcome, null, failing.Detail)
                 : new GitHubResult<GitHubIssue>(GitHubOutcome.Ok, new GitHubIssue(
                     500, "I_500", title, body, "open", $"https://github.com/{repository}/issues/500", new GitHubAccount("hephaisto-bot", 1), [], [], type)));
+        }
+
+        public Task<GitHubResult<GitHubIssue>> UpdateIssueAsync(string repository, int number, string? title, string? body, CancellationToken ct)
+        {
+            OnWrite?.Invoke();
+            Calls.Add($"edit {repository}#{number} {title ?? "-"} {(body is null ? "-" : body.Length == 0 ? "(empty)" : body)}");
+
+            return Task.FromResult(FailWrite is { } failing
+                ? new GitHubResult<GitHubIssue>(failing.Outcome, null, failing.Detail)
+                : new GitHubResult<GitHubIssue>(GitHubOutcome.Ok, new GitHubIssue(
+                    number, $"I_{number}", title ?? $"Issue {number}", body, "open", $"https://github.com/{repository}/issues/{number}", new GitHubAccount("reporter", 3), [], [], "Task")));
         }
 
         public Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct)

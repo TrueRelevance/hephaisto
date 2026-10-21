@@ -213,6 +213,35 @@ A project's own workflows keep running. On a board with GitHub's *auto-close iss
 setting Status to the last column closes the issue; with *item closed*, closing an issue moves it
 there. The planner shows what GitHub says after the click, not what it expected.
 
+## Through the MCP endpoint
+
+With the MCP endpoint on (`mcp.enabled`, `/mcp` on port 8083), a coding agent reads and drives the planner
+with seven tools ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)). An issue opened
+this way is on the board, has its fields and is planned for its day when the call returns -
+one opened with `gh issue create` waits for the next board read, and for somebody to plan it.
+
+| Tool | Who | What |
+|---|---|---|
+| `list_planner_issues` | any token | what is left for today, the backlog (Status `github.planner.backlogStatus`), later days, what needs a decision, every open issue, what was closed today; filtered by status, priority, repository, assignee, words |
+| `get_planner_issue` | any token | one issue: description, the newest ten comments, Claude's analysis, its page in the console |
+| `lookup_planner_fields` | any token | the fields and their options, which are required, issue types, repositories, assignees, days |
+| `create_planner_issue` | may write | open an issue with type, fields, a day and an assignee |
+| `update_planner_issue` | may write | day, fields, assignee, worked on now, title, description |
+| `close_planner_issue` | may write | close as done or not planned, after an optional comment |
+| `comment_on_planner_issue` | may write | a comment, open or closed |
+
+Each write is the planner's own click: the audit row first, written as the token (`mcp/litellm`
+for a gateway's) with `origin.source: mcp` and the `onBehalfOf` name as an unverified claim; then
+GitHub; then the board in memory and every open planner page. Several changes in one call are made
+in order and stop at the first one GitHub refuses, and the answer says what was made.
+
+A comment from an agent ends with *Relayed by an agent through Hephaisto* and carries no planner
+marker, so a replan never passes it on as a person's answer to a plan. Nothing here approves or
+rejects an issue's plan - that is a comment on the issue, or the console.
+
+Asked through a gateway, *"create a github issue for today about X"* finds `create_planner_issue`;
+*"which issues are left for today"* and *"what is in the backlog"* find `list_planner_issues`.
+
 ## Chart values
 
 ```yaml
@@ -315,7 +344,9 @@ kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in 
   cross-reference events are read. On an issue with more, an old `today` is taken to be from an
   earlier day and an old `not today` to have expired — which is what they are.
 - **A thousand items.** A larger project is read up to that, and the log says so.
-- **No MCP tool** reads or drives the planner.
+- **Through MCP, issues are not deleted** - closing as *not planned* is how one goes - and a
+  closed issue can be commented on, not changed. An issue opened elsewhere a minute ago is found
+  after the next read, or with `refresh: true`.
 - **A run of Claude's lives in the agent's memory**, its answer on GitHub. A restart forgets a run
   that was still going: the Job ends by its deadline, nothing is put on the issue, and *ask Claude*
   asks again. The analysis shown is read from the issue's first hundred comments.

@@ -209,7 +209,15 @@ public sealed class McpIncidentActions(IncidentQueries queries, McpIncidentReade
         };
     }
 
-    private (string Actor, AuditOrigin Origin) Authorise(McpCaller caller, string? onBehalfOf, bool approver, bool claimRequired, string what)
+    private (string Actor, AuditOrigin Origin) Authorise(McpCaller caller, string? onBehalfOf, bool approver, bool claimRequired, string what) =>
+        Authorise(caller, onBehalfOf, approver, claimRequired, what, http.HttpContext);
+
+    /// <summary>
+    /// Who a change is recorded as, and where it came from - for every write of the MCP endpoint,
+    /// the planner's (<see cref="McpPlanner"/>) as much as an incident's.
+    /// </summary>
+    internal static (string Actor, AuditOrigin Origin) Authorise(
+        McpCaller caller, string? onBehalfOf, bool approver, bool claimRequired, string what, HttpContext? context)
     {
         ArgumentNullException.ThrowIfNull(caller);
 
@@ -254,7 +262,7 @@ public sealed class McpIncidentActions(IncidentQueries queries, McpIncidentReade
                 + "It stops the paging, so somebody has to be named - it is recorded as a claim, beside the token.");
         }
 
-        var client = http.HttpContext?.Request.Headers.UserAgent.ToString();
+        var client = context?.Request.Headers.UserAgent.ToString();
 
         return (caller.Actor, new AuditOrigin
         {

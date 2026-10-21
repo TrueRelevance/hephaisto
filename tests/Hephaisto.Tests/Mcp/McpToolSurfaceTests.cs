@@ -74,8 +74,9 @@ public sealed class McpToolSurfaceTests
     public void A_tool_reaches_incidents_only_through_the_two_facades()
     {
         // IncidentQueries also approves actions and re-arms the mode; CodeFixCoordinator decides
-        // plans. A tool that could inject either is one line from a door that must stay shut.
-        Type[] allowed = [typeof(McpIncidentReader), typeof(McpIncidentActions), typeof(Hephaisto.Core.Abstractions.IClock)];
+        // plans. A tool that could inject either is one line from a door that must stay shut. The
+        // planner's facade (#307) holds the planner's service, which neither approves nor plans.
+        Type[] allowed = [typeof(McpIncidentReader), typeof(McpIncidentActions), typeof(McpPlanner), typeof(Hephaisto.Core.Abstractions.IClock)];
 
         var toolTypes = Agent.GetTypes().Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null).ToList();
         toolTypes.Should().NotBeEmpty();
@@ -105,6 +106,25 @@ public sealed class McpToolSurfaceTests
             .Select(m => m.Name)
             .Should().BeEquivalentTo(
                 "AcknowledgeAsync", "AssignAsync", "CloseAsync", "CloseManyAsync", "AddNoteEntryAsync", "FeedbackAsync", "ReinvestigateAsync");
+    }
+
+    [Fact]
+    public void The_planner_facade_reaches_nothing_but_the_planner()
+    {
+        // Its writes are the planner's own clicks: no incident queries, no code-fix coordinator,
+        // no database - a door to any of them would be one the catalogue tests cannot see.
+        var parameters = typeof(McpPlanner).GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType).ToList();
+
+        parameters.Should().Contain(typeof(Hephaisto.Agent.Planner.PlannerService));
+        parameters.Should().NotContain(t => t.Namespace == "Hephaisto.Agent.Web"
+            || t.Namespace == "Hephaisto.Agent.CodeFix"
+            || t.Namespace == "Hephaisto.Agent.Persistence"
+            || t == typeof(Hephaisto.Agent.Planner.TriageRunner));
+
+        typeof(McpPlanner)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(m => m.Name)
+            .Should().BeEquivalentTo("ListAsync", "GetAsync", "FieldsAsync", "CreateAsync", "UpdateAsync", "CloseAsync", "CommentAsync");
     }
 
     [Fact]

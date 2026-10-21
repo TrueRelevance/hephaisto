@@ -22,6 +22,16 @@ public static partial class PlannerComment
         return $"{Prefix}{name} -->\n{text}\n\n<sub>Written by {name} in Hephaisto's planner.</sub>";
     }
 
+    /// <summary>
+    /// A comment an agent relayed through the MCP endpoint (#307): the words, and a line that says
+    /// so and names the person it was for when one is known. No marker - only a person in the
+    /// console writes a comment a replan may pass on as theirs.
+    /// </summary>
+    public static string Relayed(string text, string? person) =>
+        person is null
+            ? $"{text}\n\n<sub>Relayed by an agent through Hephaisto.</sub>"
+            : $"{text}\n\n<sub>Relayed by an agent through Hephaisto, for {Name(person)}.</sub>";
+
     /// <summary>The person and their words, when <paramref name="body"/> is a planner comment.</summary>
     public static bool TryRead(string? body, out string person, out string text)
     {

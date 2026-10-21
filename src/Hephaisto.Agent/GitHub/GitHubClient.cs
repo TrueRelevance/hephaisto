@@ -131,7 +131,7 @@ public sealed record GitHubAssignment(GitHubAccount Assignee, string? Actor, Dat
 
 /// <summary>
 /// What the agent asks of GitHub. Eleven calls for issues as work, none of which deletes or
-/// closes; and eleven for the planner (v0.15.0), each of whose writes is one person's click in the
+/// closes; and twelve for the planner (v0.15.0), each of whose writes is one person's click in the
 /// console - there, and only there, an issue is opened or closed.
 /// </summary>
 public interface IGitHubClient
@@ -236,6 +236,12 @@ public interface IGitHubClient
     /// organisation's issue types, or null; GitHub refuses a name it does not know.
     /// </summary>
     Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct);
+
+    /// <summary>
+    /// Changes an issue's title, its description, or both (#307); null leaves that one as it is,
+    /// an empty description clears it.
+    /// </summary>
+    Task<GitHubResult<GitHubIssue>> UpdateIssueAsync(string repository, int number, string? title, string? body, CancellationToken ct);
 
     /// <summary>Puts an issue, by its node id, on a project. Answers the new item's id; for an issue already on it, the existing one's.</summary>
     Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct);

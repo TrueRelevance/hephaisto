@@ -10,7 +10,9 @@ namespace Hephaisto.Agent.Mcp;
 /// The order is not cosmetic. A gateway's tool search scores tools by the words of a question and
 /// breaks ties by registry order, and a write-intent question ("acknowledge the incident") scores
 /// the same on the write tool as on half the reads. So the writes sit right after the three tools
-/// every conversation starts with, where a tie still reaches the top five.
+/// every conversation starts with, where a tie still reaches the top five. The planner's tools
+/// (#307) sit together after the work items: their questions - an issue, today, the backlog -
+/// share few words with an incident's.
 /// </para>
 /// <para>
 /// <c>scripts/e2e/mcp/tools.golden.json</c> is the reviewed copy of this list; a unit test and the
@@ -49,6 +51,13 @@ public static class McpCatalogue
         ("get_code_fix", Reader),
         ("list_work_items", Reader),
         ("get_work_item", Reader),
+        ("list_planner_issues", Reader),
+        ("get_planner_issue", Reader),
+        ("lookup_planner_fields", Reader),
+        ("create_planner_issue", Write),
+        ("update_planner_issue", Write),
+        ("close_planner_issue", Write),
+        ("comment_on_planner_issue", Write),
         ("get_status", Reader),
         ("lookup_incident_filters", Reader),
         ("get_caller_identity", Reader),

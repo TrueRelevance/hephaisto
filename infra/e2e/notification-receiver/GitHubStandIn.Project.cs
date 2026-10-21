@@ -502,6 +502,41 @@ public static partial class GitHubStandIn
             }
         });
 
+        // An edit of the title or the description, as the planner's MCP tool sends it (#307):
+        // only what changes is sent, and a description sent empty clears it.
+        api.MapPatch("/repos/{owner}/{repo}/issues/{number:int}", async (string owner, string repo, int number, HttpContext ctx) =>
+        {
+            var body = await ReadAsync(ctx);
+
+            lock (gate)
+            {
+                if (!issues.TryGetValue(($"{owner}/{repo}", number), out var issue))
+                {
+                    return Problem(404, "Not Found");
+                }
+
+                if (Field(body, "title") is { } title)
+                {
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        return Problem(422, "Validation Failed");
+                    }
+
+                    issue.Title = title;
+                }
+
+                if (body is JsonObject o && o.ContainsKey("body"))
+                {
+                    issue.Body = Field(body, "body") is { Length: > 0 } text ? text : null;
+                }
+
+                issue.UpdatedAt = Now();
+                Console.WriteLine($"GITHUB board: {issue.Repo}#{number} edited");
+
+                return Results.Text(IssueJson(issue).ToJsonString(), "application/json");
+            }
+        });
+
         api.MapGet("/repos/{owner}/{repo}/labels", (string owner, string repo) =>
         {
             lock (gate)

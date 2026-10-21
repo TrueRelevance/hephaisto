@@ -28,6 +28,17 @@ code fixes pull requests	list_code_fixes
 code fix plan of an incident	get_code_fix
 code fix plan for a github issue	get_code_fix
 github issues assigned to hephaisto	list_work_items
+which issues are left for today	list_planner_issues
+what is in the backlog	list_planner_issues
+what should I work on next	list_planner_issues
+create a github issue for today	create_planner_issue
+open a new bug issue on the planning board	create_planner_issue
+plan the issue for tomorrow	update_planner_issue
+set the priority of an issue	update_planner_issue
+close the github issue as done	close_planner_issue
+comment on a github issue	comment_on_planner_issue
+fields and options for a new github issue	lookup_planner_fields
+read the github issue on the planning board	get_planner_issue
 which issues is hephaisto working on	list_work_items
 work items	list_work_items
 what became of the github issue	get_work_item

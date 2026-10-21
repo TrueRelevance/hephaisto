@@ -389,6 +389,24 @@ public sealed class GitHubClientProjectTests
     }
 
     [Fact]
+    public async Task An_edit_sends_only_what_changes_and_an_empty_description_clears_it()
+    {
+        var (client, handler, _) = Build(_ => Json(
+            """{"number":12,"node_id":"I_12","title":"Dark mode, again","body":"why","state":"open","html_url":"https://github.com/acme/web/issues/12","user":{"login":"flo","id":2},"assignees":[],"labels":[]}"""));
+
+        var edited = await client.UpdateIssueAsync("acme/web", 12, "Dark mode, again", null, Ct);
+        await client.UpdateIssueAsync("acme/web", 12, null, string.Empty, Ct);
+
+        edited.Ok.Should().BeTrue(edited.Detail);
+        edited.Value!.Title.Should().Be("Dark mode, again");
+
+        handler.Requests[0].Method.Should().Be(HttpMethod.Patch);
+        handler.Requests[0].Uri.Should().Be("https://api.github.example/repos/acme/web/issues/12");
+        handler.Requests[0].Body.Should().Be("""{"title":"Dark mode, again"}""", "the description is not touched by a new title");
+        handler.Requests[1].Body.Should().Be("""{"body":""}""");
+    }
+
+    [Fact]
     public async Task An_issue_is_put_on_a_project_by_two_node_ids_and_the_new_item_is_answered()
     {
         var (client, handler, _) = Build(_ => Json("""{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_500"}}}}"""));

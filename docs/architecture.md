@@ -573,13 +573,15 @@ MCP (#157): streamable HTTP at `/mcp`, stateless, on a port of its own (8083) an
   `mcp/<name>`) or `person` (acts as its subject) - or, with sign-in on, the identity provider's
   bearer token. Compared hashed, in constant time, every token every time. The scheme and its
   three policies are the endpoint's own; the console's allow-all never applies.
-- **What it offers.** 26 tools in a reviewed order (`scripts/e2e/mcp/tools.golden.json`): 19 reads
-  and 7 changes - acknowledge, assign, a note entry, feedback, and for an approver close, close
-  many and re-investigate. Two of the reads are of work items (`list_work_items`,
-  `get_work_item`), and the code-fix reads show an attempt for an issue beside an incident's. No
-  tool approves or denies an action or a code-fix plan, re-arms or sets a mode.
-  Tools reach incidents only through `McpIncidentReader` and `McpIncidentActions`; the writes go
-  through the console's own `IncidentQueries` methods, with an `origin` in the audit detail.
+- **What it offers.** 33 tools in a reviewed order (`scripts/e2e/mcp/tools.golden.json`): 22 reads
+  and 11 changes - acknowledge, assign, a note entry, feedback, and for an approver close, close
+  many and re-investigate; and the planner's four (#307): open, change, close and comment on an
+  issue of the board. Two of the reads are of work items (`list_work_items`, `get_work_item`),
+  three of the planner's board, and the code-fix reads show an attempt for an issue beside an
+  incident's. No tool approves or denies an action or a code-fix plan, re-arms or sets a mode.
+  Tools reach incidents only through `McpIncidentReader` and `McpIncidentActions`, the board only
+  through `McpPlanner`; the writes go through the console's own `IncidentQueries` and
+  `PlannerService` methods, with an `origin` in the audit detail.
 - **What it hands over.** Anything a workload, an alert or a model wrote is redacted, stripped of
   control and bidi characters, escaped and cut inside `<untrusted-evidence>`; an answer record with
   a plain string fails its call; every answer stays under 32,000 characters and says what it cut.

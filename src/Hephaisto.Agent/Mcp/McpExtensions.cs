@@ -16,7 +16,7 @@ public static class McpExtensions
     /// <summary>Any caller the endpoint let in may read.</summary>
     public const string ReadPolicy = "hephaisto.mcp.read";
 
-    /// <summary>Acknowledge, assign, a note entry, feedback: a token that may write.</summary>
+    /// <summary>Acknowledge, assign, a note entry, feedback, the planner's writes: a token that may write.</summary>
     public const string WritePolicy = "hephaisto.mcp.write";
 
     /// <summary>Close and re-investigate: a token that may write and holds the approver role.</summary>
@@ -35,7 +35,9 @@ public static class McpExtensions
         + "assign or close only when the person asked you to. Approving actions or code-fix plans - "
         + "an incident's, or one for a GitHub issue handed to Hephaisto as a work item - re-arming and "
         + "changing the mode are done by people, in the console or for an issue's plan in a comment on "
-        + "the issue: no tool here does them.";
+        + "the issue: no tool here does them. The planning board's GitHub issues - today's plan, the "
+        + "backlog - are list_planner_issues; open a new issue with create_planner_issue rather than the gh "
+        + "CLI, so it is on the board and planned for its day at once.";
 
     public static IServiceCollection AddHephaistoMcp(this IServiceCollection services, IConfiguration configuration)
     {
@@ -114,6 +116,7 @@ public static class McpExtensions
 
         services.AddScoped<McpIncidentReader>();
         services.AddScoped<McpIncidentActions>();
+        services.AddScoped<McpPlanner>();
         services.AddHttpContextAccessor();
 
         services.AddMcpServer(o =>
@@ -176,6 +179,7 @@ public static class McpExtensions
             .WithTools<McpIncidentDetailTools>()
             .WithTools<McpInvestigationTools>()
             .WithTools<McpWorkItemTools>()
+            .WithTools<McpPlannerTools>()
             .WithTools<McpWriteTools>()
             .WithTools<McpStatusTools>();
 

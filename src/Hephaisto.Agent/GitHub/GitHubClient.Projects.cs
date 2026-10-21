@@ -198,6 +198,24 @@ public sealed partial class GitHubClient
             (json, _) => Issue(json),
             ct);
 
+    public Task<GitHubResult<GitHubIssue>> UpdateIssueAsync(string repository, int number, string? title, string? body, CancellationToken ct)
+    {
+        // Only what changes: a field GitHub is sent is a field it sets, and null would clear it.
+        var changes = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (title is not null)
+        {
+            changes["title"] = title;
+        }
+
+        if (body is not null)
+        {
+            changes["body"] = body;
+        }
+
+        return SendAsync(HttpMethod.Patch, $"repos/{repository}/issues/{Number(number)}", changes, null, (json, _) => Issue(json), ct);
+    }
+
     public Task<GitHubResult<bool>> AddLabelAsync(string repository, int number, string label, CancellationToken ct) =>
         // GitHub creates a label that the repository does not have yet, so a board over twenty
         // repositories needs nobody to prepare them.

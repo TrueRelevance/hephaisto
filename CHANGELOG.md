@@ -101,6 +101,14 @@ turn it on - the project, the token, the values - is one page:
 - **`GET /api/planner`** and four writes behind the approver policy:
   `POST /api/planner/items/{itemId}/field`, `/close`, `/day`, `/assignee`; since rc3 also
   `POST /api/planner/issues`, `POST /api/planner/triage` and `GET /api/planner/analysis`.
+- **The planner on the MCP endpoint** ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)):
+  a coding agent asks what is left for today or in the backlog (`list_planner_issues`), reads an
+  issue (`get_planner_issue`) and what a new one is filled in with (`lookup_planner_fields`), and -
+  with a token that may write - opens an issue planned for a day (`create_planner_issue`), changes
+  its day, fields, assignee, title or description (`update_planner_issue`), closes it
+  (`close_planner_issue`) and comments (`comment_on_planner_issue`). Every write is the planner's
+  own click, audited as the token with an MCP origin, and on the board and in the console when the
+  call returns - where an issue opened with the gh CLI waited for the next read and for a person.
 - **The triage contract**, version 1: `triage-request.schema.json` and `triage-result.schema.json`
   in dev-context, vendored like the code-fix contract.
 - **The agent's GitHub client speaks GraphQL**, for the project only: a project is nowhere else.

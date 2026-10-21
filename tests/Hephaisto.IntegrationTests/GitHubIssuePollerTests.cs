@@ -622,6 +622,9 @@ public sealed class GitHubIssuePollerTests(PostgresFixture pg)
         public Task<GitHubResult<GitHubIssue>> CreateIssueAsync(string repository, string title, string? body, string? type, CancellationToken ct) =>
             throw new NotSupportedException("the poller opens no issue");
 
+        public Task<GitHubResult<GitHubIssue>> UpdateIssueAsync(string repository, int number, string? title, string? body, CancellationToken ct) =>
+            throw new NotSupportedException("the poller edits no issue");
+
         public Task<GitHubResult<string>> AddProjectItemAsync(string projectId, string contentId, CancellationToken ct) =>
             throw new NotSupportedException("the poller reads no project");
 
