@@ -34,7 +34,7 @@
     <!-- Markdig renders GitHub's markdown in the planner, with raw HTML switched off (SafeMarkdown). -->
     <PackageVersion Include="Markdig" Version="1.4.0" />
     <!-- Google.GenAI ships AsIChatClient(model) in-box, so no adapter layer. -->
-    <PackageVersion Include="Google.GenAI" Version="1.25.0" />
+    <PackageVersion Include="Google.GenAI" Version="1.26.1" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.10.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.10.1" />
     <!-- The OpenAI wire format, which is what DeepSeek, OpenRouter, Ollama and LM Studio all
