@@ -672,7 +672,8 @@ minutes - so a red live run is read request by request before it is believed.
   column. Both are in `scripts/e2e/planner-live.sh` and its spec, which is why they look the way
   they do.
 
-- **MCP (#307): `McpPlannerTools` -> `McpPlanner` -> `PlannerService`**, nothing else.
+- **MCP (#307): `McpPlannerTools` -> `McpPlanner` -> `PlannerService`**, and `TriageRunner` for
+  `analyse_planner_issue` only (the Ask Claude button, approver role as in the console), nothing else.
   `McpPlanner` is the third facade `McpToolSurfaceTests` allows; it may not take anything from Web,
   CodeFix or Persistence. Its writes are the planner's methods with an `AuditOrigin` (the optional
   last parameter of every planner write, attached to the audit detail), authorised by

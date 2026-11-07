@@ -58,6 +58,7 @@ public static class McpCatalogue
         ("update_planner_issue", Write),
         ("close_planner_issue", Write),
         ("comment_on_planner_issue", Write),
+        ("analyse_planner_issue", Approver),
         ("get_status", Reader),
         ("lookup_incident_filters", Reader),
         ("get_caller_identity", Reader),

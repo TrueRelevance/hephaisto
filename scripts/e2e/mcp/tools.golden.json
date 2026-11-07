@@ -187,6 +187,12 @@
       "description": "Comment on a GitHub issue of the planning board, open or closed: posted by Hephaisto's GitHub account and signed as relayed by an agent, for the person named in onBehalfOf. Not taken as a person's answer to a code-fix plan. Written to the audit trail as this token."
     },
     {
+      "name": "analyse_planner_issue",
+      "needs": "approver",
+      "readOnly": false,
+      "description": "Analyse a GitHub issue of the planning board with Claude (retry, re-run, ask again): the planner's Ask Claude button. A coder Job reads the issue and dev-context and answers with the repository's labels and one analysis comment on the issue, in a minute or two; get_planner_issue shows it. This spends the model budget (tokens and cost). Needs the approver role. Refused while Claude is already at the issue or at as many issues as may run at once. Written to the audit trail as this token."
+    },
+    {
       "name": "get_status",
       "needs": "reader",
       "readOnly": true,

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hephaisto.Agent.CodeFix;
 using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Mcp;
 using Hephaisto.Agent.Planner;
@@ -6,6 +7,7 @@ using Hephaisto.Core.Notifications;
 using Hephaisto.Core.Planning;
 using Hephaisto.Tests.Planner;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 using ModelContextProtocol;
 
 namespace Hephaisto.Tests.Mcp;
@@ -263,16 +265,71 @@ public sealed class McpPlannerTests
         github.Comments.Single().Comment.Body.Should().EndWith("<sub>Relayed by an agent through Hephaisto.</sub>");
     }
 
+    // --- asking Claude -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Asking_claude_starts_the_planners_triage_job_audited_as_the_token_through_mcp()
+    {
+        var (mcp, _, _, audit, launcher) = BuildWithTriage(triage: true);
+
+        var result = await mcp.AnalyseAsync(Gateway, "acme/api#431", "Florian", Ct);
+
+        result.Done.Should().ContainSingle().Which.Should().StartWith("Claude is reading acme/api#431 in Job triage-");
+        result.RecordedAs.Value.Should().Be("mcp/litellm");
+        result.Note.Should().Contain("model budget");
+        launcher.Request!.Issue.Number.Should().Be(431);
+
+        var row = audit.Rows.Should().ContainSingle(r => r.Type == PlannerService.AuditTriage).Which;
+        row.Actor.Should().Be("mcp/litellm");
+        var origin = JsonDocument.Parse(row.Detail!).RootElement.GetProperty("origin");
+        origin.GetProperty("source").GetString().Should().Be("mcp");
+        origin.GetProperty("claimedBy").GetString().Should().Be("Florian");
+
+        var again = () => mcp.AnalyseAsync(Gateway, "acme/api#431", null, Ct);
+
+        await again.Should().ThrowAsync<McpException>().WithMessage("*not asked (Busy)*already at acme/api#431*");
+    }
+
+    [Fact]
+    public async Task Asking_claude_needs_the_approver_role_and_an_install_that_asks()
+    {
+        var writer = new McpCaller("mcp/writer", "writer", McpTokenOptions.Shared, McpTokenOptions.Reader, MayWrite: true);
+        var (mcp, _, _, _, launcher) = BuildWithTriage(triage: true);
+
+        var reader = () => mcp.AnalyseAsync(writer, "acme/api#431", null, Ct);
+
+        await reader.Should().ThrowAsync<McpException>().WithMessage("*needs the approver role*");
+        launcher.Spec.Should().BeNull("nothing was started");
+
+        var (off, _, _, _, _) = BuildWithTriage(triage: false);
+        var refused = () => off.AnalyseAsync(Gateway, "acme/api#431", null, Ct);
+
+        await refused.Should().ThrowAsync<McpException>().WithMessage("*not asked (Off)*");
+    }
+
     private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit) Build()
     {
-        var (planner, github, _, audit, _, options) = PlannerServiceTests.Parts(enabled: true, repositories: [], triage: false);
+        var (mcp, planner, github, audit, _) = BuildWithTriage(triage: false);
+
+        return (mcp, planner, github, audit);
+    }
+
+    private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit, PlannerServiceTests.TriageLauncher Launcher) BuildWithTriage(bool triage)
+    {
+        var (planner, github, clock, audit, scopes, options) = PlannerServiceTests.Parts(enabled: true, repositories: [], triage: triage);
+        var launcher = new PlannerServiceTests.TriageLauncher();
+        var codeFix = new CodeFixOptions { Image = "ghcr.io/x/coder:1", ContextRepositoryUrl = "https://github.com/acme/dev-context", Sdk = "fake" };
+        var runner = new TriageRunner(
+            scopes, new PlannerServiceTests.StaticOptions<GitHubOptions>(options), new PlannerServiceTests.StaticOptions<CodeFixOptions>(codeFix),
+            launcher, planner, clock, NullLogger<TriageRunner>.Instance);
 
         var mcp = new McpPlanner(
             planner,
+            runner,
             new PlannerServiceTests.StaticOptions<GitHubOptions>(options),
             new PlannerServiceTests.StaticOptions<NotificationOptions>(new NotificationOptions { BaseUrl = "https://hephaisto.example" }),
             new HttpContextAccessor());
 
-        return (mcp, planner, github, audit);
+        return (mcp, planner, github, audit, launcher);
     }
 }

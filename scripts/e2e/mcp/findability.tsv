@@ -37,6 +37,8 @@ plan the issue for tomorrow	update_planner_issue
 set the priority of an issue	update_planner_issue
 close the github issue as done	close_planner_issue
 comment on a github issue	comment_on_planner_issue
+ask claude to analyse the github issue again	analyse_planner_issue
+retry the analysis of an issue	analyse_planner_issue
 fields and options for a new github issue	lookup_planner_fields
 read the github issue on the planning board	get_planner_issue
 which issues is hephaisto working on	list_work_items

@@ -76,10 +76,11 @@ public sealed partial class McpToolCatalogueTests
     }
 
     [Fact]
-    public void The_writes_are_the_six_the_roadmap_names_the_bulk_close_and_the_planners_four()
+    public void The_writes_are_the_six_the_roadmap_names_the_bulk_close_and_the_planners_five()
     {
-        // The planner's (#307) open, change, close and comment on a board's GitHub issues - the
-        // clicks a person makes in the console's planner. None of them answers an issue's plan.
+        // The planner's (#307) open, change, close and comment on a board's GitHub issues, and ask
+        // Claude about one - the clicks a person makes in the console's planner. None of them
+        // answers an issue's plan.
         McpSpecification.Golden().Where(t => !t.ReadOnly).Select(t => t.Name).Should().Equal(
             "acknowledge_incident",
             "assign_incident",
@@ -91,10 +92,11 @@ public sealed partial class McpToolCatalogueTests
             "create_planner_issue",
             "update_planner_issue",
             "close_planner_issue",
-            "comment_on_planner_issue");
+            "comment_on_planner_issue",
+            "analyse_planner_issue");
 
         McpSpecification.Golden().Where(t => t.Needs == "approver").Select(t => t.Name)
-            .Should().Equal("close_incident", "reinvestigate_incident", "close_incidents");
+            .Should().Equal("close_incident", "reinvestigate_incident", "close_incidents", "analyse_planner_issue");
     }
 
     [Fact]

@@ -216,7 +216,7 @@ there. The planner shows what GitHub says after the click, not what it expected.
 ## Through the MCP endpoint
 
 With the MCP endpoint on (`mcp.enabled`, `/mcp` on port 8083), a coding agent reads and drives the planner
-with seven tools ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)). An issue opened
+with eight tools ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)). An issue opened
 this way is on the board, has its fields and is planned for its day when the call returns -
 one opened with `gh issue create` waits for the next board read, and for somebody to plan it.
 
@@ -229,6 +229,7 @@ one opened with `gh issue create` waits for the next board read, and for somebod
 | `update_planner_issue` | may write | day, fields, assignee, worked on now, title, description |
 | `close_planner_issue` | may write | close as done or not planned, after an optional comment |
 | `comment_on_planner_issue` | may write | a comment, open or closed |
+| `analyse_planner_issue` | approver | ask Claude: the planner's button, for an open issue - also to ask again after a Job failed |
 
 Each write is the planner's own click: the audit row first, written as the token (`mcp/litellm`
 for a gateway's) with `origin.source: mcp` and the `onBehalfOf` name as an unverified claim; then

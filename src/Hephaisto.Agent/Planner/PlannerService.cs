@@ -737,8 +737,8 @@ public sealed class PlannerService(
     }
 
     /// <summary>An audit row for what the planner starts beside a click on an item: asking Claude.</summary>
-    public Task RecordAsync(string type, string actor, string summary, string repository, int number, string? url, object detail, CancellationToken ct) =>
-        AuditAsync(type, actor, summary, repository, number, url, null, detail, ct);
+    public Task RecordAsync(string type, string actor, string summary, string repository, int number, string? url, object detail, CancellationToken ct, AuditOrigin? origin = null) =>
+        AuditAsync(type, actor, summary, repository, number, url, null, detail, ct, origin);
 
     private async Task<PlannerActionResult> RefusedAsync(string actor, string repository, int? number, string? url, string message, PlannerSnapshot snapshot, CancellationToken ct, AuditOrigin? origin)
     {

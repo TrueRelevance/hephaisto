@@ -782,7 +782,7 @@ public sealed class PlannerServiceTests
     }
 
     /// <summary>A launcher whose Job is whatever the test says: its phase, and the log it leaves.</summary>
-    private sealed class TriageLauncher : ICodeFixJobLauncher
+    internal sealed class TriageLauncher : ICodeFixJobLauncher
     {
         public V1Job? Spec { get; private set; }
 

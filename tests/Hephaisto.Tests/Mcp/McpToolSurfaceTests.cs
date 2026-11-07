@@ -112,19 +112,20 @@ public sealed class McpToolSurfaceTests
     public void The_planner_facade_reaches_nothing_but_the_planner()
     {
         // Its writes are the planner's own clicks: no incident queries, no code-fix coordinator,
-        // no database - a door to any of them would be one the catalogue tests cannot see.
+        // no database - a door to any of them would be one the catalogue tests cannot see. The
+        // triage runner is the planner's Ask Claude button, which the owner asked for through MCP
+        // (2026-11-07): behind the approver role, as in the console, and it refuses a model's name.
         var parameters = typeof(McpPlanner).GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType).ToList();
 
         parameters.Should().Contain(typeof(Hephaisto.Agent.Planner.PlannerService));
         parameters.Should().NotContain(t => t.Namespace == "Hephaisto.Agent.Web"
             || t.Namespace == "Hephaisto.Agent.CodeFix"
-            || t.Namespace == "Hephaisto.Agent.Persistence"
-            || t == typeof(Hephaisto.Agent.Planner.TriageRunner));
+            || t.Namespace == "Hephaisto.Agent.Persistence");
 
         typeof(McpPlanner)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(m => m.Name)
-            .Should().BeEquivalentTo("ListAsync", "GetAsync", "FieldsAsync", "CreateAsync", "UpdateAsync", "CloseAsync", "CommentAsync");
+            .Should().BeEquivalentTo("ListAsync", "GetAsync", "FieldsAsync", "CreateAsync", "UpdateAsync", "CloseAsync", "CommentAsync", "AnalyseAsync");
     }
 
     [Fact]

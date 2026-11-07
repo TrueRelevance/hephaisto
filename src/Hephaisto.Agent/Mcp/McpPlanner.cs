@@ -29,9 +29,15 @@ namespace Hephaisto.Agent.Mcp;
 /// planner's marker: a replan passes on only what a person wrote in the console as that person's.
 /// Nothing here approves a plan or starts a code fix: an issue's plan is answered by a person.
 /// </para>
+/// <para>
+/// <b>Asking Claude is the planner's button</b> (<see cref="TriageRunner.StartAsync"/>), with the
+/// approver role the console asks for it: a coder Job that spends the model budget and answers
+/// with labels and one comment on the issue. It is how a failed analysis is asked for again.
+/// </para>
 /// </remarks>
 public sealed partial class McpPlanner(
     PlannerService planner,
+    TriageRunner triage,
     IOptionsMonitor<GitHubOptions> github,
     IOptionsMonitor<NotificationOptions> notifications,
     IHttpContextAccessor http)
@@ -139,6 +145,7 @@ public sealed partial class McpPlanner(
             ? [
                 $"update_planner_issue {{\"issue\":\"{item.Reference}\",\"day\":\"today\"}} - plan it for today; also fields, assignee, title, worked on now",
                 $"comment_on_planner_issue {{\"issue\":\"{item.Reference}\",\"text\":\"...\"}}",
+                $"analyse_planner_issue {{\"issue\":\"{item.Reference}\"}} - {(analysis is null ? "ask Claude for an analysis" : "ask Claude again")}; needs the approver role",
                 $"close_planner_issue {{\"issue\":\"{item.Reference}\",\"reason\":\"done\"}}",
             ]
             : [$"comment_on_planner_issue {{\"issue\":\"{item.Reference}\",\"text\":\"...\"}} - it is closed; a comment is still possible"];
@@ -355,6 +362,23 @@ public sealed partial class McpPlanner(
 
         return Answer(["the comment is on the issue"], null, actor, origin, item.ItemId,
             "Posted by Hephaisto's GitHub account and signed as relayed by an agent. A replan does not take it as a person's answer: that is a comment in the console, or the person's own on GitHub.");
+    }
+
+    public async Task<PlannerWriteResult> AnalyseAsync(McpCaller caller, string issue, string? onBehalfOf, CancellationToken ct)
+    {
+        var (actor, origin) = McpIncidentActions.Authorise(caller, onBehalfOf, approver: true, claimRequired: false, "Asking Claude for an analysis", http.HttpContext);
+
+        var item = Resolve(await BoardAsync(refresh: false, ct).ConfigureAwait(false), issue, openOnly: true);
+        var start = await triage.StartAsync(item.Repository, item.Number, actor, ct, origin).ConfigureAwait(false);
+
+        if (start.Outcome != TriageStartOutcome.Started)
+        {
+            throw new McpException($"Claude was not asked ({start.Outcome}): {start.Message}.");
+        }
+
+        return Answer([$"Claude is reading {item.Reference} in Job {start.Run!.JobName}"], null, actor, origin, item.ItemId,
+            "This spends the model budget. The analysis takes a minute or two; it is a comment on the issue by Hephaisto's GitHub account, "
+            + "and get_planner_issue shows it as analysis. A Job that fails leaves nothing on the issue: ask again.");
     }
 
     // --- the parts ------------------------------------------------------------------------

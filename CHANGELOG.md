@@ -109,6 +109,9 @@ turn it on - the project, the token, the values - is one page:
   (`close_planner_issue`) and comments (`comment_on_planner_issue`). Every write is the planner's
   own click, audited as the token with an MCP origin, and on the board and in the console when the
   call returns - where an issue opened with the gh CLI waited for the next read and for a person.
+- **Ask Claude through the MCP endpoint** (`analyse_planner_issue`): the planner's button for an
+  agent with the approver role, which the console's button needs too. It is how an analysis whose
+  Job failed is asked for again without the console - a failed Job leaves nothing on the issue.
 - **The triage contract**, version 1: `triage-request.schema.json` and `triage-result.schema.json`
   in dev-context, vendored like the code-fix contract.
 - **The agent's GitHub client speaks GraphQL**, for the project only: a project is nowhere else.

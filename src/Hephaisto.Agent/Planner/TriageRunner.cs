@@ -3,6 +3,7 @@ using System.Text.Json;
 using Hephaisto.Agent.CodeFix;
 using Hephaisto.Agent.CodeFix.Contract;
 using Hephaisto.Agent.GitHub;
+using Hephaisto.Agent.Web;
 using Hephaisto.Core;
 using Hephaisto.Core.Abstractions;
 using Microsoft.Extensions.Options;
@@ -95,7 +96,8 @@ public sealed class TriageRunner(
 
     public IReadOnlyList<TriageRun> Runs => [.. runs.Values.OrderByDescending(r => r.StartedAt)];
 
-    public async Task<TriageStart> StartAsync(string repository, int number, string actor, CancellationToken ct)
+    /// <param name="origin">Where the ask came from when it was not the console: an agent through the MCP endpoint.</param>
+    public async Task<TriageStart> StartAsync(string repository, int number, string actor, CancellationToken ct, AuditOrigin? origin = null)
     {
         var who = actor?.Trim() ?? string.Empty;
         ArgumentException.ThrowIfNullOrWhiteSpace(who);
@@ -157,7 +159,7 @@ public sealed class TriageRunner(
         var reference = $"{repository}#{number}";
 
         await planner.RecordAsync(PlannerService.AuditTriage, who, $"Claude asked to analyse {reference}", repository, number, issue.Value!.Url,
-            new { attempt = attemptId }, ct).ConfigureAwait(false);
+            new { attempt = attemptId }, ct, origin).ConfigureAwait(false);
 
         string jobName;
 

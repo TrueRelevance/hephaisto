@@ -103,6 +103,16 @@ public sealed class McpPlannerTools(McpPlanner planner)
         CancellationToken cancellationToken = default) =>
         McpAnswer.Of(await planner.CommentAsync(Caller(user), issue, text, onBehalfOf, cancellationToken).ConfigureAwait(false));
 
+    [McpServerTool(Name = "analyse_planner_issue", Title = "Ask Claude about a planner issue", Destructive = false, Idempotent = false, OpenWorld = true)]
+    [Authorize(Policy = McpExtensions.ApprovePolicy)]
+    [Description("Analyse a GitHub issue of the planning board with Claude (retry, re-run, ask again): the planner's Ask Claude button. A coder Job reads the issue and dev-context and answers with the repository's labels and one analysis comment on the issue, in a minute or two; get_planner_issue shows it. This spends the model budget (tokens and cost). Needs the approver role. Refused while Claude is already at the issue or at as many issues as may run at once. Written to the audit trail as this token.")]
+    public async Task<string> AnalysePlannerIssueAsync(
+        ClaimsPrincipal user,
+        [Description(IssueHelp)] string issue,
+        [Description(OnBehalfOfHelp)] string? onBehalfOf = null,
+        CancellationToken cancellationToken = default) =>
+        McpAnswer.Of(await planner.AnalyseAsync(Caller(user), issue, onBehalfOf, cancellationToken).ConfigureAwait(false));
+
     private static McpCaller Caller(ClaimsPrincipal user) =>
         McpCaller.From(user) ?? throw new McpException("This request did not come through the MCP endpoint's authentication.");
 }
