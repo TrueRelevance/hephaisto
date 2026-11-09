@@ -58,6 +58,20 @@ internal sealed class InMemoryReviewStore : IReviewStore
         return Task.CompletedTask;
     }
 
+    /// <summary>What each run's end announced, in order: the outbox rows that went with it.</summary>
+    public List<NotificationDelivery> Announced { get; } = [];
+
+    public Task EndRunAsync(PlannerReviewRun run, IReadOnlyCollection<NotificationDelivery> announce, CancellationToken ct)
+    {
+        lock (gate)
+        {
+            Runs[Runs.FindIndex(r => r.Id == run.Id)] = Copy(run);
+            Announced.AddRange(announce);
+        }
+
+        return Task.CompletedTask;
+    }
+
     public Task<PlannerReviewRun?> LatestRunAsync(CancellationToken ct)
     {
         lock (gate)

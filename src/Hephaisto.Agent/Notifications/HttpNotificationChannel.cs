@@ -216,9 +216,9 @@ public sealed class HttpNotificationChannel(
                     ? null
                     : new WorkItemPayload { Id = workItem, Issue = s.Issue, Url = s.IssueUrl, Summary = s.Summary },
 
-                Links = message.IncidentUrl is null && message.GrafanaUrl is null && message.CodeFixUrl is null
+                Links = message.IncidentUrl is null && message.GrafanaUrl is null && message.CodeFixUrl is null && message.ReviewUrl is null
                     ? null
-                    : new LinksPayload { Incident = message.IncidentUrl, CodeFix = message.CodeFixUrl, Grafana = message.GrafanaUrl },
+                    : new LinksPayload { Incident = message.IncidentUrl, CodeFix = message.CodeFixUrl, Grafana = message.GrafanaUrl, Review = message.ReviewUrl },
             };
         }
     }
@@ -298,5 +298,10 @@ public sealed class HttpNotificationChannel(
 
         [JsonPropertyName("grafana")]
         public string? Grafana { get; init; }
+
+        /// <summary>The weekly review's page, for <c>PlannerReviewFinished</c> (#312); absent otherwise.</summary>
+        [JsonPropertyName("review")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Review { get; init; }
     }
 }

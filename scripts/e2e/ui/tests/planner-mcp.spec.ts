@@ -23,6 +23,7 @@ const READONLY = process.env.HEPHAISTO_MCP_TOKEN_READONLY;
 const PLANNER_TOOLS = [
   'list_planner_issues', 'get_planner_issue', 'lookup_planner_fields',
   'create_planner_issue', 'update_planner_issue', 'close_planner_issue', 'comment_on_planner_issue',
+  'get_weekly_review',
 ];
 
 type Call = { isError: boolean; text: string; json: any };
@@ -86,7 +87,7 @@ test.describe('planner through the MCP endpoint', () => {
 
     test.skip(!READONLY, 'PRECONDITION: HEPHAISTO_MCP_TOKEN_READONLY is not set');
     const reads = (await rpc(request, READONLY!, 'tools/list', {})).result.tools.map((t: { name: string }) => t.name);
-    expect(reads.filter((n: string) => PLANNER_TOOLS.includes(n))).toEqual(['list_planner_issues', 'get_planner_issue', 'lookup_planner_fields']);
+    expect(reads.filter((n: string) => PLANNER_TOOLS.includes(n))).toEqual(['list_planner_issues', 'get_planner_issue', 'lookup_planner_fields', 'get_weekly_review']);
   });
 
   test('an issue opened for today is on the board, planned for today and in the console at once', async ({ page, request }) => {
@@ -164,6 +165,34 @@ test.describe('planner through the MCP endpoint', () => {
     const again = await call(request, 'update_planner_issue', { issue: reference, day: 'today' });
     expect(again.isError).toBe(true);
     expect(again.text).toContain('is closed');
+  });
+
+  test('the weekly review reads as its page has it, by tab, for a read-only token too', async ({ request }) => {
+    // #312: the one review tool reads; agreeing and closing stay a person's clicks on the page.
+    const page = await (await request.get('/api/planner/review')).json();
+    test.skip(page.state === 'Off', `PRECONDITION: the weekly review is off on this install (${page.problem})`);
+
+    const all = (await call(request, 'get_weekly_review', {}, READONLY ?? TOKEN!)).json;
+    expect(all.state).toBe(page.state.toLowerCase());
+    expect(all.pending).toBe(page.pending);
+    expect(all.total).toBe(page.verdicts.length);
+    for (const tab of ['close', 'bug', 'feature', 'unsure']) {
+      expect(all.counts[tab], tab).toBe(page.verdicts.filter((v: { tab: string }) => v.tab === tab).length);
+    }
+    expect(plain(all.consoleUrl)).toMatch(/\/planner\/review$/);
+    if (page.run) {
+      expect(all.run.id).toBe(page.run.id);
+      expect(all.run.counts).toEqual(page.run.counts);
+    }
+
+    const close = (await call(request, 'get_weekly_review', { tab: 'close' }, READONLY ?? TOKEN!)).json;
+    expect(close.verdicts.map((v: { issue: string }) => v.issue))
+      .toEqual(page.verdicts.filter((v: { tab: string }) => v.tab === 'close').map(ref));
+    expect(close.verdicts.every((v: { tab: string }) => v.tab === 'close')).toBe(true);
+
+    const wrong = await call(request, 'get_weekly_review', { tab: 'someday' });
+    expect(wrong.isError).toBe(true);
+    expect(wrong.text).toContain('close, bug, feature, unsure');
   });
 
   test('a read-only token opens nothing', async ({ request }) => {

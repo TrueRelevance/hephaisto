@@ -212,6 +212,7 @@ public sealed class NotificationDispatcher : BackgroundService
             DeliveryId = delivery.Id,
             IncidentUrl = links.Incident,
             CodeFixUrl = links.CodeFix,
+            ReviewUrl = NotificationLinks.Review(o.BaseUrl, delivery.Snapshot),
             GrafanaUrl = links.Grafana,
             AlsoSuppressed = budget.SuppressedSinceLastDelivery,
             Recipients = delivery.Recipients,

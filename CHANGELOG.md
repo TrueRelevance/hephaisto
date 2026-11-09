@@ -112,6 +112,30 @@ turn it on - the project, the token, the values - is one page:
 - **Ask Claude through the MCP endpoint** (`analyse_planner_issue`): the planner's button for an
   agent with the approver role, which the console's button needs too. It is how an analysis whose
   Job failed is asked for again without the console - a failed Job leaves nothing on the issue.
+- **The weekly backlog review** ([#312](https://github.com/TrueRelevance/hephaisto/issues/312),
+  `github.planner.review.enabled`, off by default). Once a week - `schedule`, a cron in `timeZone`,
+  Monday 06:00 Europe/Berlin by default - or on *run now*, every open issue of the organisation, on
+  the board or not and in archived repositories too, gets a verdict from a read-only coder Job of
+  the new phase `review`: **can be closed** (done, superseded, obsolete, duplicate, answered or
+  stale), **a real bug**, **still to build**, or **unsure**, with a summary, the reason, its
+  evidence checked against the facts Hephaisto gathered (timeline, pull requests, commits,
+  sub-issues, archived), a confidence and a suggested priority. Only what is new, changed or older
+  than `recheckAfterDays` (28) is asked about again; `maxCostUsd` bounds a run. The verdicts are
+  kept in Postgres (`planner_review_runs`, `planner_review_verdicts`).
+- **The run proposes and writes nothing to GitHub.** `/planner/review` shows the verdicts in four
+  tabs, and every write is a person's click there: agree (on a bug of the board it sets the
+  suggested Priority), move to another group, mark unsure, and *Close N issues* - per issue one
+  comment with the reason and the evidence, signed with the person's name, then the close, as
+  completed. An issue in an archived repository can be agreed and is never closed. Each click is a
+  `planner.review` audit row. The navigation shows how many verdicts wait for a person.
+- **One Teams message per review run** - the new notification event `PlannerReviewFinished`, for
+  a route that lists it: *"Weekly review: 5 to close, 8 bugs, 8 to build, 1 unsure"*, how many were
+  reviewed and wait for a person, and a button to the review page; a failed run says so and why,
+  at `Warning`. On the Teams bot it is a personal chat message, as an alert is.
+- **`get_weekly_review` on the MCP endpoint**, for any token: the newest run, the counts and the
+  verdicts, by tab and repository. No tool decides a verdict - that is a person's click.
+- **`GET /api/planner/review`**, and behind the approver policy `POST /api/planner/review/run`,
+  `/verdicts/{owner}/{repo}/{number}/agree`, `/move`, `/unsure` and `POST /api/planner/review/close`.
 - **The triage contract**, version 1: `triage-request.schema.json` and `triage-result.schema.json`
   in dev-context, vendored like the code-fix contract.
 - **The agent's GitHub client speaks GraphQL**, for the project only: a project is nowhere else.
@@ -154,8 +178,20 @@ turn it on - the project, the token, the values - is one page:
   phase and answers every such Job with a failure. It runs on the coder's model credential; with
   a subscription token its cost is notional, and `maxCostUsd` (default $2) caps a run.
 
+- **The weekly review needs `codeFix.enabled`**, `github.planner.enabled`, a coder image of this
+  release (an older one does not know the `review` phase), and more of the agent's token: the
+  organisation-wide issue search and read on **every** repository of the organisation - issues,
+  timelines, sub-issues and the repository itself (classic `repo`; fine-grained "Issues: read" and
+  "Metadata: read" on all repositories, not measured). A repository the token cannot read is not
+  in the review. To hear of a run, add `PlannerReviewFinished` to a route (with
+  `notifications.baseUrl` set for the button's link).
+
 ### Known limits
 - One project, of an organisation; single-select fields; issues only.
+- The weekly review reads at most a thousand open issues (GitHub's search limit); a run over more
+  says so and marks nothing as gone. A review run a restart cut off is marked failed at the next
+  start and is not announced. Every close of the review is recorded as completed on GitHub, also
+  for an obsolete, stale or duplicate issue.
 - A run of Claude's is kept in the agent's memory, its answer on GitHub. A restart forgets a run
   that was still going: its Job ends by its deadline, nothing is put on the issue, and the button
   asks again. The analysis shown is read from the issue's first hundred comments.

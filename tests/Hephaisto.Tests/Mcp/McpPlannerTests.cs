@@ -2,9 +2,12 @@ using System.Text.Json;
 using Hephaisto.Agent.CodeFix;
 using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Mcp;
+using Hephaisto.Agent.Mcp.Answers;
 using Hephaisto.Agent.Planner;
+using Hephaisto.Agent.Planner.Review;
 using Hephaisto.Core.Notifications;
 using Hephaisto.Core.Planning;
+using Hephaisto.Tests.TestData;
 using Hephaisto.Tests.Planner;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -307,6 +310,61 @@ public sealed class McpPlannerTests
         await refused.Should().ThrowAsync<McpException>().WithMessage("*not asked (Off)*");
     }
 
+    // --- the weekly review ---------------------------------------------------------------------
+
+    [Fact]
+    public async Task The_weekly_review_reads_as_its_page_shows_it_by_tab_and_repository_and_a_strangers_words_in_the_envelope()
+    {
+        var reviews = new InMemoryReviewStore();
+        reviews.Rows.Add(ReviewActionsTests.Verdict("acme/api", 431, "close", closeReason: "done", evidence: ["acme/api#433 merged"]));
+        reviews.Rows.Add(ReviewActionsTests.Verdict("acme/web", 118, "bug", priority: "P1", onBoard: false));
+        reviews.Rows.Add(ReviewActionsTests.Verdict("acme/planning", 30, "bug", confidence: "low"));
+        reviews.Rows.Add(ReviewActionsTests.Verdict("acme/legacy-ttd", 1, "close", closeReason: "obsolete", archived: true));
+        reviews.Rows[1].DecidedBy = "flo";
+        reviews.Rows[1].DecidedAt = Given.Now;
+        reviews.Rows[1].DecisionGroup = "bug";
+        reviews.Rows[1].DecisionAgreed = true;
+
+        var (mcp, _, _, _, _) = BuildWithReview(triage: false, reviews);
+
+        var all = await mcp.ReviewAsync(null, null, 50, Ct);
+
+        all.Counts.Should().Be(new WeeklyReviewCounts { Close = 2, Bug = 1, Feature = 0, Unsure = 1 });
+        all.Pending.Should().Be(3);
+        all.Total.Should().Be(4);
+        all.ConsoleUrl!.Value.Should().Be("https://hephaisto.example/planner/review");
+        all.Note.Should().Contain("person's clicks");
+
+        var close = await mcp.ReviewAsync("close", null, 50, Ct);
+
+        close.Verdicts.Select(v => v.Issue).Should().Equal("acme/api#431", "acme/legacy-ttd#1");
+        close.Verdicts[0].CloseReason.Should().Be("done");
+        close.Verdicts[0].Evidence.Single().Text.Value.Should().StartWith("<untrusted-evidence>");
+        close.Verdicts[0].Reason.Value.Should().StartWith("<untrusted-evidence>", "a model's reason is not the server's");
+        close.Verdicts[1].Archived.Should().BeTrue();
+
+        var web = await mcp.ReviewAsync("BUG", "web", 50, Ct);
+
+        web.Verdicts.Should().ContainSingle().Which.Decision!.Agreed.Should().BeTrue();
+        web.Verdicts[0].Priority!.Value.Should().Be("P1");
+        (await mcp.ReviewAsync("unsure", null, 50, Ct)).Verdicts.Single().Issue.Should().Be("acme/planning#30");
+
+        var act = () => mcp.ReviewAsync("someday", null, 50, Ct);
+        (await act.Should().ThrowAsync<McpException>()).WithMessage("*close, bug, feature, unsure*");
+    }
+
+    [Fact]
+    public async Task The_weekly_review_on_an_install_without_it_says_off_and_why()
+    {
+        var (mcp, _, _, _) = Build();
+
+        var off = await mcp.ReviewAsync(null, null, 50, Ct);
+
+        off.State.Should().Be("off");
+        off.Problem.Should().Contain("github.planner.review.enabled");
+        off.Verdicts.Should().BeEmpty();
+    }
+
     private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit) Build()
     {
         var (mcp, planner, github, audit, _) = BuildWithTriage(triage: false);
@@ -314,7 +372,11 @@ public sealed class McpPlannerTests
         return (mcp, planner, github, audit);
     }
 
-    private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit, PlannerServiceTests.TriageLauncher Launcher) BuildWithTriage(bool triage)
+    private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit, PlannerServiceTests.TriageLauncher Launcher) BuildWithTriage(bool triage) =>
+        BuildWithReview(triage, new InMemoryReviewStore());
+
+    private static (McpPlanner Mcp, PlannerService Planner, PlannerServiceTests.FakeGitHub GitHub, PlannerServiceTests.FakeAudit Audit, PlannerServiceTests.TriageLauncher Launcher) BuildWithReview(
+        bool triage, InMemoryReviewStore reviews)
     {
         var (planner, github, clock, audit, scopes, options) = PlannerServiceTests.Parts(enabled: true, repositories: [], triage: triage);
         var launcher = new PlannerServiceTests.TriageLauncher();
@@ -323,10 +385,17 @@ public sealed class McpPlannerTests
             scopes, new PlannerServiceTests.StaticOptions<GitHubOptions>(options), new PlannerServiceTests.StaticOptions<CodeFixOptions>(codeFix),
             launcher, planner, clock, NullLogger<TriageRunner>.Instance);
 
+        var githubOptions = new PlannerServiceTests.StaticOptions<GitHubOptions>(options);
+        var reviewRunner = new ReviewRunner(
+            scopes, githubOptions, new PlannerServiceTests.StaticOptions<CodeFixOptions>(codeFix),
+            new PlannerServiceTests.StaticOptions<NotificationOptions>(new NotificationOptions()),
+            new ReviewLauncher(), reviews, new ReviewBoardStub(null), clock, NullLogger<ReviewRunner>.Instance);
+
         var mcp = new McpPlanner(
             planner,
             runner,
-            new PlannerServiceTests.StaticOptions<GitHubOptions>(options),
+            new ReviewReader(reviewRunner, reviews, new ReviewBoardStub(null), githubOptions, clock),
+            githubOptions,
             new PlannerServiceTests.StaticOptions<NotificationOptions>(new NotificationOptions { BaseUrl = "https://hephaisto.example" }),
             new HttpContextAccessor());
 

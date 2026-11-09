@@ -4,6 +4,7 @@ using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Mcp.Answers;
 using Hephaisto.Core.Notifications;
 using Hephaisto.Agent.Planner;
+using Hephaisto.Agent.Planner.Review;
 using Hephaisto.Agent.Web;
 using Hephaisto.Core.Planning;
 using Microsoft.Extensions.Options;
@@ -30,6 +31,12 @@ namespace Hephaisto.Agent.Mcp;
 /// Nothing here approves a plan or starts a code fix: an issue's plan is answered by a person.
 /// </para>
 /// <para>
+/// <b>The weekly review is read, never decided here</b> (#312): <see cref="ReviewAsync"/> is the
+/// review page's read (<see cref="ReviewReader.ReadAsync"/>). Agreeing, moving and closing stay a
+/// person's clicks on that page - the owner chose that writes there are a person's, so no tool here
+/// makes one.
+/// </para>
+/// <para>
 /// <b>Asking Claude is the planner's button</b> (<see cref="TriageRunner.StartAsync"/>), with the
 /// approver role the console asks for it: a coder Job that spends the model budget and answers
 /// with labels and one comment on the issue. It is how a failed analysis is asked for again.
@@ -38,6 +45,7 @@ namespace Hephaisto.Agent.Mcp;
 public sealed partial class McpPlanner(
     PlannerService planner,
     TriageRunner triage,
+    ReviewReader review,
     IOptionsMonitor<GitHubOptions> github,
     IOptionsMonitor<NotificationOptions> notifications,
     IHttpContextAccessor http)
@@ -197,6 +205,98 @@ public sealed partial class McpPlanner(
                     + "Choose each from the options here; a field the board asks for (required) should not be left empty.",
         };
     }
+
+    public static readonly IReadOnlyList<string> ReviewTabs = [ReviewVerdicts.Close, ReviewVerdicts.Bug, ReviewVerdicts.Feature, ReviewVerdicts.Unsure];
+
+    /// <summary>The weekly review as its page shows it: the newest run, and the verdicts of one tab or all.</summary>
+    public async Task<WeeklyReviewAnswer> ReviewAsync(string? tab, string? repository, int limit, CancellationToken ct)
+    {
+        var which = string.IsNullOrWhiteSpace(tab) ? null : tab.Trim().ToLowerInvariant();
+
+        if (which is not null && !ReviewTabs.Contains(which))
+        {
+            throw new McpException($"tab '{McpQuery.Echo(tab)}' is not one of: {string.Join(", ", ReviewTabs)}.");
+        }
+
+        var view = await review.ReadAsync(ct).ConfigureAwait(false);
+        var rows = view.Verdicts
+            .Where(v => which is null || v.Tab == which)
+            .Where(v => string.IsNullOrWhiteSpace(repository) || v.Repository.Contains(repository.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var baseUrl = notifications.CurrentValue.BaseUrl;
+
+        List<string> next = [.. rows.Take(1).Where(v => v.OnBoard).Select(v => $"get_planner_issue {{\"issue\":\"{v.Repository}#{v.Number}\"}} - the issue on the board")];
+
+        if (which is null)
+        {
+            next.Add("get_weekly_review {\"tab\":\"close\"} - only what Claude says can be closed");
+        }
+
+        return new WeeklyReviewAnswer
+        {
+            State = view.State.ToString().ToLowerInvariant(),
+            Problem = view.Problem,
+            Run = view.Run is not { } run ? null : new WeeklyReviewRun
+            {
+                Id = run.Id,
+                Trigger = run.Trigger,
+                State = run.State.ToString().ToLowerInvariant(),
+                Problem = McpText.UntrustedOrNull(run.Problem, 1_000),
+                StartedAt = run.StartedAt,
+                FinishedAt = run.FinishedAt,
+                Open = run.Open,
+                Reviewed = run.Reviewed.Count,
+                Kept = run.Kept,
+                Jobs = run.Jobs,
+                CostUsd = run.CostUsd,
+                Counts = new WeeklyReviewCounts { Close = run.Counts.Close, Bug = run.Counts.Bug, Feature = run.Counts.Feature, Unsure = run.Counts.Unsure },
+            },
+            NextRunAt = view.NextRunAt,
+            Pending = view.Pending,
+            Counts = new WeeklyReviewCounts
+            {
+                Close = view.Verdicts.Count(v => v.Tab == ReviewVerdicts.Close),
+                Bug = view.Verdicts.Count(v => v.Tab == ReviewVerdicts.Bug),
+                Feature = view.Verdicts.Count(v => v.Tab == ReviewVerdicts.Feature),
+                Unsure = view.Verdicts.Count(v => v.Tab == ReviewVerdicts.Unsure),
+            },
+            Tab = which,
+            Total = rows.Count,
+            Verdicts = [.. rows.Take(limit).Select(Verdict)],
+            ConsoleUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : McpText.Name($"{baseUrl.TrimEnd('/')}/planner/review"),
+            Note = "Claude's verdicts propose; nothing here was written to GitHub. Agreeing, moving a verdict and closing what was agreed "
+                + "are a person's clicks on the review page, under their name - no tool does them.",
+            Next = next,
+        };
+    }
+
+    private static WeeklyReviewVerdict Verdict(ReviewVerdictView v) => new()
+    {
+        Issue = $"{v.Repository}#{v.Number}",
+        Title = McpText.Untrusted(v.Title, 300),
+        Url = McpText.NameOrNull(v.Url),
+        Tab = v.Tab,
+        Group = v.Group,
+        CloseReason = v.CloseReason,
+        Related = McpText.NameOrNull(v.Related),
+        Confidence = v.Confidence,
+        Summary = McpText.Untrusted(v.Summary, 500),
+        Reason = McpText.Untrusted(v.Reason, 2_000),
+        Evidence = [.. v.Evidence.Select(e => new WeeklyReviewEvidence { Kind = e.Kind, Text = McpText.Untrusted(e.Text, 500), BorneOut = e.Ok })],
+        Priority = McpText.NameOrNull(v.Priority),
+        OnBoard = v.OnBoard,
+        Archived = v.Archived,
+        Decision = v.Decision is not { } d ? null : new WeeklyReviewDecision
+        {
+            By = McpText.Name(d.By),
+            At = d.At,
+            Group = d.Group,
+            CloseReason = d.CloseReason,
+            Agreed = d.Agreed,
+            Unsure = d.Unsure,
+        },
+        ReviewedAt = v.ReviewedAt,
+    };
 
     // --- writes ---------------------------------------------------------------------------
 

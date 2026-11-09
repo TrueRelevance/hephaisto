@@ -198,3 +198,178 @@ public sealed record PlannerWriteResult
     [ServerAuthored]
     public string? Note { get; init; }
 }
+
+// The weekly review (#312): Claude's verdict on every open issue of the organisation, as the
+// console's review page shows it. A title, a summary, a reason, a piece of evidence and a run's
+// problem are a stranger's or a model's words; a group, a tab, a close reason and a confidence are
+// one of the few words the review keeps, so they go out plain.
+
+/// <summary>What get_weekly_review answers.</summary>
+public sealed record WeeklyReviewAnswer
+{
+    /// <summary>off (no run can start here; see problem), ready or running.</summary>
+    [ServerAuthored]
+    public required string State { get; init; }
+
+    /// <summary>Why the review is off on this install.</summary>
+    [ServerAuthored]
+    public string? Problem { get; init; }
+
+    /// <summary>The newest run, finished or not.</summary>
+    public WeeklyReviewRun? Run { get; init; }
+
+    /// <summary>When the schedule runs next; null when the review is off.</summary>
+    public DateTimeOffset? NextRunAt { get; init; }
+
+    /// <summary>Verdicts nobody decided yet, of every tab.</summary>
+    public required int Pending { get; init; }
+
+    /// <summary>Every open issue's verdict now, by the tab it is shown on.</summary>
+    public required WeeklyReviewCounts Counts { get; init; }
+
+    /// <summary>The tab asked for; null for all four.</summary>
+    [ServerAuthored]
+    public string? Tab { get; init; }
+
+    /// <summary>How many verdicts match the tab and the repository, before the limit.</summary>
+    public required int Total { get; init; }
+
+    public required IReadOnlyList<WeeklyReviewVerdict> Verdicts { get; init; }
+
+    /// <summary>The review page in the console, where a person agrees, moves and closes.</summary>
+    public McpText? ConsoleUrl { get; init; }
+
+    [ServerAuthored]
+    public required string Note { get; init; }
+
+    [ServerAuthored]
+    public required IReadOnlyList<string> Next { get; init; }
+}
+
+public sealed record WeeklyReviewCounts
+{
+    public required int Close { get; init; }
+
+    public required int Bug { get; init; }
+
+    public required int Feature { get; init; }
+
+    public required int Unsure { get; init; }
+}
+
+public sealed record WeeklyReviewRun
+{
+    public required Guid Id { get; init; }
+
+    /// <summary>schedule or manual.</summary>
+    [ServerAuthored]
+    public required string Trigger { get; init; }
+
+    /// <summary>running, finished or failed.</summary>
+    [ServerAuthored]
+    public required string State { get; init; }
+
+    /// <summary>What went wrong: GitHub's or a Job's answer can be in it.</summary>
+    public McpText? Problem { get; init; }
+
+    public required DateTimeOffset StartedAt { get; init; }
+
+    public DateTimeOffset? FinishedAt { get; init; }
+
+    /// <summary>Open issues in the organisation when it ran.</summary>
+    public required int Open { get; init; }
+
+    /// <summary>Issues this run gave a verdict: new, changed since their last one, or due for a recheck.</summary>
+    public required int Reviewed { get; init; }
+
+    /// <summary>Open issues that kept an earlier run's verdict.</summary>
+    public required int Kept { get; init; }
+
+    public required int Jobs { get; init; }
+
+    public required decimal CostUsd { get; init; }
+
+    /// <summary>Where the verdicts were when the run ended, by tab.</summary>
+    public required WeeklyReviewCounts Counts { get; init; }
+}
+
+public sealed record WeeklyReviewVerdict
+{
+    /// <summary><c>owner/repo#12</c>.</summary>
+    [ServerAuthored]
+    public required string Issue { get; init; }
+
+    public required McpText Title { get; init; }
+
+    public McpText? Url { get; init; }
+
+    /// <summary>Where it is shown: close, bug, feature or unsure - a person's decision first.</summary>
+    [ServerAuthored]
+    public required string Tab { get; init; }
+
+    /// <summary>Claude's group: close, bug, feature, or unsure when it gave no usable verdict.</summary>
+    [ServerAuthored]
+    public required string Group { get; init; }
+
+    /// <summary>With close: done, superseded, obsolete, duplicate, answered or stale.</summary>
+    [ServerAuthored]
+    public string? CloseReason { get; init; }
+
+    /// <summary>The issue or pull request it is a duplicate of or superseded by.</summary>
+    public McpText? Related { get; init; }
+
+    /// <summary>high, medium or low; a low one is a person's to decide.</summary>
+    [ServerAuthored]
+    public required string Confidence { get; init; }
+
+    public required McpText Summary { get; init; }
+
+    public required McpText Reason { get; init; }
+
+    public IReadOnlyList<WeeklyReviewEvidence> Evidence { get; init; } = [];
+
+    /// <summary>Claude's suggestion for a bug or a feature: P0, P1 or P2.</summary>
+    public McpText? Priority { get; init; }
+
+    public required bool OnBoard { get; init; }
+
+    /// <summary>Its repository is archived: it can be agreed, not closed, until somebody unarchives it.</summary>
+    public required bool Archived { get; init; }
+
+    /// <summary>What a person decided; null while nobody did.</summary>
+    public WeeklyReviewDecision? Decision { get; init; }
+
+    public required DateTimeOffset ReviewedAt { get; init; }
+}
+
+public sealed record WeeklyReviewEvidence
+{
+    /// <summary>pull_request, issue, commit, sub_issue, repository, absence or note.</summary>
+    [ServerAuthored]
+    public required string Kind { get; init; }
+
+    public required McpText Text { get; init; }
+
+    /// <summary>True when the facts Hephaisto gathered bear it out, false when they say otherwise, null when they say nothing.</summary>
+    public bool? BorneOut { get; init; }
+}
+
+public sealed record WeeklyReviewDecision
+{
+    public required McpText By { get; init; }
+
+    public required DateTimeOffset At { get; init; }
+
+    /// <summary>close, bug or feature.</summary>
+    [ServerAuthored]
+    public required string Group { get; init; }
+
+    [ServerAuthored]
+    public string? CloseReason { get; init; }
+
+    /// <summary>True: the person agreed with Claude's verdict; false: they moved it.</summary>
+    public required bool Agreed { get; init; }
+
+    /// <summary>The person could not tell either.</summary>
+    public required bool Unsure { get; init; }
+}

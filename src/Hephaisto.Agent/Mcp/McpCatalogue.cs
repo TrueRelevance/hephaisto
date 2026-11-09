@@ -12,7 +12,8 @@ namespace Hephaisto.Agent.Mcp;
 /// the same on the write tool as on half the reads. So the writes sit right after the three tools
 /// every conversation starts with, where a tie still reaches the top five. The planner's tools
 /// (#307) sit together after the work items: their questions - an issue, today, the backlog -
-/// share few words with an incident's.
+/// share few words with an incident's. The weekly review's read (#312) closes the block: its
+/// questions - what can be closed, the review - are its own.
 /// </para>
 /// <para>
 /// <c>scripts/e2e/mcp/tools.golden.json</c> is the reviewed copy of this list; a unit test and the
@@ -59,6 +60,7 @@ public static class McpCatalogue
         ("close_planner_issue", Write),
         ("comment_on_planner_issue", Write),
         ("analyse_planner_issue", Approver),
+        ("get_weekly_review", Reader),
         ("get_status", Reader),
         ("lookup_incident_filters", Reader),
         ("get_caller_identity", Reader),

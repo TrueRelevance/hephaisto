@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 using Hephaisto.Agent.Persistence;
@@ -71,6 +72,38 @@ public sealed class PlannerReviewStoreTests(PostgresFixture pg)
         (await store.VerdictsAsync(includeGone: false, Ct)).Should().BeEmpty("one was not listed, the other a person closed");
         (await store.VerdictsAsync(includeGone: true, Ct)).Single(v => v.Number == 1).Title.Should().Be("renamed");
         (await store.DecideAsync("acme/api", 1, null, Ct)).Should().BeFalse("a gone verdict is not decided on");
+    }
+
+    [Fact]
+    public async Task A_run_ends_and_its_announcement_is_queued_in_one_save()
+    {
+        await pg.ResetAsync();
+        var store = Store();
+
+        var run = new PlannerReviewRun { State = PlannerReviewRunState.Running, RequestedBy = "flo", StartedAt = Now };
+        (await store.TryStartAsync(run, Ct)).Should().BeTrue();
+
+        run.State = PlannerReviewRunState.Finished;
+        run.FinishedAt = Now.AddMinutes(3);
+        run.CountClose = 5;
+
+        var options = new Hephaisto.Core.Notifications.NotificationOptions
+        {
+            Routes = [new Hephaisto.Core.Notifications.NotificationRoute
+            {
+                Channel = Hephaisto.Core.Notifications.NotificationChannelNames.TeamsBot,
+                Events = [Hephaisto.Core.Notifications.NotificationEvent.PlannerReviewFinished],
+            }],
+        };
+
+        await store.EndRunAsync(run, ReviewAnnouncement.Deliveries(run, pending: 4, options, Now.AddMinutes(3)), Ct);
+
+        (await store.LatestRunAsync(Ct))!.State.Should().Be(PlannerReviewRunState.Finished);
+
+        await using var db = pg.CreateContext();
+        var queued = await db.NotificationDeliveries.AsNoTracking().ToListAsync(Ct);
+        queued.Should().ContainSingle().Which.Snapshot.Title.Should().StartWith("Weekly review: 5 to close");
+        queued[0].Event.Should().Be(Hephaisto.Core.Notifications.NotificationEvent.PlannerReviewFinished);
     }
 
     private EfReviewStore Store()

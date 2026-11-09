@@ -267,6 +267,15 @@ It needs more of the agent's token than issues as work: the organisation's proje
 whose issues are on the board. Measured with a classic token (`scripts/e2e/planner-live.sh`); the
 fine-grained permissions are GitHub's documentation.
 
+**The weekly review** (`github.planner.review`, off by default, needs `codeFix.enabled`) sorts every
+open issue of the organisation, on the board or not, into can be closed, a real bug, still to
+build or unsure, with read-only coder Jobs, and **writes nothing to GitHub**: agreeing, moving and
+closing are approver clicks on `/planner/review`. Its token needs read on every repository of the
+organisation (the issue search, timelines, sub-issues, whether a repository is archived). The end
+of every run is one message to the routes that list `PlannerReviewFinished`; the MCP tool
+`get_weekly_review` reads the verdicts. Values and the token are in `values.yaml` under
+`github.planner.review`.
+
 **What it takes on github.com**, as measured against it (`scripts/e2e/github-live.sh`), not as
 read in its documentation:
 

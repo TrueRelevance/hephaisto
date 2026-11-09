@@ -101,4 +101,12 @@ public enum NotificationEvent
     /// behind the opening a minute earlier.
     /// </summary>
     SeverityRaised = 12,
+
+    /// <summary>
+    /// A run of the planner's weekly review ended (#312): what it found, as counts, and a link to
+    /// the review page - or that it failed, and why. One new message per run, never an edit: the
+    /// verdicts wait for a person. Like an event about the agent it has no incident, namespace,
+    /// cluster, kind or label, so an unscoped route that lists it takes it.
+    /// </summary>
+    PlannerReviewFinished = 13,
 }

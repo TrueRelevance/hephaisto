@@ -251,9 +251,15 @@ public sealed class TeamsBotNotificationChannel(
             }
         }
 
-        // A work item's code fix (v0.14.0): no incident, so no card that is edited afterwards and
-        // none on the board - one message, final, like an event about the agent.
-        return (s.WorkItemId is null ? TeamsBotCards.AgentEvent(message) : TeamsBotCards.WorkItemEvent(message), null);
+        // A work item's code fix (v0.14.0) and a weekly review's end (#312): no incident, so no
+        // card that is edited afterwards and none on the board - one message, final, like an
+        // event about the agent.
+        return (s switch
+        {
+            { Event: NotificationEvent.PlannerReviewFinished } => TeamsBotCards.ReviewEvent(message),
+            { WorkItemId: null } => TeamsBotCards.AgentEvent(message),
+            _ => TeamsBotCards.WorkItemEvent(message),
+        }, null);
     }
 
     /// <summary>

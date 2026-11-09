@@ -630,7 +630,8 @@ minutes - so a red live run is read request by request before it is believed.
   is a click. So the agent's mode does not gate it, and `PlannerService.cs` is the ONLY file that
   may call the client's writes for a project, a label or an assignee -
   `GitHubClientTests.Nothing_but_the_planner_calls_what_closes_or_takes_away` holds that. Do not
-  call them from the poller.
+  call them from the poller. The weekly review below is the one part on a timer, and it writes
+  nothing.
 - **A click acts on the kept board and does not read again.** The kept board is patched the way
   GitHub was told to; reading first cost seconds per click and could hand back a replica that had
   not heard of the click before. A page load serves the kept board for `PlannerService.KeepFor`.
@@ -696,31 +697,54 @@ HEPHAISTO_MCP_TOKEN_READONLY=$PAGER_MCP_TOKEN_READONLY` beside the two URLs abov
 `scripts/e2e/planner-live.sh` is the same suite against
 github.com and needs a token that can see the project - the bot's cannot; its header says how.
 
-**The weekly review (#312) is accepted by `planner-review.spec.ts`**, which landed before its code,
-every test on `scripts/e2e/ui/KNOWN_RED` (the console suite's known-red list: a listed test that
-fails is expected, one that passes fails the run, `UI_STRICT=1` ignores the list). It needs the
-coder with `"coder-sdk": "fake"` - the verdicts are `coder/fake-scripts/default.review.json` - and
-reads the stand-in's `GET /github/control/writes` to hold that a run writes nothing. The
-organisation it reviews is the stand-in's `acme`, seeded with the board (`GitHubStandIn.Review.cs`).
-Its Job is the coder phase `review` (`coder/src/review.ts`, contract `review-*.schema.json` v1 in
-dev-context): read-only like triage, one batch of issues with the facts Hephaisto gathered, the
-batch's repositories cloned blobless by the prepare role, one verdict per batch issue kept (one
-left out is `unsure`, low) - the same rule for the fake script and a real model.
-Its run is `Planner/Review/` (stage 3): `ReviewRunner.StartAsync` is the one entry of the schedule
-(`ReviewScheduler`) and of `POST /api/planner/review/run`; `ReviewFactsGatherer` reads (search, timeline,
-sub-issues, `GET /repos`) and the board is the planner's kept one; tables `planner_review_runs` and
-`planner_review_verdicts` (one row per issue). Nothing under `Planner/Review/` may call a client write -
-`ReviewRunnerTests.Nothing_of_the_review_calls_a_write_of_the_client` - so a click that closes or sets a
-field goes through `PlannerService` and then records the decision with `IReviewStore.DecideAsync`, and a
-close also `MarkGoneAsync`. "Changed" is an `updated_at` that DIFFERS from the verdict's (a reseeded
-stand-in moves it back); a change clears the decision, a recheck keeps it.
-Its page is `/planner/review` (`Components/Pages/Review.razor`, stage 4): the clicks are `ReviewActions`
-(agree, move, unsure, close what was decided), the page's rules `ReviewQueue` (pure, tested without a
-browser). Agree on a bug of the board is the planner's `SetFieldAsync` for Priority; a close is
-`PlannerService.CloseReviewedAsync` - one comment signed like the planner's but WITHOUT the marker (the
-reason is Claude's), then the close by node id, so it needs no board item. An archived repository is
-never tried, and "Close N issues" is refused while a run is under way. Each decision click is one
-`planner.review` audit row - the decision's history, since a changed issue clears the decision itself.
+### The weekly review (#312)
+
+`github.planner.review`: once a week (or on *run now*) every open issue of the planner's
+organisation gets a verdict - close (with a reason), bug, feature, unsure - from read-only coder
+Jobs of phase `review`, and `/planner/review` lets a person decide each (`Planner/Review/`,
+`Components/Pages/Review.razor`, `coder/src/review.ts`, contract `review-*.schema.json` v1 in
+dev-context). Things to know before touching it:
+
+- **The run writes nothing to GitHub.** `ReviewRunner` reads (`ReviewFactsGatherer`: search,
+  timeline, sub-issues, `GET /repos`; the board is the planner's kept one) and proposes. Nothing
+  under `Planner/Review/` may call a client write - `ReviewRunnerTests.Nothing_of_the_review_calls_a_write_of_the_client`.
+  The clicks are `ReviewActions` (agree, move, unsure, close what was decided), whose writes are
+  `PlannerService` methods: Agree on a board bug is `SetFieldAsync` for Priority (skipped when the
+  KEPT board shows it already), a close is `CloseReviewedAsync` - one comment signed like the
+  planner's but WITHOUT the marker (the reason is Claude's), then the close by node id, always as
+  completed, so it needs no board item. Then `IReviewStore.DecideAsync` / `MarkGoneAsync`. An
+  archived repository is never tried; "Close N issues" is refused while a run is under way. Each
+  decision click is one `planner.review` audit row - the decision's history.
+- **One entry, one run.** `ReviewRunner.StartAsync` is the schedule's (`ReviewScheduler`) and
+  `POST /api/planner/review/run`'s; one run at a time, in the process and in Postgres; a slot runs
+  once (unique index), a missed one within the hour runs at startup; a Running run left by a dead
+  process is marked Failed at startup and announced to nobody.
+- **"Changed" is an `updated_at` that DIFFERS from the verdict's** (a reseeded stand-in moves it
+  back). A change clears the person's decision; a recheck (`recheckAfterDays`) keeps it. A complete
+  search that misses a verdict's issue marks it gone; a cut-off search (over 1000) marks nothing.
+- **One batch, one verdict per issue.** The coder keeps only verdicts for issues in its batch; one
+  left out is `unsure`, low - the same rule for the fake script and a real model. `tab` is the
+  decision, else unsure for low confidence or group unsure, else the group. Counts on the run row
+  are the tabs of all open verdicts at the end, decisions included.
+- **The end of a run is ONE new message** (`ReviewAnnouncement`, event `PlannerReviewFinished`),
+  staged in the same save as the run's end (`IReviewStore.EndRunAsync`) and sent by the outbox to
+  every route that lists the event - recipients are the routing table's, as for every event; no
+  setting of its own. Finished: "Weekly review: N to close, N bugs, N to build, N unsure", Info;
+  failed: "Weekly review failed" and why, Warning. Its only link is `NotificationLinks.Review`
+  (`<baseUrl>/planner/review`); the Teams bot renders `TeamsBotCards.ReviewEvent`, the problem as a
+  plain text run. Never an edit (see the Teams bot below).
+- **MCP is read-only for it**: `get_weekly_review` -> `McpPlanner.ReviewAsync` ->
+  `ReviewReader.ReadAsync`, any token, filtered by tab and repository. The owner chose that every
+  write is a person's click: do not add a review write tool.
+
+Locally: `"github": "stand-in"` with `"coder": true` turns it on against the stand-in's `acme`
+(`GitHubStandIn.Review.cs`, seeded with the board); `"coder-sdk": "fake"` answers with
+`coder/fake-scripts/default.review.json`, and `"teams-bot": "stand-in"` routes the message
+(`values-dev-teams-bot.yaml`). `planner-review.spec.ts` (R01-R08) is how a change is accepted; it
+reads the stand-in's `GET /github/control/writes` to hold that a run writes nothing, and
+`/teams/messages` for the message (sent by the outbox's poll, so it waits for it). The Job's
+coder image is `hephaisto/coder:dev`, built in the VM by hand (see "Images the agent only NAMES"
+under "The cluster is a single shared resource").
 
 ## The Teams bot, as of v0.9.0-rc4
 
@@ -894,9 +918,10 @@ build or test one commit of a stack, use `git worktree add` somewhere else; comm
 
 Images the agent only NAMES are not rebuilt by a pod restart, and a Tilt-triggered build can
 fail on the macOS keychain in a background session. Build inside the VM:
-`rdctl shell sh -c 'cd ~/hephaisto && docker build -q -t hephaisto/coder:dev coder'` (and
+`rdctl shell sh -c "cd $HOME/hephaisto && docker build -q -t hephaisto/coder:dev coder"` (and
 `-f infra/e2e/notification-receiver/Dockerfile -t hephaisto/notification-receiver:dev .` for the
-stand-in, then delete its pod). The node's image GC removes a locally built tag nothing runs:
+stand-in, then delete its pod). Double quotes on purpose: the Mac's `$HOME` is mounted in the VM
+at the same path, while `~` there is the VM user's own home. The node's image GC removes a locally built tag nothing runs:
 `ImagePullBackOff` on one of these means "rebuild it", not "push it".
 
 ## Verifying a change

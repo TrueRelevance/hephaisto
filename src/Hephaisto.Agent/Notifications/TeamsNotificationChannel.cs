@@ -138,6 +138,10 @@ public sealed class TeamsNotificationChannel(
     {
         var s = message.Snapshot;
 
+        // A work item's and a weekly review's text can carry somebody else's words (#312: a
+        // problem is GitHub's or a Job's answer), so they are shown as they are, never as markdown.
+        var plain = s.WorkItemId is not null || s.Event is NotificationEvent.PlannerReviewFinished;
+
         var body = new JsonArray
         {
             new JsonObject
@@ -157,7 +161,7 @@ public sealed class TeamsNotificationChannel(
                 },
                 ["wrap"] = true,
             },
-            Words(string.IsNullOrWhiteSpace(s.Title) ? "(no title)" : s.Title, plain: s.WorkItemId is not null),
+            Words(string.IsNullOrWhiteSpace(s.Title) ? "(no title)" : s.Title, plain: plain),
         };
 
         var facts = new JsonArray();
@@ -168,7 +172,7 @@ public sealed class TeamsNotificationChannel(
             AddFact(facts, "Issue", s.Issue);
             AddFact(facts, "Repository", s.Repository);
         }
-        else
+        else if (s.Event is not NotificationEvent.PlannerReviewFinished)
         {
             AddFact(facts, "Severity", s.Severity.ToString());
         }
@@ -195,12 +199,12 @@ public sealed class TeamsNotificationChannel(
 
         if (!string.IsNullOrWhiteSpace(s.Summary))
         {
-            body.Add(Words(s.Summary, plain: s.WorkItemId is not null, subtle: true));
+            body.Add(Words(s.Summary, plain: plain, subtle: true));
         }
 
         if (!string.IsNullOrWhiteSpace(s.Reason))
         {
-            body.Add(Words(s.Reason, plain: s.WorkItemId is not null, subtle: true));
+            body.Add(Words(s.Reason, plain: plain, subtle: true));
         }
 
         if (message.AlsoSuppressed > 0)
@@ -233,7 +237,7 @@ public sealed class TeamsNotificationChannel(
         }
 
         // An incident's page, or - for a work item's attempt, which has none - the attempt's own.
-        var console = message.IncidentUrl ?? message.CodeFixUrl;
+        var console = message.IncidentUrl ?? message.CodeFixUrl ?? message.ReviewUrl;
 
         if (!string.IsNullOrWhiteSpace(console))
         {
@@ -245,6 +249,7 @@ public sealed class TeamsNotificationChannel(
                 {
                     NotificationEvent.ApprovalRequired => "Review and approve in Hephaisto",
                     NotificationEvent.CodeFixPlanReady => "Review the plan in Hephaisto",
+                    NotificationEvent.PlannerReviewFinished => "Open the weekly review",
                     _ => "Open in Hephaisto",
                 },
                 ["url"] = console,
@@ -302,6 +307,7 @@ public sealed class TeamsNotificationChannel(
         NotificationEvent.CodeFixPlanReady => "Code fix planned - a plan is waiting for a developer",
         NotificationEvent.CodeFixPrOpened => "Pull request opened - a code fix is ready for review",
         NotificationEvent.CodeFixFailed => "Code fix ended without a PR",
+        NotificationEvent.PlannerReviewFinished => "Weekly review - verdicts on the open issues wait for a person",
         _ => "Hephaisto",
     };
 

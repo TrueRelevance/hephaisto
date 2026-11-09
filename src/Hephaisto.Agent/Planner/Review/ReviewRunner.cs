@@ -5,6 +5,7 @@ using Hephaisto.Agent.GitHub;
 using Hephaisto.Agent.Persistence;
 using Hephaisto.Core;
 using Hephaisto.Core.Abstractions;
+using Hephaisto.Core.Notifications;
 using Hephaisto.Core.Planning;
 using Microsoft.Extensions.Options;
 
@@ -68,6 +69,11 @@ public sealed record ReviewStart(ReviewStartOutcome Outcome, string Message, Gui
 /// next run asks about them again, because they are still unreviewed or still changed.
 /// </para>
 /// <para>
+/// <b>Its end is one message</b> (<see cref="ReviewAnnouncement"/>): finished or failed, staged in
+/// the save that records the end, for every notification route that lists
+/// <c>PlannerReviewFinished</c>.
+/// </para>
+/// <para>
 /// <b>A restart forgets a run that was going</b>: the scheduler marks it Failed at startup, what
 /// its finished batches answered is kept, and its Jobs end by their deadline. That is cheaper than
 /// following Jobs across a restart for a pass that runs again next week, or now on a click.
@@ -77,6 +83,7 @@ public sealed class ReviewRunner(
     IServiceScopeFactory scopes,
     IOptionsMonitor<GitHubOptions> github,
     IOptionsMonitor<CodeFixOptions> codeFix,
+    IOptionsMonitor<NotificationOptions> notifications,
     ICodeFixJobLauncher launcher,
     IReviewStore store,
     IReviewBoard board,
@@ -330,7 +337,7 @@ public sealed class ReviewRunner(
             run.State = PlannerReviewRunState.Failed;
             run.FinishedAt = clock.UtcNow;
             run.Problem = Problem(problems);
-            await SaveQuietlyAsync(run).ConfigureAwait(false);
+            await SaveQuietlyAsync(run, Announce(run, pending: null)).ConfigureAwait(false);
         }
     }
 
@@ -509,7 +516,7 @@ public sealed class ReviewRunner(
         run.FinishedAt = clock.UtcNow;
         run.Problem = Problem(problems);
 
-        await store.UpdateRunAsync(run, ct).ConfigureAwait(false);
+        await store.EndRunAsync(run, Announce(run, verdicts.Count(v => v.DecidedBy is null)), ct).ConfigureAwait(false);
 
         logger.LogInformation(
             "The weekly review {Run} is {State}: {Reviewed} reviewed, {Kept} kept, {Jobs} Jobs, ${Cost}.{Problem}",
@@ -523,14 +530,40 @@ public sealed class ReviewRunner(
         run.State = PlannerReviewRunState.Failed;
         run.FinishedAt = clock.UtcNow;
         run.Problem = Problem([problem]);
-        await store.UpdateRunAsync(run, ct).ConfigureAwait(false);
+        await store.EndRunAsync(run, Announce(run, pending: null), ct).ConfigureAwait(false);
     }
 
-    private async Task SaveQuietlyAsync(PlannerReviewRun run)
+    /// <summary>
+    /// The one message a run's end is (<see cref="ReviewAnnouncement"/>): staged with the end, for
+    /// the routes that list the event. A run that finished and one that failed alike.
+    /// </summary>
+    private List<NotificationDelivery> Announce(PlannerReviewRun run, int? pending)
+    {
+        var deliveries = ReviewAnnouncement.Deliveries(run, pending, notifications.CurrentValue, clock.UtcNow);
+
+        if (deliveries.Count == 0)
+        {
+            logger.LogInformation(
+                "No notification route lists {Event}, so nobody is told that the weekly review {Run} ended; the review page shows it.",
+                NotificationEvent.PlannerReviewFinished,
+                run.Id);
+        }
+
+        return deliveries;
+    }
+
+    private async Task SaveQuietlyAsync(PlannerReviewRun run, IReadOnlyCollection<NotificationDelivery>? announce = null)
     {
         try
         {
-            await store.UpdateRunAsync(run, CancellationToken.None).ConfigureAwait(false);
+            if (announce is null)
+            {
+                await store.UpdateRunAsync(run, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await store.EndRunAsync(run, announce, CancellationToken.None).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {

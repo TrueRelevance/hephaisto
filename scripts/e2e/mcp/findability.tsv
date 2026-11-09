@@ -41,6 +41,8 @@ ask claude to analyse the github issue again	analyse_planner_issue
 retry the analysis of an issue	analyse_planner_issue
 fields and options for a new github issue	lookup_planner_fields
 read the github issue on the planning board	get_planner_issue
+verdicts of the weekly review	get_weekly_review
+show the weekly backlog review	get_weekly_review
 which issues is hephaisto working on	list_work_items
 work items	list_work_items
 what became of the github issue	get_work_item

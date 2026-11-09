@@ -193,6 +193,12 @@
       "description": "Analyse a GitHub issue of the planning board with Claude (retry, re-run, ask again): the planner's Ask Claude button. A coder Job reads the issue and dev-context and answers with the repository's labels and one analysis comment on the issue, in a minute or two; get_planner_issue shows it. This spends the model budget (tokens and cost). Needs the approver role. Refused while Claude is already at the issue or at as many issues as may run at once. Written to the audit trail as this token."
     },
     {
+      "name": "get_weekly_review",
+      "needs": "reader",
+      "readOnly": true,
+      "description": "Get the weekly backlog review: Claude's verdict on every open GitHub issue of the organisation, on the planner's board or not - can be closed (done, superseded, obsolete, duplicate, answered or stale), a real bug, still to build, or unsure - with its summary, reason, evidence, confidence, suggested priority and what a person decided. Also the last run's counts, how many wait for a person and when it runs next. Filter by tab and repository. Changes nothing: agreeing, moving and closing are a person's clicks on the review page."
+    },
+    {
       "name": "get_status",
       "needs": "reader",
       "readOnly": true,

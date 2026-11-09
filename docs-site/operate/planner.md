@@ -213,10 +213,66 @@ A project's own workflows keep running. On a board with GitHub's *auto-close iss
 setting Status to the last column closes the issue; with *item closed*, closing an issue moves it
 there. The planner shows what GitHub says after the click, not what it expected.
 
+## The weekly review
+
+*`github.planner.review`, off by default* ([#312](https://github.com/TrueRelevance/hephaisto/issues/312)).
+Once a week Hephaisto goes through **every open issue of the organisation** - on the board or not,
+opened before the board existed, in an archived repository - and sorts each into one of three
+groups, with the evidence:
+
+- **Can be closed**: done (a merged pull request, a commit on the default branch, every sub-issue
+  closed), superseded, obsolete (the component or the repository is gone), a duplicate, answered,
+  or stale.
+- **A real bug**: a problem that still exists, with a suggested priority.
+- **Still to build**: a feature or a task worth doing, with a suggested priority.
+
+Each verdict has a one-line summary, the reason, its evidence and a confidence. A low confidence,
+or an issue Claude gave no usable verdict for, is put under **unsure** for a person.
+
+**It proposes, and writes nothing to GitHub.** Hephaisto gathers the facts first - the issue's
+timeline with the state of every pull request that mentions it, its sub-issues, whether its
+repository is archived - and hands them, in batches, to read-only coder Jobs of the phase
+`review`. A verdict whose evidence the gathered facts do not bear out says so on its card. The
+verdicts are kept in Postgres, so a review can be worked through over the week.
+
+**A person decides, on `/planner/review`.** Four tabs - close, bugs, to build, unsure - and on
+every card: *agree*, *move* to another group (a move to close asks for the reason), or *unsure*.
+Agreeing with a bug on the board sets its suggested Priority there; a feature's agree writes
+nothing. *Close N issues* then closes what was decided as closed: on each issue one comment with
+the reason and the evidence, signed with the person's name, then the close. Every close is
+recorded as *completed* on GitHub, also for an obsolete, stale or duplicate one. An issue in an
+archived repository can be agreed but is never closed - GitHub refuses any write there - and its
+card says to unarchive the repository first. Each click is one `planner.review` audit row, each
+close a `planner.close` row, both under the person's name. Clicks need the approver role.
+
+**Incremental.** A run asks only about an issue that is new, changed since its verdict (its
+`updated_at` is not the verdict's), or whose verdict is older than `recheckAfterDays`. An issue that
+changed is shown undecided again; one that is only rechecked keeps what a person decided. *Run
+now* on the page starts the same run the schedule does. One run at a time; `maxCostUsd` bounds a
+whole run, and a batch beyond it is not started and is asked about next time.
+
+**Who hears of it.** The end of every run is **one new message**, through `notifications.routes`
+like every other event: a route that lists `PlannerReviewFinished` gets *"Weekly review: 5 to close,
+8 bugs, 8 to build, 1 unsure"*, how many issues were reviewed and how many wait for a person, and a
+button to the review page. A run that failed says so and why, in one message too. On the Teams bot
+it is a personal chat message to the route's recipients, or the bot's own list when the route
+names nobody. No route lists the event unless you add it:
+
+```yaml
+notifications:
+  baseUrl: https://hephaisto.example.com     # the button's address
+  routes:
+    - channel: teamsBot
+      events: [PlannerReviewFinished]
+      recipients: [lead@example.com]
+```
+
+The console's navigation shows how many verdicts wait for a person beside *review*.
+
 ## Through the MCP endpoint
 
 With the MCP endpoint on (`mcp.enabled`, `/mcp` on port 8083), a coding agent reads and drives the planner
-with eight tools ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)). An issue opened
+with nine tools ([#307](https://github.com/TrueRelevance/hephaisto/issues/307)). An issue opened
 this way is on the board, has its fields and is planned for its day when the call returns -
 one opened with `gh issue create` waits for the next board read, and for somebody to plan it.
 
@@ -230,6 +286,7 @@ one opened with `gh issue create` waits for the next board read, and for somebod
 | `close_planner_issue` | may write | close as done or not planned, after an optional comment |
 | `comment_on_planner_issue` | may write | a comment, open or closed |
 | `analyse_planner_issue` | approver | ask Claude: the planner's button, for an open issue - also to ask again after a Job failed |
+| `get_weekly_review` | any token | the weekly review ([#312](https://github.com/TrueRelevance/hephaisto/issues/312)): the newest run, the counts, and the verdicts - reason, evidence, confidence, suggested priority, a person's decision - by tab and repository |
 
 Each write is the planner's own click: the audit row first, written as the token (`mcp/litellm`
 for a gateway's) with `origin.source: mcp` and the `onBehalfOf` name as an unverified claim; then
@@ -239,6 +296,8 @@ in order and stop at the first one GitHub refuses, and the answer says what was 
 A comment from an agent ends with *Relayed by an agent through Hephaisto* and carries no planner
 marker, so a replan never passes it on as a person's answer to a plan. Nothing here approves or
 rejects an issue's plan - that is a comment on the issue, or the console.
+
+The weekly review is read here and decided only on its page: no tool agrees, moves or closes.
 
 Asked through a gateway, *"create a github issue for today about X"* finds `create_planner_issue`;
 *"which issues are left for today"* and *"what is in the backlog"* find `list_planner_issues`.
@@ -270,13 +329,23 @@ github:
       maxTurns: 40
       deadline: "00:15:00"
       maxConcurrentJobs: 2
+    review:                  # the weekly review; needs codeFix.enabled
+      enabled: true
+      schedule: "0 6 * * 1"  # cron: minute hour day-of-month month day-of-week
+      timeZone: Europe/Berlin
+      issuesPerJob: 25       # 1 to 40
+      recheckAfterDays: 28
+      maxCostUsd: 10         # the whole run, across its Jobs
+      maxConcurrentJobs: 2
+      deadline: "00:30:00"   # one Job's
+      maxTurns: 60
 
 codeFix:
   enabled: true              # the image, Secret, egress proxy, model and dev-context of the Job
 ```
 
 The chart refuses `planner.enabled` without `github.enabled`, without an owner or without a
-number, and `planner.triage.enabled` without `codeFix.enabled`; the agent refuses the first three
+number, and `planner.triage.enabled` or `planner.review.enabled` without `codeFix.enabled`; the agent refuses the first three
 at startup, and a click on *ask Claude* says so when the coder has no image or no dev-context.
 
 Asking Claude costs one read-only Claude Code run on the coder's model credential: notional with
@@ -296,6 +365,8 @@ repositories the agent was never asked to work in.
 | open a new issue | `repo` | **Issues: read and write** on every repository in `repositories` |
 | put it on the project | `project` | organisation permission **Projects: read and write** |
 | comment on an issue | `repo` | **Issues: read and write** on its repository |
+| the weekly review: search the organisation's open issues, read their timelines and sub-issues, see whether a repository is archived | `repo` | **Issues: read** and **Metadata: read** on *every* repository of the organisation |
+| the weekly review's close | `repo` | **Issues: read and write** on the issue's repository |
 
 The classic column is what was measured against github.com (`scripts/e2e/planner-live.sh`, every
 button, read back from GitHub). The fine-grained column is GitHub's documentation and was **not**
@@ -303,7 +374,9 @@ measured.
 
 Without the first, the page says that the board could not be read, in GitHub's words. Without the
 second for some repository, a click on one of its issues is refused, the page says so, and nothing
-changed. An issue of a repository the token cannot see is not on the page at all.
+changed. An issue of a repository the token cannot see is not on the page at all - nor in the
+weekly review, whose search finds only what the token can read. The coder's own `GITHUB_TOKEN`
+needs read on the repositories a review Job may clone (`codeFix.repositories`).
 
 ## Seeing it work
 
@@ -333,6 +406,18 @@ issue; one not planned for today is refused with 404 before GitHub hears of it.
 kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in progress
 ```
 
+The weekly review is `GET /api/planner/review`: `state` (`Off` with `problem`, `Ready`,
+`Running`), the newest `run` with its `counts`, `nextRunAt`, `pending` and every open issue's
+verdict. `POST /api/planner/review/run` starts a run; a person's clicks are
+`POST /api/planner/review/verdicts/{owner}/{repo}/{number}/agree`, `/move` (`group`,
+`closeReason`) and `/unsure`, and `POST /api/planner/review/close` closes what was decided - all
+behind the approver policy, with `decidedBy` where nobody is signed in.
+
+```sh
+curl -s https://hephaisto.example.com/api/planner/review | jq '{state, problem, run: .run.counts, pending}'
+kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=review    # a review run's batches
+```
+
 ## Limits, and what is not built
 
 - **One project, of an organisation.** A project owned by a user account is not read.
@@ -352,5 +437,11 @@ kubectl -n hephaisto-coder get jobs -l hephaisto.dev/phase=triage    # a run in 
   that was still going: the Job ends by its deadline, nothing is put on the issue, and *ask Claude*
   asks again. The analysis shown is read from the issue's first hundred comments.
 - **Claude labels, and does not set fields.** Priority, area and status are the person's buttons.
+- **The weekly review reads at most a thousand open issues** - GitHub's search stops there. A run
+  over more says so, and then marks nothing as gone, so an issue it did not list keeps its verdict.
+- **A restart forgets a review run that was going.** It is marked failed at the next start and
+  announces nothing; what its finished batches answered is kept, and the next run asks again.
+- **The weekly review closes as completed.** An obsolete, stale or duplicate issue is closed as
+  completed too, with the reason in the comment, not as *not planned*.
 - **A quiet issue without a pull request is not noticed.** "In progress and nothing happens" would
   need to know which column means in progress.

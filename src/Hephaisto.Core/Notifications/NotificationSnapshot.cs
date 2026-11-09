@@ -137,6 +137,13 @@ public sealed record NotificationMessage
     /// </summary>
     public string? CodeFixUrl { get; init; }
 
+    /// <summary>
+    /// Absolute link to the weekly review's page, <c>/planner/review</c>, for
+    /// <see cref="NotificationEvent.PlannerReviewFinished"/> (#312). Null for every other event,
+    /// and when no base URL is configured.
+    /// </summary>
+    public string? ReviewUrl { get; init; }
+
     /// <summary>Absolute link into Grafana, scoped to the incident's window. Null when unconfigured.</summary>
     public string? GrafanaUrl { get; init; }
 

@@ -26,6 +26,12 @@ public interface IReviewStore
 
     Task UpdateRunAsync(PlannerReviewRun run, CancellationToken ct);
 
+    /// <summary>
+    /// The run's end, and the notifications that announce it, in one save: a run is announced
+    /// exactly when its end is recorded.
+    /// </summary>
+    Task EndRunAsync(PlannerReviewRun run, IReadOnlyCollection<NotificationDelivery> announce, CancellationToken ct);
+
     Task<PlannerReviewRun?> LatestRunAsync(CancellationToken ct);
 
     Task<bool> SlotTakenAsync(DateTimeOffset slot, CancellationToken ct);
@@ -97,6 +103,18 @@ public sealed class EfReviewStore(IServiceScopeFactory scopes) : IReviewStore
         var db = scope.ServiceProvider.GetRequiredService<HephaistoDbContext>();
 
         db.PlannerReviewRuns.Update(run);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    public async Task EndRunAsync(PlannerReviewRun run, IReadOnlyCollection<NotificationDelivery> announce, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(announce);
+
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HephaistoDbContext>();
+
+        db.PlannerReviewRuns.Update(run);
+        db.NotificationDeliveries.AddRange(announce);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 

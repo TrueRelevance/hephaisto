@@ -40,10 +40,13 @@ notifications:
       # click takes "actionId" beside "incidentId".
       approvals:
         enabled: true
+  # PlannerReviewFinished: the end of a weekly review run (#312), one message to the recipients
+  # above - what planner-review.spec.ts R08 reads off the stand-in. Without the review on (the
+  # Tiltfile's "github": "stand-in" with "coder": true) the event never happens.
   routes:
     - channel: teamsBot
       events: [IncidentOpened, IncidentEscalated, ApprovalRequired, VerificationFailed, IncidentResolved,
-               CodeFixPlanReady, CodeFixPrOpened, CodeFixFailed, ModeChanged]
+               CodeFixPlanReady, CodeFixPrOpened, CodeFixFailed, ModeChanged, PlannerReviewFinished]
 
 secrets:
   notificationTeamsBot: hephaisto-notification-teams-bot-stand-in

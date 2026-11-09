@@ -32,6 +32,13 @@ public static class NotificationLinks
             return (null, CodeFix(baseUrl, snapshot.CodeFixAttemptId), null);
         }
 
+        // A review run (#312) is about the backlog, not something that runs: its one link is the
+        // review page, from Review(), and Grafana around the time would show nothing of it.
+        if (snapshot.Event is NotificationEvent.PlannerReviewFinished)
+        {
+            return (null, null, null);
+        }
+
         var incident = Incident(baseUrl, incidentId);
 
         return (
@@ -64,6 +71,18 @@ public static class NotificationLinks
         }
 
         return $"{baseUrl.TrimEnd('/')}/codefixes/{id}";
+    }
+
+    /// <summary>
+    /// The weekly review's page (#312), for the one event about a review run; null for any other.
+    /// </summary>
+    public static string? Review(string? baseUrl, NotificationSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        return string.IsNullOrWhiteSpace(baseUrl) || snapshot.Event is not NotificationEvent.PlannerReviewFinished
+            ? null
+            : $"{baseUrl.TrimEnd('/')}/planner/review";
     }
 
     /// <summary>The note people keep for an alert name (#145), in the console.</summary>

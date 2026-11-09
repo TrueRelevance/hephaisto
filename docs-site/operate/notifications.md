@@ -49,6 +49,13 @@ is scoped by none of those and asks for no `minSeverity` above `Info`; a fallbac
 for incidents nobody else owns, does not. The same rule `ModeChanged` and `PolicyChanged` have
 always lived by, for their scope.
 
+The end of a run of the planner's [weekly review](/operate/planner#the-weekly-review) is the
+event `PlannerReviewFinished`, under the same rule: one message per run, finished or failed, with
+the counts of what can be closed, the bugs, what is still to build and what is unsure, and a link to
+`/planner/review`. A failed run is announced at `Warning`, a finished one at `Info`, so a route with
+`minSeverity: Warning` hears only of failures. It is staged with the run's end in one save, like
+an escalation's delivery.
+
 ## Why the outbox exists
 
 `IIncidentNotifier` is an in-process channel that drops on overflow by design — right for nudging a

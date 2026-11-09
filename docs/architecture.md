@@ -573,11 +573,12 @@ MCP (#157): streamable HTTP at `/mcp`, stateless, on a port of its own (8083) an
   `mcp/<name>`) or `person` (acts as its subject) - or, with sign-in on, the identity provider's
   bearer token. Compared hashed, in constant time, every token every time. The scheme and its
   three policies are the endpoint's own; the console's allow-all never applies.
-- **What it offers.** 34 tools in a reviewed order (`scripts/e2e/mcp/tools.golden.json`): 22 reads
+- **What it offers.** 35 tools in a reviewed order (`scripts/e2e/mcp/tools.golden.json`): 23 reads
   and 12 changes - acknowledge, assign, a note entry, feedback, and for an approver close, close
   many and re-investigate; and the planner's five (#307): open, change, close and comment on an
   issue of the board, and for an approver ask Claude about one. Two of the reads are of work items (`list_work_items`, `get_work_item`),
-  three of the planner's board, and the code-fix reads show an attempt for an issue beside an
+  three of the planner's board, one of the planner's weekly review (#312, `get_weekly_review`: it
+  reads verdicts and decides none), and the code-fix reads show an attempt for an issue beside an
   incident's. No tool approves or denies an action or a code-fix plan, re-arms or sets a mode.
   Tools reach incidents only through `McpIncidentReader` and `McpIncidentActions`, the board only
   through `McpPlanner`; the writes go through the console's own `IncidentQueries` and
@@ -587,7 +588,7 @@ MCP (#157): streamable HTTP at `/mcp`, stateless, on a port of its own (8083) an
   a plain string fails its call; every answer stays under 32,000 characters and says what it cut.
 - **Being found.** Behind a gateway with tool search a model sees only a search tool, which
   scores each tool's name and description by the words of the question. The descriptions are
-  written for that, and `McpFindabilityTests` ranks 44 real questions the way the gateway does.
+  written for that, and `McpFindabilityTests` ranks 59 real questions the way the gateway does.
 
 ## Persistence: Postgres 17 + pgvector
 

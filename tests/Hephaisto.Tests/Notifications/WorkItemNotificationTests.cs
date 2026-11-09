@@ -143,6 +143,35 @@ public sealed class WorkItemNotificationTests
         activity["summary"]!.GetValue<string>().Should().Be("Code fix planned for octo/shop#12 (+2 suppressed)");
     }
 
+    [Fact]
+    public void A_weekly_review_s_end_is_its_counts_as_words_and_a_button_to_the_review()
+    {
+        var snapshot = new NotificationSnapshot
+        {
+            Event = NotificationEvent.PlannerReviewFinished,
+            Title = "Weekly review: 5 to close, 8 bugs, 8 to build, 1 unsure",
+            Reason = "Not everything went: Batch 2 of 3 answered [click](https://evil.example).",
+            At = DateTimeOffset.Parse("2026-11-09T06:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+        };
+
+        var activity = TeamsBotCards.ReviewEvent(new NotificationMessage
+        {
+            DeliveryId = Guid.CreateVersion7(),
+            Snapshot = snapshot,
+            ReviewUrl = "https://hephaisto.example/planner/review",
+        });
+        var card = activity["attachments"]![0]!["content"]!.AsObject();
+        var json = card.ToJsonString();
+
+        activity["summary"]!.GetValue<string>().Should().Be(snapshot.Title);
+        card["body"]![0]!["text"]!.GetValue<string>().Should().Be(snapshot.Title);
+        card["actions"]![0]!["url"]!.GetValue<string>().Should().Be("https://hephaisto.example/planner/review");
+
+        // A problem can be a Job's or GitHub's words: a text run, which Teams never reads as markdown.
+        card["body"]![1]!["type"]!.GetValue<string>().Should().Be("RichTextBlock");
+        json.Should().Contain("[click](https://evil.example)");
+    }
+
     private static NotificationMessage Message(NotificationSnapshot snapshot) => new()
     {
         DeliveryId = Guid.CreateVersion7(),

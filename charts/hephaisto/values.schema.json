@@ -427,7 +427,8 @@
                     "PolicyChanged",
                     "CodeFixPlanReady",
                     "CodeFixPrOpened",
-                    "CodeFixFailed"
+                    "CodeFixFailed",
+                    "PlannerReviewFinished"
                   ]
                 }
               },

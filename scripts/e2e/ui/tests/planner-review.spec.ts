@@ -201,6 +201,9 @@ test.describe('weekly review', () => {
     // The seeded organisation again. Every seeded time is relative to the reset, so to the
     // incremental run every issue has changed since any earlier verdict: this run looks at all.
     expect((await request.post(`${STANDIN}/github/control/project/reset`)).status()).toBe(204);
+    // And the planner's kept board read again: a run of this suite a minute earlier left P1 on
+    // acme/api#475 there, and R04's Agree would skip a Priority the kept board already shows.
+    expect((await request.get('/api/planner?refresh=true')).ok()).toBeTruthy();
 
     const writes = await writeSeq(request);
     const reads = (await (await request.get(`${STANDIN}/github/control/requests`)).json()).at(-1)?.seq ?? 0;
@@ -439,8 +442,15 @@ test.describe('weekly review', () => {
     await ready(request);
     expect(first && second, 'R01 and R07 ran the review twice').toBeTruthy();
 
-    const posted = (await teamsMessages(request))
-      .filter(m => Number(m.id) > teamsBefore && /weekly review/i.test(m.text));
+    // The message goes out through the notification outbox, which the dispatcher polls: R07's run
+    // ended a moment ago, so its message may still be on its way. Wait for it, then hold the count.
+    // A finished run's message is "Weekly review: <counts>"; "Weekly review failed" is a failed
+    // run's - one from an attempt before a retry can land after R01 read where the chat stood.
+    const reviewMessages = async () => (await teamsMessages(request))
+      .filter(m => Number(m.id) > teamsBefore && /weekly review:/i.test(m.text));
+    await expect.poll(async () => (await reviewMessages()).length, { timeout: 60_000, intervals: [1_000] }).toBeGreaterThanOrEqual(2);
+
+    const posted = await reviewMessages();
     expect(posted, 'one message per finished run').toHaveLength(2);
 
     for (const [message, run] of [[posted[0], first!], [posted[1], second!]] as const) {

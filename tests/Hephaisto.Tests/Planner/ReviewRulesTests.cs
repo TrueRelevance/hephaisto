@@ -125,6 +125,7 @@ public sealed class ReviewRulesTests
             new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
             options,
             new PlannerServiceTests.StaticOptions<Hephaisto.Agent.CodeFix.CodeFixOptions>(new Hephaisto.Agent.CodeFix.CodeFixOptions { Image = "i", ContextRepositoryUrl = "c" }),
+            new PlannerServiceTests.StaticOptions<Hephaisto.Core.Notifications.NotificationOptions>(new Hephaisto.Core.Notifications.NotificationOptions()),
             new ReviewLauncher(),
             store,
             new ReviewBoardStub(null),

@@ -723,6 +723,58 @@ public static class TeamsBotCards
     }
 
     /// <summary>
+    /// The end of a weekly review run (#312): the counts, or that it failed and why, and the
+    /// review page. One message, never edited, and never a row on the board.
+    /// </summary>
+    /// <remarks>
+    /// The headline is Hephaisto's own words around counts. The sentence under it can carry a
+    /// problem - GitHub's answer, a Job's - so it is a <see cref="Plain"/> run, never markdown.
+    /// The button opens the page and decides nothing: every decision there is a person's click.
+    /// </remarks>
+    public static JsonObject ReviewEvent(NotificationMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        var s = message.Snapshot;
+        var headline = string.IsNullOrWhiteSpace(s.Title) ? "Weekly review" : s.Title;
+
+        var body = new JsonArray
+        {
+            new JsonObject
+            {
+                ["type"] = "TextBlock",
+                ["text"] = headline,
+                ["weight"] = "Bolder",
+                ["size"] = "Medium",
+                ["color"] = SeverityColour(s.Severity),
+                ["wrap"] = true,
+            },
+        };
+
+        if (ModelText(s.Reason, 1_200) is { Length: > 0 } reason)
+        {
+            body.Add(Plain(reason, subtle: true));
+        }
+
+        body.Add(new JsonObject
+        {
+            ["type"] = "TextBlock",
+            ["text"] = Stamp(s.At),
+            ["isSubtle"] = true,
+            ["wrap"] = true,
+        });
+
+        var card = Card(body);
+
+        if (!string.IsNullOrWhiteSpace(message.ReviewUrl))
+        {
+            card["actions"] = new JsonArray { OpenUrl("Open the weekly review", message.ReviewUrl) };
+        }
+
+        return Activity(card, summary: headline);
+    }
+
+    /// <summary>
     /// Identifies a card's content, so an unchanged one is not sent again.
     /// </summary>
     /// <remarks>

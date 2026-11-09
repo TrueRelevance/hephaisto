@@ -595,7 +595,8 @@ notifications:
   #
   # events: IncidentOpened | IncidentEscalated | ApprovalRequired | IncidentResolved | VerificationFailed |
   #         ModeChanged | PolicyChanged |
-  #         CodeFixPlanReady | CodeFixPrOpened | CodeFixFailed      (see codeFix below)
+  #         CodeFixPlanReady | CodeFixPrOpened | CodeFixFailed      (see codeFix below) |
+  #         PlannerReviewFinished      (the weekly review's end, see github.planner.review below)
   # minSeverity: Info | Warning | Critical   (inclusive; defaults to Info)
   # namespaces: empty means "not scoped by namespace", which is the only way a route can carry
   #             ModeChanged or PolicyChanged - those are about the agent and have no namespace.
@@ -1034,19 +1035,45 @@ github:
       deadline: "00:15:00"
       maxConcurrentJobs: 2
 
-    # The weekly review (#312): every open issue of the owner organisation - on the board or
-    # not, in an archived repository or not - is sorted by a read-only coder Job of phase
-    # `review` into can be closed (and why), a real bug, still to build, or unsure, with the
-    # evidence. It PROPOSES ONLY and writes nothing to GitHub: closing, a Priority or a Type is a
-    # person's click on the planner. Needs codeFix.enabled, like triage: the coder's image,
-    # namespace, Secret, egress proxy, model and dev-context. The token of secrets.github needs
-    # read on every repository of the organisation (the search, timelines, sub-issues), and the
-    # coder's GITHUB_TOKEN read on the repositories it may clone.
+    # The weekly review (#312) - OFF by default. Every open issue of the owner organisation -
+    # on the board or not, in an archived repository or not - is sorted by a read-only coder Job
+    # of phase `review` into can be closed (and why), a real bug, still to build, or unsure, with
+    # the evidence, a confidence and a suggested priority. /planner/review in the console shows
+    # the verdicts; the MCP tool get_weekly_review reads them.
+    #
+    # IT PROPOSES ONLY and writes nothing to GitHub. Agreeing (which sets Priority on a board
+    # bug), moving a verdict and "Close N issues" (one comment, then the close, as completed) are
+    # clicks of the approver role on the review page, under the person's name in the audit trail.
+    # An issue in an archived repository can be agreed and is never closed.
+    #
+    # Needs github.planner.enabled (the board it reads is the planner's) and codeFix.enabled, like
+    # triage: the coder's image, namespace, Secret, egress proxy, model and dev-context.
+    #
+    # WHAT THE TOKEN OF secrets.github NEEDS, on top of the planner's: the organisation-wide issue
+    # search (GET /search/issues?q=org:<owner> is:issue is:open - a token sees only what it can
+    # read), and read on EVERY repository of the organisation: its issues and their timelines
+    # (cross-references, commits), sub-issues, and the repository itself (archived). A
+    # fine-grained token: "Issues: read" and "Metadata: read" on all repositories of the
+    # organisation (write where the planner's clicks close). A classic token: `repo`. A
+    # repository it cannot read is simply not in the review. The coder's GITHUB_TOKEN needs read
+    # on the repositories a Job may clone (codeFix.repositories).
     #
     # A run asks only about what is new, changed since its verdict, or reviewed more than
     # recheckAfterDays ago, in batches of issuesPerJob; maxCostUsd bounds the whole run. A slot
     # of the schedule runs once; one missed by less than an hour (a restart across it) runs on
     # startup, an older one is skipped.
+    #
+    # The end of every run - finished or failed - is ONE new message through
+    # notifications.routes, to every route that lists PlannerReviewFinished: its counts (to
+    # close, bugs, to build, unsure), how many wait for a person, and a link to /planner/review
+    # (needs notifications.baseUrl). On the Teams bot that is a personal chat message to the
+    # route's recipients, or the bot's own list. No route lists it by default:
+    #
+    #   notifications:
+    #     routes:
+    #       - channel: teamsBot
+    #         events: [PlannerReviewFinished]
+    #         recipients: [lead@example.com]
     review:
       enabled: false
       # Five cron fields - minute hour day-of-month month day-of-week - read in timeZone.

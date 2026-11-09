@@ -115,6 +115,7 @@ public sealed class McpToolSurfaceTests
         // no database - a door to any of them would be one the catalogue tests cannot see. The
         // triage runner is the planner's Ask Claude button, which the owner asked for through MCP
         // (2026-11-07): behind the approver role, as in the console, and it refuses a model's name.
+        // The weekly review's reader (#312) is the review page's read, and it decides nothing.
         var parameters = typeof(McpPlanner).GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType).ToList();
 
         parameters.Should().Contain(typeof(Hephaisto.Agent.Planner.PlannerService));
@@ -125,7 +126,7 @@ public sealed class McpToolSurfaceTests
         typeof(McpPlanner)
             .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Select(m => m.Name)
-            .Should().BeEquivalentTo("ListAsync", "GetAsync", "FieldsAsync", "CreateAsync", "UpdateAsync", "CloseAsync", "CommentAsync", "AnalyseAsync");
+            .Should().BeEquivalentTo("ListAsync", "GetAsync", "FieldsAsync", "ReviewAsync", "CreateAsync", "UpdateAsync", "CloseAsync", "CommentAsync", "AnalyseAsync");
     }
 
     [Fact]

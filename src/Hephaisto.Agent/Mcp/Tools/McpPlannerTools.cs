@@ -11,8 +11,9 @@ namespace Hephaisto.Agent.Mcp.Tools;
 /// planner's clicks, for a coding agent that is asked to open, plan or close an issue.
 /// </summary>
 /// <remarks>
-/// Three reads any token may call, four writes for a token that may write - none of them
-/// approves an issue's plan or starts a code fix. See <see cref="McpPlanner"/>.
+/// Four reads any token may call - the board's three and the weekly review's - and four writes
+/// for a token that may write; none of them approves an issue's plan, starts a code fix or
+/// decides a review verdict. See <see cref="McpPlanner"/>.
 /// </remarks>
 [McpServerToolType]
 public sealed class McpPlannerTools(McpPlanner planner)
@@ -46,6 +47,15 @@ public sealed class McpPlannerTools(McpPlanner planner)
     [Description("Look up what a GitHub issue on the planning board can be filled in with: the board's fields (Status, Priority, Area, ...) and their options, which fields the board asks for, the issue types (Bug, Feature, Task, Epic), the repositories a new issue can be opened in, the accounts it can be assigned to, and the days it can be planned for. Read before create_planner_issue to fill in every field.")]
     public async Task<string> LookupPlannerFieldsAsync(CancellationToken cancellationToken = default) =>
         McpAnswer.Of(await planner.FieldsAsync(cancellationToken).ConfigureAwait(false));
+
+    [McpServerTool(Name = "get_weekly_review", Title = "Weekly backlog review", ReadOnly = true, Idempotent = true, OpenWorld = false)]
+    [Description("Get the weekly backlog review: Claude's verdict on every open GitHub issue of the organisation, on the planner's board or not - can be closed (done, superseded, obsolete, duplicate, answered or stale), a real bug, still to build, or unsure - with its summary, reason, evidence, confidence, suggested priority and what a person decided. Also the last run's counts, how many wait for a person and when it runs next. Filter by tab and repository. Changes nothing: agreeing, moving and closing are a person's clicks on the review page.")]
+    public async Task<string> GetWeeklyReviewAsync(
+        [Description("close, bug, feature or unsure (low confidence, or no usable verdict). Default: all four.")] string? tab = null,
+        [Description("Part of the repository's name, owner/repo.")] string? repository = null,
+        [Description("At most this many verdicts, 1 to 200. Default 50.")] int? limit = null,
+        CancellationToken cancellationToken = default) =>
+        McpAnswer.Of(await planner.ReviewAsync(tab, repository, McpQuery.Limit(limit, 50, 200), cancellationToken).ConfigureAwait(false));
 
     [McpServerTool(Name = "create_planner_issue", Title = "Open a planner issue", Destructive = false, Idempotent = false, OpenWorld = true)]
     [Authorize(Policy = McpExtensions.WritePolicy)]

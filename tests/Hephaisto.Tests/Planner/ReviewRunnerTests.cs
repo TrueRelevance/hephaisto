@@ -3,8 +3,10 @@ using System.Text.RegularExpressions;
 using Hephaisto.Agent.CodeFix;
 using Hephaisto.Agent.CodeFix.Contract;
 using Hephaisto.Agent.GitHub;
+using Hephaisto.Agent.Notifications;
 using Hephaisto.Agent.Persistence;
 using Hephaisto.Agent.Planner.Review;
+using Hephaisto.Core.Notifications;
 using Hephaisto.Core.Planning;
 using Hephaisto.Tests.TestData;
 using Microsoft.Extensions.DependencyInjection;
@@ -267,6 +269,54 @@ public sealed class ReviewRunnerTests
     }
 
     [Fact]
+    public async Task Every_run_that_ends_is_one_new_message_with_its_counts_and_one_that_failed_says_why()
+    {
+        var h = Harness.Build(issuesPerJob: 10);
+        h.Org(("acme/api", 431), ("acme/web", 118));
+
+        await h.RunAsync();
+
+        var finished = h.Store.Announced.Should().ContainSingle("one message per run, staged with its end").Subject;
+        finished.Event.Should().Be(NotificationEvent.PlannerReviewFinished);
+        finished.Channel.Should().Be(NotificationChannelNames.TeamsBot);
+        finished.UsesChannelRecipients.Should().BeTrue("a route that names nobody tells the bot's own list");
+        finished.Snapshot.Title.Should().Be("Weekly review: 0 to close, 2 bugs, 0 to build, 0 unsure");
+        finished.Snapshot.Reason.Should().Contain("2 open issues").And.Contain("2 reviewed in this run").And.Contain("2 wait for a person");
+        finished.Snapshot.Severity.Should().Be(Hephaisto.Core.Domain.Severity.Info);
+        NotificationLinks.Review(h.Notifications.BaseUrl, finished.Snapshot).Should().Be("https://hephaisto.example/planner/review");
+        NotificationLinks.For(h.Notifications.BaseUrl, "https://grafana.example", null, finished.Snapshot).Should().Be((null, null, null));
+
+        // Nothing changed: no Job, and still the run's message - the verdicts still wait.
+        h.Clock.UtcNow = Given.Now.AddHours(1);
+        var idle = await h.RunAsync();
+        idle.Jobs.Should().Be(0);
+        h.Store.Announced.Should().HaveCount(2);
+        h.Store.Announced[1].Snapshot.Reason.Should().Contain("0 reviewed in this run").And.Contain("2 kept");
+        h.Store.Announced[1].CorrelationKey.Should().NotBe(finished.CorrelationKey, "no cooldown swallows one run's end behind another's");
+
+        h.Board.Value = null;
+        h.Clock.UtcNow = Given.Now.AddHours(2);
+        await h.RunAsync();
+
+        var failed = h.Store.Announced.Should().HaveCount(3).And.Subject.Last();
+        failed.Snapshot.Title.Should().Be("Weekly review failed");
+        failed.Snapshot.Reason.Should().StartWith("The run failed: the planner's board could not be read");
+        failed.Snapshot.Severity.Should().Be(Hephaisto.Core.Domain.Severity.Warning);
+    }
+
+    [Fact]
+    public async Task Without_a_route_for_the_event_a_run_ends_and_tells_nobody()
+    {
+        var h = Harness.Build(issuesPerJob: 10);
+        h.Notifications.Routes.Clear();
+        h.Org(("acme/api", 431));
+
+        (await h.RunAsync()).State.Should().Be(PlannerReviewRunState.Finished);
+
+        h.Store.Announced.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Without_the_board_there_is_no_run_rather_than_a_wrong_one()
     {
         var h = Harness.Build();
@@ -416,6 +466,8 @@ public sealed class ReviewRunnerTests
 
         public required GitHubOptions Options { get; init; }
 
+        public required NotificationOptions Notifications { get; init; }
+
         public static Harness Build(bool enabled = true, int issuesPerJob = 25, int concurrency = 2, decimal maxCostUsd = 10m, int recheckAfterDays = 28)
         {
             var github = new ReviewGitHub();
@@ -444,6 +496,13 @@ public sealed class ReviewRunnerTests
                 },
             };
 
+            // The route an install that wants the message has: the Teams bot, for the event.
+            var notifications = new NotificationOptions
+            {
+                BaseUrl = "https://hephaisto.example",
+                Routes = [new NotificationRoute { Channel = NotificationChannelNames.TeamsBot, Events = [NotificationEvent.PlannerReviewFinished] }],
+            };
+
             var codeFix = new CodeFixOptions { Image = "hephaisto/coder:dev", ContextRepositoryUrl = "http://coder-git/dev-context.git", Namespace = "hephaisto-coder", Sdk = "fake" };
             var store = new InMemoryReviewStore();
             var launcher = new ReviewLauncher();
@@ -454,6 +513,7 @@ public sealed class ReviewRunnerTests
                 services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
                 new PlannerServiceTests.StaticOptions<GitHubOptions>(options),
                 new PlannerServiceTests.StaticOptions<CodeFixOptions>(codeFix),
+                new PlannerServiceTests.StaticOptions<NotificationOptions>(notifications),
                 launcher,
                 store,
                 board,
@@ -464,7 +524,7 @@ public sealed class ReviewRunnerTests
                 Delay = async (_, _) => await Task.Yield(),
             };
 
-            return new Harness { Runner = runner, GitHub = github, Launcher = launcher, Store = store, Board = board, Clock = clock, Options = options };
+            return new Harness { Runner = runner, GitHub = github, Launcher = launcher, Store = store, Board = board, Clock = clock, Options = options, Notifications = notifications };
         }
 
         public void Org(params (string Repository, int Number)[] issues)

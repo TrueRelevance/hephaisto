@@ -152,7 +152,7 @@ notifications:
         enabled: true
   routes:
     - channel: webhook
-      events: [IncidentEscalated, CodeFixPlanReady, CodeFixPrOpened, CodeFixFailed]
+      events: [IncidentEscalated, CodeFixPlanReady, CodeFixPrOpened, CodeFixFailed, PlannerReviewFinished]
     - channel: teamsBot
       events: [IncidentEscalated, ApprovalRequired, VerificationFailed, CodeFixPlanReady]
       minSeverity: Warning
