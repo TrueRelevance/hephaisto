@@ -136,6 +136,9 @@ public sealed class PlannerService(
     public const string AuditActive = "planner.active";
     public const string AuditEdit = "planner.edit";
 
+    /// <summary>A person's decision on a verdict of the weekly review (#312): agree, move, unsure. Its history.</summary>
+    public const string AuditReview = "planner.review";
+
     public const int MaxComment = 60_000;
 
     /// <summary>What begins every comment the agent posts with Claude's analysis. Only one by the agent's own account counts.</summary>
@@ -951,6 +954,100 @@ public sealed class PlannerService(
 
         return (PlannerActionOutcome.Done, "the comment is on the issue", posted.Value);
     }
+
+    /// <summary>
+    /// Closes an issue after the weekly review (#312), on the board or not: one comment that says
+    /// why - <paramref name="text"/>, signed with the person's name - then the close, as completed.
+    /// The comment goes first, so an issue is never closed without its reason; a refusal of the
+    /// close after it says that the comment is there and the issue is still open.
+    /// </summary>
+    /// <param name="issueId">The issue's node id: an issue the board does not hold has no item to go by.</param>
+    /// <param name="closeReason">The review's word for why, for the audit row.</param>
+    /// <param name="text">The comment without its signature; the caller has made a model's words in it inert.</param>
+    public async Task<(PlannerActionOutcome Outcome, string Message)> CloseReviewedAsync(
+        string repository, int number, string issueId, string closeReason, string text, string actor, CancellationToken ct, AuditOrigin? origin = null)
+    {
+        var who = actor?.Trim() ?? string.Empty;
+        ArgumentException.ThrowIfNullOrWhiteSpace(who);
+
+        if (!Enabled)
+        {
+            return (PlannerActionOutcome.Off, "the planner is off");
+        }
+
+        if (IncidentStateMachine.IsForbiddenGranter(who))
+        {
+            return (PlannerActionOutcome.Forbidden, $"'{who}' may not close here: what the planner does is a person's click.");
+        }
+
+        var reference = $"{repository}#{number}";
+
+        if (string.IsNullOrWhiteSpace(issueId))
+        {
+            return (PlannerActionOutcome.NotFound, $"{reference} has no node id to close it by");
+        }
+
+        var body = PlannerComment.Signed(text ?? string.Empty, who);
+
+        if (body.Length > MaxComment)
+        {
+            return (PlannerActionOutcome.NotFound, $"a comment holds at most {MaxComment} characters");
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+        {
+            return (PlannerActionOutcome.Off, "the planner is off");
+        }
+
+        var url = OnBoard(repository, number)?.Url;
+
+        await AuditAsync(AuditClose, who, $"{reference} closed as {closeReason}, from the weekly review", repository, number, url, OnBoard(repository, number)?.ItemId,
+            new { reason = closeReason, via = "review" }, ct, origin).ConfigureAwait(false);
+
+        var posted = await client.CreateCommentAsync(repository, number, body, ct).ConfigureAwait(false);
+
+        if (!posted.Ok)
+        {
+            var refused = $"the comment could not be posted, so it was not closed: {posted.Describe()}";
+            await AuditAsync(AuditRefused, who, $"{reference}: GitHub refused, {refused}", repository, number, url, null, new { detail = refused }, ct, origin).ConfigureAwait(false);
+
+            return (PlannerActionOutcome.Refused, refused);
+        }
+
+        var closed = await client.CloseIssueAsync(issueId, notPlanned: false, ct).ConfigureAwait(false);
+
+        if (!closed.Ok)
+        {
+            var refused = $"the comment is on the issue, but GitHub would not close it: {closed.Describe()}";
+            await AuditAsync(AuditRefused, who, $"{reference}: GitHub refused, {refused}", repository, number, url, null, new { detail = refused }, ct, origin).ConfigureAwait(false);
+
+            return (PlannerActionOutcome.Refused, refused);
+        }
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (kept is { Board: { } board } && OnBoard(repository, number) is { } item)
+            {
+                var changed = item with { Open = false, ClosedAt = clock.UtcNow, Comments = item.Comments + 1 };
+                kept = Present(board with { Items = [.. board.Items.Select(i => i.ItemId == changed.ItemId ? changed : i)] }, kept.ReadAt ?? clock.UtcNow, kept.Problem);
+                patches++;
+                Changed?.Invoke();
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        return (PlannerActionOutcome.Done, "closed as completed, with its reason as a comment");
+    }
+
+    /// <summary>The open item of the kept board that is this issue, or null. What a click of the review sets a field on.</summary>
+    public BoardItem? OpenItem(string repository, int number) => OnBoard(repository, number) is { Open: true } item ? item : null;
 
     /// <summary>
     /// The board's issues - open, closed, or both - whose title, description, reference or labels

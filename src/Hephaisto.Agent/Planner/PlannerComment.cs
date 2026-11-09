@@ -23,6 +23,14 @@ public static partial class PlannerComment
     }
 
     /// <summary>
+    /// A comment the planner writes for a person's click whose words are not all theirs - the
+    /// weekly review's reason for closing (#312): the signature line names them, and there is NO
+    /// marker, so a replan never passes a model's words on as that person's answer.
+    /// </summary>
+    public static string Signed(string text, string person) =>
+        $"{text.TrimEnd()}\n\n<sub>Written by {Name(person)} in Hephaisto's planner.</sub>";
+
+    /// <summary>
     /// A comment an agent relayed through the MCP endpoint (#307): the words, and a line that says
     /// so and names the person it was for when one is known. No marker - only a person in the
     /// console writes a comment a replan may pass on as theirs.

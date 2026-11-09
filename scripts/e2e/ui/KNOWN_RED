@@ -12,11 +12,6 @@
 # floor passes it, the entry is stale and a unit test fails (UiSuiteTests).
 #
 # The weekly backlog review (#312) landed its suite first, stage 1 of five. Stage 2 is the
-# contract and the coder phase `review`, which no test here can see without stage 3.
-planner-review.spec.ts R02 0.15 stage 4 (#312): no review page, nav entry, tabs or cards yet
-planner-review.spec.ts R03 0.15 stage 4 (#312): no review page, so no archived card that refuses Close
-planner-review.spec.ts R04 0.15 stage 4 (#312): no Agree click, so no Priority set through PlannerService
-planner-review.spec.ts R05 0.15 stage 4 (#312): no move click
-planner-review.spec.ts R06 0.15 stage 4 (#312): no Close N issues
-planner-review.spec.ts R07 0.15 stage 4 (#312): the incremental run is stage 3, the decisions it must keep are stage 4's clicks
+# contract and the coder phase `review`, which no test here can see without stage 3; stage 3 the
+# run (R01), stage 4 the page and its clicks (R02-R07). Stage 5 is the Teams message.
 planner-review.spec.ts R08 0.15 stage 5 (#312): no Teams message for a finished run

@@ -74,6 +74,9 @@ test.describe('the design language', () => {
     ['planner', 'Planner'],
     // v0.15.0, rc3: a new issue's form, and an issue of the day in detail beside Claude's analysis.
     ['planner-detail', 'New issue and issue detail'],
+    // #312: the weekly review - its run line, the four tabs with the chosen one washed, the bar
+    // that closes what was agreed, an open, a decided and an archived card with its evidence.
+    ['review', 'Weekly review'],
   ] as const;
 
   /**

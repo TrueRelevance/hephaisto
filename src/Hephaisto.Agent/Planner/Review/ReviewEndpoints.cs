@@ -81,6 +81,21 @@ public sealed record ReviewRunRequest(string? DecidedBy);
 
 public sealed record ReviewRunStarted(Guid RunId, string Message);
 
+/// <param name="DecidedBy">Who, when nobody is signed in. Ignored for a signed-in request, as everywhere.</param>
+public sealed record ReviewDecideRequest(string? DecidedBy);
+
+/// <param name="Group"><c>close</c>, <c>bug</c> or <c>feature</c>.</param>
+/// <param name="CloseReason">With <c>close</c>, and only then: done, superseded, obsolete, duplicate, answered or stale.</param>
+public sealed record ReviewMoveRequest(string? Group, string? CloseReason, string? DecidedBy);
+
+/// <param name="Verdict">The verdict as it is now; null once the issue is out of the review.</param>
+public sealed record ReviewActionResponse(ReviewActionOutcome Outcome, string Message, ReviewVerdictView? Verdict);
+
+/// <param name="Closed">The issues closed, <c>owner/repo#n</c>.</param>
+/// <param name="Refused">The ones GitHub refused, each with why.</param>
+/// <param name="Archived">Agreed, in an archived repository, and left open: nothing was tried on them.</param>
+public sealed record ReviewCloseResponse(ReviewActionOutcome Outcome, string Message, IReadOnlyList<string> Closed, IReadOnlyList<string> Refused, IReadOnlyList<string> Archived);
+
 /// <summary>The review as the console and the API read it (#312).</summary>
 public sealed class ReviewReader(ReviewRunner runner, IReviewStore store, IReviewBoard board, IOptionsMonitor<Hephaisto.Agent.GitHub.GitHubOptions> github, IClock clock)
 {
@@ -173,8 +188,75 @@ public static class ReviewEndpoints
             .WithName("RunPlannerReview")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
+        // A person's clicks (stage 4): each names them, and every GitHub write is the planner's.
+        var verdict = app.MapGroup("/api/planner/review/verdicts/{owner}/{repo}/{number:int}");
+
+        verdict.MapPost("/agree", (string owner, string repo, int number, ReviewDecideRequest? body, HttpContext http, ReviewActions actions, ReviewReader reader, CancellationToken ct) =>
+                DecideAsync(owner, repo, number, body?.DecidedBy, http, reader, ct, actor => actions.AgreeAsync($"{owner}/{repo}", number, actor, ct)))
+            .WithName("AgreeWithReviewVerdict")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        verdict.MapPost("/move", (string owner, string repo, int number, ReviewMoveRequest body, HttpContext http, ReviewActions actions, ReviewReader reader, CancellationToken ct) =>
+                DecideAsync(owner, repo, number, body.DecidedBy, http, reader, ct, actor => actions.MoveAsync($"{owner}/{repo}", number, body.Group, body.CloseReason, actor, ct)))
+            .WithName("MoveReviewVerdict")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        verdict.MapPost("/unsure", (string owner, string repo, int number, ReviewDecideRequest? body, HttpContext http, ReviewActions actions, ReviewReader reader, CancellationToken ct) =>
+                DecideAsync(owner, repo, number, body?.DecidedBy, http, reader, ct, actor => actions.UnsureAsync($"{owner}/{repo}", number, actor, ct)))
+            .WithName("MarkReviewVerdictUnsure")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        app.MapPost("/api/planner/review/close", CloseAsync)
+            .WithName("CloseAgreedReviewIssues")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
         return app;
     }
+
+    private static async Task<Results<Ok<ReviewActionResponse>, NotFound<ReviewActionResponse>, Conflict<ReviewActionResponse>, ValidationProblem>> DecideAsync(
+        string owner, string repo, int number, string? decidedBy, HttpContext http, ReviewReader reader, CancellationToken ct, Func<string, Task<ReviewActionResult>> act)
+    {
+        var actor = ActorResolution.Resolve(http.User, decidedBy);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return NobodyNamed();
+        }
+
+        var result = await act(actor);
+        var now = (await reader.ReadAsync(ct)).Verdicts
+            .FirstOrDefault(v => string.Equals(v.Repository, $"{owner}/{repo}", StringComparison.OrdinalIgnoreCase) && v.Number == number);
+        var response = new ReviewActionResponse(result.Outcome, result.Message, now);
+
+        return result.Outcome switch
+        {
+            ReviewActionOutcome.Done => TypedResults.Ok(response),
+            ReviewActionOutcome.NotFound => TypedResults.NotFound(response),
+            _ => TypedResults.Conflict(response),
+        };
+    }
+
+    private static async Task<Results<Ok<ReviewCloseResponse>, Conflict<ReviewCloseResponse>, ValidationProblem>> CloseAsync(
+        ReviewDecideRequest? body, HttpContext http, ReviewActions actions, CancellationToken ct)
+    {
+        var actor = ActorResolution.Resolve(http.User, body?.DecidedBy);
+
+        if (string.IsNullOrWhiteSpace(actor))
+        {
+            return NobodyNamed();
+        }
+
+        var result = await actions.CloseAgreedAsync(actor, ct);
+        var response = new ReviewCloseResponse(result.Outcome, result.Message, result.Closed, result.Refused, result.Archived);
+
+        return result.Done ? TypedResults.Ok(response) : TypedResults.Conflict(response);
+    }
+
+    private static ValidationProblem NobodyNamed() =>
+        TypedResults.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["decidedBy"] = ["decidedBy is required when nobody is signed in; the audit trail names a person, not a request."],
+        });
 
     private static async Task<Results<Accepted<ReviewRunStarted>, Conflict<string>, ValidationProblem>> RunAsync(
         ReviewRunRequest? body, HttpContext http, ReviewRunner runner, CancellationToken ct)

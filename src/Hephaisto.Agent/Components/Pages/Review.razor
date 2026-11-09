@@ -1,0 +1,581 @@
+@page "/planner/review"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Hephaisto.Agent.Planner.Review
+@inject ReviewReader Reader
+@inject ReviewActions Actions
+@inject ReviewRunner Runner
+@inject IJSRuntime Js
+@inject IAuthorizationService Authorization
+@implements IDisposable
+@preservewhitespace true
+
+@*
+    The weekly review (#312): every open issue of the planner's organisation with Claude's verdict -
+    can be closed, a real bug, still to build, or unsure - for a person to agree with or move.
+    Nothing here writes by itself: Agree on a bug of the board sets its Priority, and "Close N
+    issues" closes what a person decided to close, both through the planner's service.
+
+    A verdict's summary, reason and evidence are a model's words about a stranger's issue: text,
+    always, never markup. An issue's address is a link only when it is an absolute http(s) one.
+*@
+
+<PageTitle>hephaisto — weekly review</PageTitle>
+
+<h1>Weekly review</h1>
+
+@if (_view is null)
+{
+    <p class="hp-muted">reading the review…</p>
+}
+else if (_view.State == ReviewState.Off && _view.Verdicts.Count == 0)
+{
+    <p class="hp-empty" data-testid="review-off">
+        The weekly review is off: @(_view.Problem ?? "github.planner.review.enabled is not set").
+        With it on, Claude goes through every open issue of the planner's organisation once a week, and this page is
+        where a person agrees with each verdict or moves it.
+    </p>
+}
+else
+{
+    <p class="hp-review-sub">
+        Claude went through every open issue of the organisation, on the board or not. Agree with a verdict or move it.
+        Nothing is closed or changed on GitHub until somebody clicks: Agree on a bug of the board sets its Priority, and
+        Close closes what was agreed.
+    </p>
+
+    <div class="hp-filters">
+        <span class="hp-filter-status">
+            <ActorField Viewer="_viewer" @bind-Name="_actor" TestId="review-actor" />
+            @if (_view.State != ReviewState.Off)
+            {
+                <button type="button" data-testid="review-run-now" disabled="@(!_ready || _busy || _view.State == ReviewState.Running)"
+                        title="Start a run now, as the schedule would" @onclick="RunNowAsync">run now</button>
+            }
+        </span>
+    </div>
+
+    @if (_view.Run is { } run)
+    {
+        <div class="hp-review-run" data-testid="review-run" data-run="@run.Id" data-state="@run.State">
+            <span>Run of <b>@When(run.StartedAt)</b> <span class="hp-muted">(@run.Trigger)</span></span>
+            @if (run.State == Hephaisto.Agent.Persistence.PlannerReviewRunState.Running)
+            {
+                <span class="hp-state st-investigating"><span class="glyph">~</span> running</span>
+            }
+            else if (run.State == Hephaisto.Agent.Persistence.PlannerReviewRunState.Failed)
+            {
+                <span class="hp-state st-escalated"><span class="glyph">!!</span> failed</span>
+            }
+            <span><b>@run.Open</b> open in the organisation</span>
+            <span data-testid="review-run-reviewed"><b>@run.Reviewed.Count</b> looked at <span class="mono">(new or changed)</span>, @run.Kept kept</span>
+            <span><b>@run.Jobs</b> @(run.Jobs == 1 ? "Job" : "Jobs"), <span class="mono">@Money(run.CostUsd)</span></span>
+            @if (_view.NextRunAt is { } next)
+            {
+                <span>next run @When(next)</span>
+            }
+        </div>
+
+        @if (run.Problem is { } problem)
+        {
+            <p class="hp-error" data-testid="review-run-problem"><span class="glyph">!!</span> @Display.Truncate(problem, 400)</p>
+        }
+    }
+    else
+    {
+        <p class="hp-muted" data-testid="review-no-run">
+            No run yet. @(_view.NextRunAt is { } first ? $"The first is {When(first)}." : string.Empty)
+        </p>
+    }
+
+    @if (_message is { } message)
+    {
+        <p class="@(message.Ok ? "hp-yes" : "hp-error")" data-testid="review-message" data-ok="@(message.Ok ? "true" : "false")">
+            <span class="glyph">@(message.Ok ? "+" : "!!")</span> @message.Text
+        </p>
+    }
+
+    <div class="hp-review-tabs" role="tablist" aria-label="verdicts">
+        @foreach (var tab in ReviewQueue.Tabs)
+        {
+            var count = ReviewQueue.Count(_view.Verdicts, tab);
+            <button type="button" role="tab" class="hp-review-tab tab-@tab" aria-selected="@(_tab == tab ? "true" : "false")"
+                    data-testid="review-tab-@tab" data-count="@count" disabled="@(!_ready)" @onclick="() => Show(tab)">
+                <span class="hp-review-tab-n">@count</span>
+                <span class="hp-review-tab-l">@ReviewQueue.TabWord(tab)</span>
+                <span class="hp-review-tab-s">@TabNote(tab)</span>
+            </button>
+        }
+    </div>
+
+    @if (_tab == ReviewVerdicts.Close)
+    {
+        var closable = ReviewQueue.Closable(_view.Verdicts);
+        var archived = ReviewQueue.ArchivedAgreed(_view.Verdicts);
+
+        @if (closable.Count > 0 || archived.Count > 0)
+        {
+            <div class="hp-review-apply">
+                <p data-testid="review-apply-note">
+                    <b>@closable.Count agreed.</b>
+                    Close them now: each gets one comment with its reason, written by you in Hephaisto's planner.
+                    @if (archived.Count > 0)
+                    {
+                        <span>@archived.Count more @(archived.Count == 1 ? "is" : "are") agreed in an archived repository and @(archived.Count == 1 ? "stays" : "stay") open: GitHub refuses any change there until it is unarchived.</span>
+                    }
+                </p>
+                <button type="button" class="hp-submit" data-testid="review-close-agreed"
+                        disabled="@(!_ready || _busy || closable.Count == 0 || _view.State == ReviewState.Running)"
+                        title="@(_view.State == ReviewState.Running ? "A run is under way: close when it has finished." : null)"
+                        @onclick="CloseAgreedAsync">Close @closable.Count @(closable.Count == 1 ? "issue" : "issues")</button>
+            </div>
+        }
+    }
+
+    @if (LockedBecause is { } locked && _view.Verdicts.Count > 0)
+    {
+        <p class="hp-muted" data-testid="review-locked">@locked</p>
+    }
+
+    var groups = ReviewQueue.GroupsOf(_view.Verdicts, _tab);
+
+    @if (groups.Count == 0)
+    {
+        <p class="hp-empty" data-testid="review-empty">Nothing under @ReviewQueue.TabWord(_tab).ToLowerInvariant().</p>
+    }
+
+    @foreach (var group in groups)
+    {
+        <section class="hp-review-group" data-testid="@(_tab == ReviewVerdicts.Close ? "review-close-group" : "review-group")" data-reason="@group.Key">
+            <h2>@group.Heading <small>@group.Cards.Count</small></h2>
+            @foreach (var v in group.Cards)
+            {
+                @Card(v)
+            }
+        </section>
+    }
+}
+
+@code {
+    /// <summary>Shared with the other pages, so a name typed once is typed once.</summary>
+    private const string NameStorageKey = "hephaisto.feedback.name";
+
+    private const string NotAnApprover = "Agreeing, moving and closing need the approver role.";
+
+    /// <summary>How often the page looks again while a run is under way. The runner raises no event, and a run takes minutes.</summary>
+    private static readonly TimeSpan RunningPoll = TimeSpan.FromSeconds(3);
+
+    private ReviewView? _view;
+    private ConsoleViewer _viewer = ConsoleViewer.Anonymous;
+    private string _actor = string.Empty;
+    private string _tab = ReviewVerdicts.Close;
+    private bool _busy;
+
+    /// <summary>
+    /// Interactive, and the remembered name read: until then no button can be pressed. A click
+    /// before the circuit is up is dropped without a word, and one before the name is read would
+    /// be refused for want of a name.
+    /// </summary>
+    private bool _ready;
+
+    /// <summary>The card whose "→ Close" asks for a reason.</summary>
+    private string? _reasonFor;
+
+    private (bool Ok, string Text)? _message;
+    private CancellationTokenSource? _cts;
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    public string? TabParameter { get; set; }
+
+    [Inject]
+    private AuthenticationStateProvider? AuthProvider { get; set; }
+
+    private string? LockedBecause =>
+        !_viewer.MayDecide ? NotAnApprover
+        : string.IsNullOrWhiteSpace(_viewer.Actor(_actor)) ? "Type your name above: every click is recorded under it."
+        : null;
+
+    private bool Locked => !_ready || _busy || LockedBecause is not null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+        _tab = ReviewQueue.Tabs.Contains(TabParameter ?? string.Empty) ? TabParameter! : ReviewVerdicts.Close;
+        _viewer = await ConsoleViewer.ResolveAsync(AuthProvider, Authorization);
+
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            var remembered = await Js.InvokeAsync<string?>("hephaisto.storageGet", NameStorageKey);
+
+            if (!string.IsNullOrWhiteSpace(remembered) && string.IsNullOrWhiteSpace(_actor))
+            {
+                _actor = remembered;
+            }
+        }
+        catch (JSException)
+        {
+            // A convenience. The field is still there to type into.
+        }
+        catch (InvalidOperationException)
+        {
+            // Prerendering: there is no browser yet.
+            return;
+        }
+
+        _ready = RendererInfo.IsInteractive;
+        StateHasChanged();
+
+        if (_ready && _cts is { } cts)
+        {
+            _ = PollAsync(cts.Token);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _view = await Reader.ReadAsync(_cts?.Token ?? CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+    }
+
+    /// <summary>While a run is under way, the page follows it: its line, then its verdicts as batches finish.</summary>
+    private async Task PollAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(RunningPoll);
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                if (_busy || _view is not { } view || (view.State != ReviewState.Running && view.Run?.State != Hephaisto.Agent.Persistence.PlannerReviewRunState.Running))
+                {
+                    continue;
+                }
+
+                await InvokeAsync(async () =>
+                {
+                    await LoadAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void Show(string tab)
+    {
+        _tab = tab;
+        _reasonFor = null;
+    }
+
+    private string TabNote(string tab)
+    {
+        var verdicts = _view?.Verdicts ?? [];
+
+        if (tab == ReviewVerdicts.Unsure)
+        {
+            return "low confidence, or marked by a person";
+        }
+
+        var decided = ReviewQueue.Decided(verdicts, tab);
+
+        return tab == ReviewVerdicts.Close ? $"{decided} decided · {ReviewQueue.Closable(verdicts).Count} to close" : $"{decided} decided";
+    }
+
+    private RenderFragment Card(ReviewVerdictView v) => __builder =>
+    {
+        var reference = $"{v.Repository}#{v.Number}";
+        var actions = ReviewQueue.ActionsFor(v, _tab);
+        var agreed = v.Decision is { Agreed: true };
+
+        <article class="hp-codefix hp-review-card @(v.Decision is null ? string.Empty : "is-decided")" data-testid="review-card" data-reference="@reference">
+            <div class="hp-review-head">
+                @if (Display.HttpUrl(v.Url) is { } url)
+                {
+                    <a class="mono" href="@url" target="_blank" rel="noopener">@reference</a>
+                }
+                else
+                {
+                    <span class="mono">@reference</span>
+                }
+                <span class="hp-review-title">@v.Title</span>
+            </div>
+
+            <div class="hp-review-chips">
+                @if (_tab == ReviewVerdicts.Close)
+                {
+                    <span class="hp-chip chip-reason">@ReviewQueue.CloseReasonHeading(ReviewQueue.CloseReasonOf(v))</span>
+                }
+                else if (_tab == ReviewVerdicts.Unsure)
+                {
+                    <span class="hp-chip">proposed: @(ReviewQueue.Groups.Contains(v.Group) ? ReviewQueue.GroupWord(v.Group) : "nothing")</span>
+                }
+                @if (v.Priority is { } priority && _tab != ReviewVerdicts.Close)
+                {
+                    <span class="hp-chip mono">@priority</span>
+                }
+                <span class="hp-chip @(v.Confidence == "low" ? "chip-low" : string.Empty)">@v.Confidence confidence</span>
+                @if (!v.OnBoard)
+                {
+                    <span class="hp-chip" data-testid="review-card-board">not on the board</span>
+                }
+                @if (v.Related is { } related)
+                {
+                    <span class="hp-chip">related <span class="mono">@related</span></span>
+                }
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(v.Summary))
+            {
+                <p class="hp-review-summary">@v.Summary</p>
+            }
+            <p class="hp-review-why"><span class="hp-review-why-label">Why:</span> <span data-testid="review-card-reason">@v.Reason</span></p>
+
+            @if (v.Evidence.Count > 0)
+            {
+                <div class="hp-review-evidence">
+                    @foreach (var e in v.Evidence)
+                    {
+                        <span class="hp-review-ev @EvidenceClass(e.Ok)" data-testid="review-evidence" data-ok="@(e.Ok is { } ok ? (ok ? "true" : "false") : "unknown")" title="@EvidenceTitle(e.Ok)"><span class="glyph">@EvidenceGlyph(e.Ok)</span> @e.Text</span>
+                    }
+                </div>
+            }
+
+            @if (v.Archived)
+            {
+                <p class="hp-review-archived" data-testid="review-archived">
+                    <span class="glyph">!</span> The repository is archived. GitHub refuses every change there, so this issue
+                    cannot be closed until the repository is unarchived; it can still be agreed with.
+                </p>
+            }
+
+            <div class="hp-review-decide">
+                @if (actions.Agree)
+                {
+                    <button type="button" data-testid="review-agree" aria-pressed="@(agreed ? "true" : "false")" disabled="@Locked"
+                            title="@(LockedBecause ?? "Agree with Claude's verdict")" @onclick="() => AgreeAsync(v)">@AgreeWord(v)</button>
+                }
+                @foreach (var to in actions.MoveTo)
+                {
+                    <button type="button" data-testid="review-move-@to" disabled="@Locked" title="@(LockedBecause ?? $"Move it to {ReviewQueue.TabWord(to).ToLowerInvariant()}")"
+                            aria-pressed="@(v.Decision is { Agreed: false, Unsure: false } d && d.Group == to ? "true" : "false")"
+                            @onclick="() => MoveAsync(v, to)">→ @ReviewQueue.MoveWord(to)</button>
+                }
+                @if (actions.Unsure)
+                {
+                    <button type="button" data-testid="review-mark-unsure" disabled="@Locked" title="@(LockedBecause ?? "You cannot tell either")"
+                            @onclick="() => UnsureAsync(v)">Unsure</button>
+                }
+                @if (v.Decision is { } decision)
+                {
+                    <span class="hp-review-who" data-testid="review-decided" title="@Display.Timestamp(decision.At)">@ReviewQueue.DecidedWords(decision), @When(decision.At)</span>
+                }
+            </div>
+
+            @if (_reasonFor == reference)
+            {
+                <div class="hp-review-reasons" data-testid="review-close-reasons">
+                    <span class="hp-muted">close it as</span>
+                    @foreach (var reason in ReviewQueue.CloseReasonOrder)
+                    {
+                        <button type="button" data-testid="review-close-reason" data-reason="@reason" disabled="@Locked"
+                                @onclick="() => MoveAsync(v, ReviewVerdicts.Close, reason)">@ReviewQueue.CloseReasonWord(reason)</button>
+                    }
+                    <button type="button" @onclick="() => _reasonFor = null">cancel</button>
+                </div>
+            }
+        </article>
+    };
+
+    /// <summary>Agree, and on a bug what agreeing sets: a Priority on the board, nothing for an issue that is not on it.</summary>
+    private static string AgreeWord(ReviewVerdictView v) =>
+        v.Group == ReviewVerdicts.Bug && v.Priority is { } p
+            ? v.OnBoard ? $"Agree, set {p}" : $"Agree ({p}, not on the board)"
+            : "Agree";
+
+    private static string EvidenceGlyph(bool? ok) => ok switch { true => "+", false => "!!", _ => "." };
+
+    private static string EvidenceClass(bool? ok) => ok switch { true => "ev-ok", false => "ev-bad", _ => string.Empty };
+
+    private static string EvidenceTitle(bool? ok) => ok switch
+    {
+        true => "GitHub's facts bear this out",
+        false => "GitHub's facts say otherwise",
+        _ => "nothing Hephaisto gathered speaks to this",
+    };
+
+    private static string When(DateTimeOffset at) => at.UtcDateTime.ToString("ddd d MMM, HH:mm 'UTC'", CultureInfo.InvariantCulture);
+
+    private static string Money(decimal usd) => "$" + usd.ToString("0.00", CultureInfo.InvariantCulture);
+
+    private Task AgreeAsync(ReviewVerdictView v) =>
+        ClickAsync((actor, ct) => Actions.AgreeAsync(v.Repository, v.Number, actor, ct));
+
+    private Task UnsureAsync(ReviewVerdictView v) =>
+        ClickAsync((actor, ct) => Actions.UnsureAsync(v.Repository, v.Number, actor, ct));
+
+    /// <summary>A move to close asks for the reason first; the others go at once.</summary>
+    private Task MoveAsync(ReviewVerdictView v, string to, string? reason = null)
+    {
+        if (to == ReviewVerdicts.Close && reason is null)
+        {
+            _reasonFor = $"{v.Repository}#{v.Number}";
+            return Task.CompletedTask;
+        }
+
+        return ClickAsync((actor, ct) => Actions.MoveAsync(v.Repository, v.Number, to, reason, actor, ct));
+    }
+
+    /// <summary>
+    /// One click. Who may, and who it is, are asked here and again by the actions' door; the name
+    /// recorded is the token's when somebody is signed in, never the typed one.
+    /// </summary>
+    private async Task ClickAsync(Func<string, CancellationToken, Task<ReviewActionResult>> act)
+    {
+        if (_busy || !_ready)
+        {
+            return;
+        }
+
+        if (LockedBecause is { } locked)
+        {
+            _message = (false, locked);
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var result = await act(_viewer.Actor(_actor)!, _cts?.Token ?? CancellationToken.None);
+
+            _message = (result.Done, $"{result.Message}.");
+            _reasonFor = null;
+
+            await LoadAsync();
+
+            if (result.Done)
+            {
+                await RememberAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _busy = false;
+    }
+
+    private async Task CloseAgreedAsync()
+    {
+        if (_busy || !_ready)
+        {
+            return;
+        }
+
+        if (LockedBecause is { } locked)
+        {
+            _message = (false, locked);
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var result = await Actions.CloseAgreedAsync(_viewer.Actor(_actor)!, _cts?.Token ?? CancellationToken.None);
+
+            _message = (result.Done, $"{result.Message}.");
+            await LoadAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _busy = false;
+    }
+
+    private async Task RunNowAsync()
+    {
+        if (_busy || !_ready)
+        {
+            return;
+        }
+
+        if (LockedBecause is { } locked)
+        {
+            _message = (false, locked);
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            var started = await Runner.StartAsync(Hephaisto.Agent.Persistence.PlannerReviewTrigger.Manual, _viewer.Actor(_actor)!, slot: null, _cts?.Token ?? CancellationToken.None);
+
+            _message = (started.Outcome == ReviewStartOutcome.Started, $"{started.Message}.");
+            await LoadAsync();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _message = (false, ex.Message);
+        }
+
+        _busy = false;
+    }
+
+    private async Task RememberAsync()
+    {
+        if (_viewer.Authenticated || string.IsNullOrWhiteSpace(_actor))
+        {
+            return;
+        }
+
+        try
+        {
+            await Js.InvokeVoidAsync("hephaisto.storageSet", NameStorageKey, _actor.Trim());
+        }
+        catch (JSException)
+        {
+            // A convenience; the click is already recorded.
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

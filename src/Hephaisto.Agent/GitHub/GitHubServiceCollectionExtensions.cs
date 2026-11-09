@@ -50,6 +50,7 @@ public static class GitHubServiceCollectionExtensions
         services.TryAddSingleton<Planner.Review.IReviewBoard, Planner.Review.PlannerReviewBoard>();
         services.TryAddSingleton<Planner.Review.ReviewRunner>();
         services.TryAddSingleton<Planner.Review.ReviewReader>();
+        services.TryAddSingleton<Planner.Review.ReviewActions>();
 
         var configured = configuration.GetSection(GitHubOptions.SectionName).Get<GitHubOptions>() ?? new GitHubOptions();
 

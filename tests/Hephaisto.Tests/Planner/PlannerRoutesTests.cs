@@ -23,6 +23,7 @@ public sealed class PlannerRoutesTests
         builder.Services.AddSingleton<TriageRunner>(_ => throw new NotSupportedException());
         builder.Services.AddSingleton<Hephaisto.Agent.Planner.Review.ReviewRunner>(_ => throw new NotSupportedException());
         builder.Services.AddSingleton<Hephaisto.Agent.Planner.Review.ReviewReader>(_ => throw new NotSupportedException());
+        builder.Services.AddSingleton<Hephaisto.Agent.Planner.Review.ReviewActions>(_ => throw new NotSupportedException());
 
         var app = builder.Build();
 
@@ -62,6 +63,10 @@ public sealed class PlannerRoutesTests
             "/api/planner/issues",
             "/api/planner/triage",
             "/api/planner/review/run",
+            "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/agree",
+            "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/move",
+            "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/unsure",
+            "/api/planner/review/close",
         ]);
 
         writes.Should().OnlyContain(e => Verb(e) == "POST" && Policy(e) == AuthenticationExtensions.ApprovePolicy);

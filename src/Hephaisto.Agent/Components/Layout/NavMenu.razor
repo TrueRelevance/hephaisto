@@ -4,6 +4,8 @@
 @inject IServiceScopeFactory Scopes
 @inject IIncidentNotifier Notifier
 @inject Hephaisto.Agent.Planner.PlannerService Planner
+@inject Hephaisto.Agent.Planner.Review.ReviewReader Review
+@inject Hephaisto.Agent.Planner.Review.ReviewActions ReviewActions
 @implements IDisposable
 
 <nav class="hp-nav">
@@ -44,11 +46,22 @@
             @* The planner (v0.15.0). The badge is what is planned for today and still open, from
                the board as it was last read - the navigation asks GitHub nothing, so it shows
                nothing until somebody has opened the page. *@
-            <NavLink href="planner" data-testid="nav-planner">
+            <NavLink href="planner" Match="NavLinkMatch.All" data-testid="nav-planner">
                 planner
                 @if (PlannerBadge > 0)
                 {
                     <span class="hp-nav-badge" data-testid="nav-planner-badge" title="@PlannerBadge planned for today and still open">@PlannerBadge</span>
+                }
+            </NavLink>
+        </li>
+        <li>
+            @* The weekly review (#312). The badge is the verdicts nobody decided yet, read on the
+               navigation's slow timer and at once after a click on the review. *@
+            <NavLink href="planner/review" data-testid="nav-review">
+                review
+                @if (_reviewPending > 0)
+                {
+                    <span class="hp-nav-badge" data-testid="nav-review-badge" title="@_reviewPending verdicts of the weekly review nobody decided yet">@_reviewPending</span>
                 }
             </NavLink>
         </li>
@@ -87,6 +100,7 @@
 @code {
     private AgentStatusView? _status;
     private CodeFixCounts? _codeFixes;
+    private int _reviewPending;
     private CancellationTokenSource? _cts;
     private ConsoleViewer _viewer = ConsoleViewer.Anonymous;
 
@@ -144,9 +158,28 @@
         // The planner's badge follows the plan at once: a click on "today" on any page of this
         // tab, or of another one, is the day's plan changing.
         Planner.Changed += OnPlannerChanged;
+        ReviewActions.Changed += OnReviewChanged;
     }
 
     private void OnPlannerChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void OnReviewChanged() => _ = InvokeAsync(async () =>
+    {
+        await RefreshReviewAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshReviewAsync()
+    {
+        try
+        {
+            _reviewPending = (await Review.ReadAsync(_cts?.Token ?? CancellationToken.None)).Pending;
+        }
+        catch (Exception)
+        {
+            // As the counts above: a database blip keeps the last known number.
+        }
+    }
 
     /// <summary>
     /// The badge moves the moment an attempt does, rather than up to thirty seconds later: a plan
@@ -224,11 +257,13 @@
         // Outside the try above, and it never throws: a status query that failed must not also
         // freeze the code-fix count.
         await RefreshCodeFixesAsync();
+        await RefreshReviewAsync();
     }
 
     public void Dispose()
     {
         Planner.Changed -= OnPlannerChanged;
+        ReviewActions.Changed -= OnReviewChanged;
         _cts?.Cancel();
         _cts?.Dispose();
     }

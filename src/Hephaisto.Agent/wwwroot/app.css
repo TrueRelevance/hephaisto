@@ -2483,3 +2483,240 @@ a.hp-planner-row-title:hover {
 .hp-planner-active .hp-planner-row-title {
     font-size: var(--text-3xl);
 }
+
+/* ---------------------------------------------------------------- weekly review (#312) */
+
+/* The page reads like the mock the owner approved: a line about the run, four tabs that are the
+   groups with their counts, then the cards of one tab under their headings. A tab's wash is its
+   group's - blue to close, pink a bug, lime to build, yellow a person decides - and only the
+   chosen tab wears it; the word and the count carry the meaning, the wash only helps. */
+.hp-review-sub {
+    color: var(--fg-dim);
+    max-width: 72ch;
+    margin: -0.4rem 0 1rem;
+}
+
+.hp-review-run {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 1.2rem;
+    align-items: baseline;
+    color: var(--fg-dim);
+    font-size: var(--text-xl);
+    margin: 0.6rem 0 1rem;
+}
+
+.hp-review-run b {
+    color: var(--fg);
+    font-weight: 600;
+}
+
+.hp-review-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.7rem;
+    margin: 0 0 1rem;
+}
+
+button.hp-review-tab {
+    display: grid;
+    gap: 0.1rem;
+    justify-items: start;
+    text-align: left;
+    padding: 0.85rem 1.1rem;
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-raised);
+    box-shadow: var(--shadow-card);
+    font-weight: 400;
+}
+
+button.hp-review-tab:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--bg-raised);
+}
+
+button.hp-review-tab[aria-selected="true"] {
+    border-color: transparent;
+}
+
+button.hp-review-tab.tab-close[aria-selected="true"] { background: var(--wash-blue); }
+button.hp-review-tab.tab-bug[aria-selected="true"] { background: var(--wash-pink); }
+button.hp-review-tab.tab-feature[aria-selected="true"] { background: var(--wash-lime); }
+button.hp-review-tab.tab-unsure[aria-selected="true"] { background: var(--wash-yellow); }
+
+.hp-review-tab-n {
+    font-size: var(--text-5xl);
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.hp-review-tab-l {
+    font-weight: 700;
+}
+
+.hp-review-tab-s {
+    font-size: var(--text-md);
+    color: var(--fg-dim);
+}
+
+/* "Close N issues": the one write of the page that touches many issues, on a sunken field so it
+   reads as the page's own bar rather than as another card. */
+.hp-review-apply {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    align-items: center;
+    padding: 0.7rem 1rem;
+    margin: 0 0 1rem;
+    border-radius: var(--radius);
+    background: var(--bg-sunken);
+}
+
+.hp-review-apply p {
+    flex: 1 1 22rem;
+    margin: 0;
+    color: var(--fg-dim);
+}
+
+.hp-review-apply b {
+    color: var(--fg);
+}
+
+.hp-review-group {
+    display: grid;
+    gap: 0.7rem;
+    margin: 0 0 1.2rem;
+}
+
+.hp-review-group h2 {
+    font-size: var(--text-2xl);
+    margin: 0.4rem 0 0;
+}
+
+.hp-review-group h2 small {
+    margin-left: 0.4rem;
+    color: var(--fg-faint);
+    font-weight: 400;
+    font-size: var(--text-xl);
+}
+
+.hp-review-card {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+/* Decided: settled into the page, the way an agreed card was drawn in the mock. */
+.hp-review-card.is-decided {
+    background: var(--bg-sunken);
+    box-shadow: none;
+}
+
+.hp-review-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.7rem;
+    align-items: baseline;
+}
+
+.hp-review-head .mono {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.hp-review-title {
+    flex: 1 1 20rem;
+    min-width: 0;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.hp-review-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.chip-reason {
+    background: var(--wash-blue);
+    color: var(--fg);
+    font-weight: 600;
+}
+
+.chip-low {
+    color: var(--orange);
+}
+
+.hp-review-summary,
+.hp-review-why {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.hp-review-why {
+    color: var(--fg-dim);
+    font-size: var(--text-xl);
+}
+
+.hp-review-why-label {
+    color: var(--fg);
+    font-weight: 600;
+}
+
+/* One fact a chip each, with what GitHub's facts say of it: borne out, contradicted, or not
+   spoken to - the glyph first, then the colour. */
+.hp-review-evidence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.hp-review-ev {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    padding: 0 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--fg-dim);
+    overflow-wrap: anywhere;
+}
+
+.hp-review-ev.ev-ok { color: var(--green); }
+.hp-review-ev.ev-bad { color: var(--red); }
+
+.hp-review-archived {
+    margin: 0;
+    padding: 0.45rem 0.7rem;
+    border-radius: var(--radius);
+    background: var(--wash-yellow);
+    color: var(--fg);
+    font-size: var(--text-xl);
+}
+
+.hp-review-decide,
+.hp-review-reasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.hp-review-decide {
+    padding-top: 0.55rem;
+    border-top: 1px dashed var(--border);
+}
+
+.hp-review-decide button[aria-pressed="true"] {
+    background: var(--wash-blue);
+    border-color: var(--accent);
+}
+
+.hp-review-who {
+    margin-left: auto;
+    color: var(--fg-faint);
+    font-size: var(--text-md);
+}

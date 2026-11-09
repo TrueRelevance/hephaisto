@@ -1398,6 +1398,70 @@ The receipt is white at night.</textarea>
       </div>
     </section>
 
+    <section class="g-sec">
+      <h2>Weekly review</h2>
+      <p class="g-note">
+        #312: every open issue of the organisation with Claude&rsquo;s verdict. The tabs are the
+        groups: each is a raised card with its count, and only the chosen one wears its group&rsquo;s
+        wash &mdash; blue to close, pink a bug, lime to build, yellow a person decides &mdash; with the
+        word and the number carrying the meaning. A card is the code-fix card; a decided one settles
+        onto the sunken field. Evidence is a mono chip per fact, its glyph saying whether GitHub&rsquo;s
+        facts bear it out (<code>+</code>), contradict it (<code>!!</code>) or do not speak to it
+        (<code>.</code>). An archived repository is a yellow note, never a missing button alone.
+      </p>
+
+      <div class="hp-review-run">
+        <span>Run of <b>Mon 16 Nov, 05:00 UTC</b> <span class="hp-muted">(schedule)</span></span>
+        <span><b>214</b> open in the organisation</span>
+        <span><b>38</b> looked at <span class="mono">(new or changed)</span>, 176 kept</span>
+        <span><b>4</b> Jobs, <span class="mono">$3.80</span></span>
+        <span>next run Mon 23 Nov, 05:00 UTC</span>
+      </div>
+
+      <div class="hp-review-tabs" role="tablist" aria-label="verdicts">
+        <button type="button" role="tab" class="hp-review-tab tab-close" aria-selected="true"><span class="hp-review-tab-n">17</span><span class="hp-review-tab-l">Can be closed</span><span class="hp-review-tab-s">4 decided &middot; 3 to close</span></button>
+        <button type="button" role="tab" class="hp-review-tab tab-bug" aria-selected="false"><span class="hp-review-tab-n">58</span><span class="hp-review-tab-l">Real bugs</span><span class="hp-review-tab-s">2 decided</span></button>
+        <button type="button" role="tab" class="hp-review-tab tab-feature" aria-selected="false"><span class="hp-review-tab-n">131</span><span class="hp-review-tab-l">Still to build</span><span class="hp-review-tab-s">0 decided</span></button>
+        <button type="button" role="tab" class="hp-review-tab tab-unsure" aria-selected="false"><span class="hp-review-tab-n">8</span><span class="hp-review-tab-l">Unsure</span><span class="hp-review-tab-s">low confidence, or marked by a person</span></button>
+      </div>
+
+      <div class="hp-review-apply">
+        <p><b>3 agreed.</b> Close them now: each gets one comment with its reason, written by you in Hephaisto's planner. <span>1 more is agreed in an archived repository and stays open: GitHub refuses any change there until it is unarchived.</span></p>
+        <button type="button" class="hp-submit">Close 3 issues</button>
+      </div>
+
+      <section class="hp-review-group">
+        <h2>Already done <small>11</small></h2>
+        <article class="hp-codefix hp-review-card">
+          <div class="hp-review-head"><a class="mono" href="#">acme/api#431</a><span class="hp-review-title">Stale cache entry survives a price change</span></div>
+          <div class="hp-review-chips"><span class="hp-chip chip-reason">Already done</span><span class="hp-chip">high confidence</span><span class="hp-chip">related <span class="mono">acme/api#433</span></span></div>
+          <p class="hp-review-summary">The stale cache entry is fixed and live.</p>
+          <p class="hp-review-why"><span class="hp-review-why-label">Why:</span> <span>Its closing pull request was merged two days ago and nothing in the issue is left to do.</span></p>
+          <div class="hp-review-evidence"><span class="hp-review-ev ev-ok"><span class="glyph">+</span> PR acme/api#433 merged</span><span class="hp-review-ev ev-bad"><span class="glyph">!!</span> PR acme/web#238 merged</span><span class="hp-review-ev"><span class="glyph">.</span> verified live on 11-03</span></div>
+          <div class="hp-review-decide"><button type="button" aria-pressed="false">Agree</button><button type="button" aria-pressed="false">&rarr; Bug</button><button type="button" aria-pressed="false">&rarr; Build</button><button type="button">Unsure</button></div>
+        </article>
+        <article class="hp-codefix hp-review-card is-decided">
+          <div class="hp-review-head"><a class="mono" href="#">acme/web#160</a><span class="hp-review-title">Receipt totals round half-down</span></div>
+          <div class="hp-review-chips"><span class="hp-chip chip-reason">Already done</span><span class="hp-chip">high confidence</span><span class="hp-chip">not on the board</span></div>
+          <p class="hp-review-why"><span class="hp-review-why-label">Why:</span> <span>The pull request that rounds half-up was merged three weeks ago; it said follow-up instead of closing the issue.</span></p>
+          <div class="hp-review-decide"><button type="button" aria-pressed="true">Agree</button><button type="button" aria-pressed="false">&rarr; Bug</button><button type="button" aria-pressed="false">&rarr; Build</button><button type="button">Unsure</button><span class="hp-review-who">agreed by flo, Tue 10 Nov, 09:12 UTC</span></div>
+        </article>
+      </section>
+
+      <section class="hp-review-group">
+        <h2>Obsolete <small>1</small></h2>
+        <article class="hp-codefix hp-review-card">
+          <div class="hp-review-head"><a class="mono" href="#">acme/legacy-ttd#1</a><span class="hp-review-title">Finish the endpoint</span></div>
+          <div class="hp-review-chips"><span class="hp-chip chip-reason">Obsolete</span><span class="hp-chip chip-low">low confidence</span><span class="hp-chip">not on the board</span></div>
+          <p class="hp-review-why"><span class="hp-review-why-label">Why:</span> <span>The repository is archived and nothing can land there any more.</span></p>
+          <div class="hp-review-evidence"><span class="hp-review-ev ev-ok"><span class="glyph">+</span> repository archived</span></div>
+          <p class="hp-review-archived"><span class="glyph">!</span> The repository is archived. GitHub refuses every change there, so this issue cannot be closed until the repository is unarchived; it can still be agreed with.</p>
+          <div class="hp-review-decide"><button type="button" aria-pressed="false">Agree</button><button type="button" aria-pressed="false">&rarr; Bug</button><button type="button" aria-pressed="false">&rarr; Build</button><button type="button">Unsure</button></div>
+          <div class="hp-review-reasons"><span class="hp-muted">close it as</span><button type="button">already done</button><button type="button">superseded</button><button type="button">obsolete</button><button type="button">cancel</button></div>
+        </article>
+      </section>
+    </section>
+
 </main>
 </div>
 </body>

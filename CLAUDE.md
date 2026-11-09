@@ -714,6 +714,13 @@ sub-issues, `GET /repos`) and the board is the planner's kept one; tables `plann
 field goes through `PlannerService` and then records the decision with `IReviewStore.DecideAsync`, and a
 close also `MarkGoneAsync`. "Changed" is an `updated_at` that DIFFERS from the verdict's (a reseeded
 stand-in moves it back); a change clears the decision, a recheck keeps it.
+Its page is `/planner/review` (`Components/Pages/Review.razor`, stage 4): the clicks are `ReviewActions`
+(agree, move, unsure, close what was decided), the page's rules `ReviewQueue` (pure, tested without a
+browser). Agree on a bug of the board is the planner's `SetFieldAsync` for Priority; a close is
+`PlannerService.CloseReviewedAsync` - one comment signed like the planner's but WITHOUT the marker (the
+reason is Claude's), then the close by node id, so it needs no board item. An archived repository is
+never tried, and "Close N issues" is refused while a run is under way. Each decision click is one
+`planner.review` audit row - the decision's history, since a changed issue clears the decision itself.
 
 ## The Teams bot, as of v0.9.0-rc4
 
