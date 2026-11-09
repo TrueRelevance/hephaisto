@@ -1483,6 +1483,30 @@
                 },
                 "maxConcurrentJobs": { "type": "integer", "minimum": 1 }
               }
+            },
+            "review": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The weekly review of every open issue of the organisation, in coder Jobs; it proposes and writes nothing to GitHub. Needs codeFix.enabled.",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "schedule": {
+                  "type": "string",
+                  "pattern": "^\\s*\\S+(\\s+\\S+){4}\\s*$",
+                  "description": "Five cron fields: minute hour day-of-month month day-of-week."
+                },
+                "timeZone": { "type": "string", "minLength": 1, "description": "An IANA time zone, such as Europe/Berlin." },
+                "issuesPerJob": { "type": "integer", "minimum": 1, "maximum": 40 },
+                "recheckAfterDays": { "type": "integer", "minimum": 1 },
+                "maxCostUsd": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000 },
+                "maxConcurrentJobs": { "type": "integer", "minimum": 1 },
+                "deadline": {
+                  "type": "string",
+                  "pattern": "^[0-9]{2}:[0-9]{2}:[0-9]{2}$",
+                  "description": "hh:mm:ss, between 2 minutes and 4 hours."
+                },
+                "maxTurns": { "type": "integer", "minimum": 1, "maximum": 500 }
+              }
             }
           }
         }

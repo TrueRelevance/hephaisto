@@ -207,6 +207,9 @@ public sealed partial class GitHubPlannerOptions
     /// <summary>Claude labels an issue and writes an analysis of it, when a person asks (v0.15.0).</summary>
     public GitHubPlannerTriageOptions Triage { get; set; } = new();
 
+    /// <summary>The weekly review of every open issue of <see cref="Owner"/> (#312).</summary>
+    public GitHubPlannerReviewOptions Review { get; set; } = new();
+
     public IReadOnlyList<string> Problems()
     {
         if (!Enabled)
@@ -247,6 +250,7 @@ public sealed partial class GitHubPlannerOptions
         }
 
         problems.AddRange(Triage.Problems());
+        problems.AddRange(Review.Problems());
 
         return problems;
     }
@@ -310,5 +314,110 @@ public sealed class GitHubPlannerTriageOptions
         }
 
         return problems;
+    }
+}
+
+/// <summary>
+/// The weekly review (#312): every open issue of the planner's organisation, on the board or not,
+/// sorted by a read-only coder Job of phase <c>review</c> into can be closed, a real bug, still to
+/// build - or unsure. Bound from <c>GitHub:Planner:Review:*</c>.
+/// </summary>
+/// <remarks>
+/// It proposes and writes nothing to GitHub: every close or field change is a person's click
+/// through <see cref="Planner.PlannerService"/>. Like triage it runs as coder Jobs and borrows
+/// the coder's image, namespace, Secret, egress proxy, model and dev-context from <c>CodeFix:*</c>.
+/// </remarks>
+public sealed class GitHubPlannerReviewOptions
+{
+    /// <summary>The schema's cap on a batch (review-request, <c>issues.maxItems</c>).</summary>
+    public const int MaxIssuesPerJob = 40;
+
+    public bool Enabled { get; set; }
+
+    /// <summary>Five fields, minute hour day-of-month month day-of-week, in <see cref="TimeZone"/>. Monday 06:00 by default.</summary>
+    public string Schedule { get; set; } = "0 6 * * 1";
+
+    /// <summary>An IANA name.</summary>
+    public string TimeZone { get; set; } = "Europe/Berlin";
+
+    public int IssuesPerJob { get; set; } = 25;
+
+    /// <summary>An unchanged issue's verdict is asked for again once it is this old.</summary>
+    public int RecheckAfterDays { get; set; } = 28;
+
+    /// <summary>What one whole run may cost, across all its Jobs. A batch that would start beyond it does not.</summary>
+    public decimal MaxCostUsd { get; set; } = 10m;
+
+    public int MaxConcurrentJobs { get; set; } = 2;
+
+    /// <summary>One Job's deadline.</summary>
+    public TimeSpan Deadline { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>One Job's turns.</summary>
+    public int MaxTurns { get; set; } = 60;
+
+    public IReadOnlyList<string> Problems()
+    {
+        if (!Enabled)
+        {
+            return [];
+        }
+
+        var problems = new List<string>();
+
+        if (Hephaisto.Core.Planning.CronSchedule.TryParse(Schedule, out _, out var why) is false)
+        {
+            problems.Add($"GitHub:Planner:Review:Schedule '{Schedule}' is not a five-field cron expression: {why}");
+        }
+
+        if (Zone() is null)
+        {
+            problems.Add($"GitHub:Planner:Review:TimeZone '{TimeZone}' is not a time zone this system knows (an IANA name such as Europe/Berlin).");
+        }
+
+        if (IssuesPerJob is < 1 or > MaxIssuesPerJob)
+        {
+            problems.Add($"GitHub:Planner:Review:IssuesPerJob must be between 1 and {MaxIssuesPerJob}.");
+        }
+
+        if (RecheckAfterDays < 1)
+        {
+            problems.Add("GitHub:Planner:Review:RecheckAfterDays must be at least 1.");
+        }
+
+        if (MaxCostUsd is <= 0 or > 1000)
+        {
+            problems.Add("GitHub:Planner:Review:MaxCostUsd must be more than 0 and at most 1000.");
+        }
+
+        if (MaxConcurrentJobs < 1)
+        {
+            problems.Add("GitHub:Planner:Review:MaxConcurrentJobs must be at least 1.");
+        }
+
+        if (Deadline < TimeSpan.FromMinutes(2) || Deadline > TimeSpan.FromHours(4))
+        {
+            problems.Add("GitHub:Planner:Review:Deadline must be between 2 minutes and 4 hours.");
+        }
+
+        if (MaxTurns is < 1 or > 500)
+        {
+            problems.Add("GitHub:Planner:Review:MaxTurns must be between 1 and 500.");
+        }
+
+        return problems;
+    }
+
+    /// <summary>The time zone the schedule is read in, or null when the system does not know it.</summary>
+    public TimeZoneInfo? Zone()
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(TimeZone) ? null : TimeZoneInfo.FindSystemTimeZoneById(TimeZone.Trim());
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return null;
+        }
     }
 }

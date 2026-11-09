@@ -436,6 +436,9 @@ is the earlier, cheaper place to hear it - except the last, which only the chart
 {{- if and ($planner.triage | default dict).enabled (not $.Values.codeFix.enabled) -}}
   {{- fail "codeFix.enabled is required when github.planner.triage.enabled is true: Claude analyses an issue in a coder Job, with the coder's image, namespace, Secret and dev-context." -}}
 {{- end -}}
+{{- if and ($planner.review | default dict).enabled (not $.Values.codeFix.enabled) -}}
+  {{- fail "codeFix.enabled is required when github.planner.review.enabled is true: the weekly review runs in coder Jobs, with the coder's image, namespace, Secret and dev-context." -}}
+{{- end -}}
 {{- end -}}
 {{- if $gh.enabled -}}
 {{- if not .Values.secrets.github -}}

@@ -771,6 +771,11 @@ refuses "a planner repository given as a URL"  "${PLANNER[@]}" --set 'github.pla
 refuses "asking Claude without the coder"      "${PLANNER[@]}" --set github.planner.triage.enabled=true
 renders "asking Claude with the coder"         "${PLANNER[@]}" "${CF[@]}" --set github.planner.triage.enabled=true
 refuses "a triage deadline that is not hh:mm:ss" "${PLANNER[@]}" --set github.planner.triage.deadline=15m
+refuses "the weekly review without the coder"  "${PLANNER[@]}" --set github.planner.review.enabled=true
+renders "the weekly review with the coder"     "${PLANNER[@]}" "${CF[@]}" --set github.planner.review.enabled=true
+refuses "a review schedule that is not five fields" "${PLANNER[@]}" "${CF[@]}" --set github.planner.review.enabled=true --set 'github.planner.review.schedule=@weekly'
+refuses "a review batch beyond the contract's 40" "${PLANNER[@]}" "${CF[@]}" --set github.planner.review.issuesPerJob=41
+refuses "a review key nobody declared"         "${PLANNER[@]}" --set github.planner.review.cron=weekly
 refuses "a quiet period of no days"            "${PLANNER[@]}" --set github.planner.staleAfterDays=0
 refuses "an assignee that is not a login"      "${PLANNER[@]}" --set 'github.planner.assignees[0]=some one'
 refuses "a planner key nobody declared"        "${PLANNER[@]}" --set github.planner.project=3

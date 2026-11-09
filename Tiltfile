@@ -514,8 +514,11 @@ if agent:
         chart_values.append('charts/hephaisto/values-dev-github.yaml')
         # Asking Claude about an issue runs as a coder Job, so only with the coder on - and with
         # coder-sdk=fake it is the scripted answer of coder/fake-scripts/default.triage.json, $0.
+        # So is the weekly review (#312), whose verdicts are then coder/fake-scripts/default.review.json;
+        # scripts/e2e/ui/tests/planner-review.spec.ts is how it is accepted.
         if coder:
             chart_set.append('github.planner.triage.enabled=true')
+            chart_set.append('github.planner.review.enabled=true')
 
     # Live: github.com itself, through the coder's egress proxy, with the token of the Secret
     # hephaisto-github - made by hand and applied by nobody here. Layered after

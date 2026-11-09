@@ -48,7 +48,7 @@ public sealed partial class GitHubClient
                 nodes {
                   id
                   fieldValues(first: 20) { nodes {
-                    ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } }
+                    ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt field { ... on ProjectV2SingleSelectField { name } } }
                     ... on ProjectV2ItemFieldDateValue { date field { ... on ProjectV2Field { name } } } } }
                   content { __typename ... on Issue {
                     id number title url state createdAt updatedAt closedAt
@@ -409,6 +409,7 @@ public sealed partial class GitHubClient
         var timeline = Nodes(issue, "timelineItems");
 
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var changed = new Dictionary<string, DateTimeOffset>(StringComparer.OrdinalIgnoreCase);
         var dates = new Dictionary<string, DateOnly>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var value in Nodes(item, "fieldValues"))
@@ -426,6 +427,12 @@ public sealed partial class GitHubClient
             else if (Text(value, "name") is { } option)
             {
                 fields[name] = option;
+
+                // When it was set: how long an item has been in its Status, for the weekly review (#312).
+                if (Time(value, "updatedAt") is { } at)
+                {
+                    changed[name] = at;
+                }
             }
         }
 
@@ -479,7 +486,8 @@ public sealed partial class GitHubClient
                 ? body.Length <= MaxIssueBody ? body : string.Concat(body.AsSpan(0, MaxIssueBody), "\n…")
                 : null,
             issue.TryGetProperty("comments", out var comments) ? Count(comments, "totalCount") : 0,
-            dates);
+            dates,
+            changed);
     }
 
     private static BoardPullRequest? BoardPullOf(JsonElement pull)

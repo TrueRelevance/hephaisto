@@ -756,6 +756,30 @@ spec:
               value: {{ int64 (.maxConcurrentJobs | default 2) | quote }}
             {{- end }}
             {{- end }}
+            {{- with .review }}
+            {{- if .enabled }}
+            # The weekly review (#312): every open issue of the organisation, in coder Jobs.
+            # It proposes only; nothing of it writes to GitHub.
+            - name: GitHub__Planner__Review__Enabled
+              value: "true"
+            - name: GitHub__Planner__Review__Schedule
+              value: {{ .schedule | default "0 6 * * 1" | quote }}
+            - name: GitHub__Planner__Review__TimeZone
+              value: {{ .timeZone | default "Europe/Berlin" | quote }}
+            - name: GitHub__Planner__Review__IssuesPerJob
+              value: {{ int64 (.issuesPerJob | default 25) | quote }}
+            - name: GitHub__Planner__Review__RecheckAfterDays
+              value: {{ int64 (.recheckAfterDays | default 28) | quote }}
+            - name: GitHub__Planner__Review__MaxCostUsd
+              value: {{ .maxCostUsd | default 10 | toString | quote }}
+            - name: GitHub__Planner__Review__MaxConcurrentJobs
+              value: {{ int64 (.maxConcurrentJobs | default 2) | quote }}
+            - name: GitHub__Planner__Review__Deadline
+              value: {{ .deadline | default "00:30:00" | quote }}
+            - name: GitHub__Planner__Review__MaxTurns
+              value: {{ int64 (.maxTurns | default 60) | quote }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- end }}

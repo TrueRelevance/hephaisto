@@ -706,6 +706,14 @@ Its Job is the coder phase `review` (`coder/src/review.ts`, contract `review-*.s
 dev-context): read-only like triage, one batch of issues with the facts Hephaisto gathered, the
 batch's repositories cloned blobless by the prepare role, one verdict per batch issue kept (one
 left out is `unsure`, low) - the same rule for the fake script and a real model.
+Its run is `Planner/Review/` (stage 3): `ReviewRunner.StartAsync` is the one entry of the schedule
+(`ReviewScheduler`) and of `POST /api/planner/review/run`; `ReviewFactsGatherer` reads (search, timeline,
+sub-issues, `GET /repos`) and the board is the planner's kept one; tables `planner_review_runs` and
+`planner_review_verdicts` (one row per issue). Nothing under `Planner/Review/` may call a client write -
+`ReviewRunnerTests.Nothing_of_the_review_calls_a_write_of_the_client` - so a click that closes or sets a
+field goes through `PlannerService` and then records the decision with `IReviewStore.DecideAsync`, and a
+close also `MarkGoneAsync`. "Changed" is an `updated_at` that DIFFERS from the verdict's (a reseeded
+stand-in moves it back); a change clears the decision, a recheck keeps it.
 
 ## The Teams bot, as of v0.9.0-rc4
 

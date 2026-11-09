@@ -193,6 +193,9 @@ public static class PlannerEndpoints
 
         app.MapGet("/api/planner/analysis", AnalysisAsync).WithName("ReadPlannerAnalysis");
 
+        // The weekly review (#312): its read, and a person's "run now".
+        Review.ReviewEndpoints.MapReviewEndpoints(app);
+
         return app;
     }
 

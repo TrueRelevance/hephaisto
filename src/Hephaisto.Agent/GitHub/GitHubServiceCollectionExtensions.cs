@@ -45,6 +45,12 @@ public static class GitHubServiceCollectionExtensions
         services.TryAddSingleton<Planner.PlannerService>();
         services.TryAddSingleton<Planner.TriageRunner>();
 
+        // The weekly review (#312), registered always for the same reason: its read says "Off".
+        services.TryAddSingleton<Planner.Review.IReviewStore, Planner.Review.EfReviewStore>();
+        services.TryAddSingleton<Planner.Review.IReviewBoard, Planner.Review.PlannerReviewBoard>();
+        services.TryAddSingleton<Planner.Review.ReviewRunner>();
+        services.TryAddSingleton<Planner.Review.ReviewReader>();
+
         var configured = configuration.GetSection(GitHubOptions.SectionName).Get<GitHubOptions>() ?? new GitHubOptions();
 
         if (!configured.Enabled)
@@ -69,6 +75,10 @@ public static class GitHubServiceCollectionExtensions
         // The planner's board, read ahead so its page does not wait on GitHub (#306). Asks nothing
         // while the planner is off.
         services.AddHostedService<Planner.PlannerWarmer>();
+
+        // The weekly review's schedule (#312). Starts nothing while the review is off; at startup
+        // it ends a run an earlier process left going.
+        services.AddHostedService<Planner.Review.ReviewScheduler>();
 
         return services;
     }

@@ -85,6 +85,10 @@ public sealed class HephaistoDbContext(DbContextOptions<HephaistoDbContext> opti
 
     public DbSet<WorkItem> WorkItems => Set<WorkItem>();
 
+    public DbSet<PlannerReviewRun> PlannerReviewRuns => Set<PlannerReviewRun>();
+
+    public DbSet<PlannerReviewVerdict> PlannerReviewVerdicts => Set<PlannerReviewVerdict>();
+
     /// <summary>
     /// Marks children created since <paramref name="fromEventIndex"/> / for a new
     /// investigation as Added, so they INSERT rather than UPDATE.
@@ -237,6 +241,7 @@ public sealed class HephaistoDbContext(DbContextOptions<HephaistoDbContext> opti
         ConfigureDigests(modelBuilder);
         ConfigureAlertNotes(modelBuilder);
         ConfigureWorkItems(modelBuilder);
+        ConfigurePlannerReview(modelBuilder);
         ConfigureOperational(modelBuilder);
 
         ApplyConventions(modelBuilder);
@@ -878,6 +883,77 @@ public sealed class HephaistoDbContext(DbContextOptions<HephaistoDbContext> opti
     }
 
     // ------------------------------------------------------------------
+    // The planner's weekly review (#312)
+    // ------------------------------------------------------------------
+
+    private static void ConfigurePlannerReview(ModelBuilder b)
+    {
+        b.Entity<PlannerReviewRun>(e =>
+        {
+            e.ToTable("planner_review_runs");
+            e.HasKey(r => r.Id);
+
+            e.Property(r => r.RequestedBy).HasMaxLength(320).IsRequired();
+            e.Property(r => r.Problem).HasMaxLength(PlannerReviewRunMaxProblem);
+
+            e.Property(r => r.Reviewed)
+                .HasConversion(StringListConverter, StringListComparer)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb")
+                .IsRequired();
+
+            // A slot of the schedule runs once. Postgres says so rather than the scheduler's read:
+            // a restart in the slot's minute, or a second replica, both see "not run yet".
+            e.HasIndex(r => r.Slot, "ux_planner_review_runs_slot")
+                .IsUnique()
+                .HasFilter("slot IS NOT NULL");
+
+            // The newest run, and whether one is still going.
+            e.HasIndex(r => r.StartedAt).HasDatabaseName("ix_planner_review_runs_started_at");
+            e.HasIndex(r => r.State).HasDatabaseName("ix_planner_review_runs_state");
+        });
+
+        b.Entity<PlannerReviewVerdict>(e =>
+        {
+            e.ToTable("planner_review_verdicts");
+            e.HasKey(v => v.Id);
+
+            e.Property(v => v.Repository).HasMaxLength(200).IsRequired();
+            e.Property(v => v.Title).HasMaxLength(512).IsRequired();
+            e.Property(v => v.Url).HasMaxLength(512).IsRequired();
+            e.Property(v => v.NodeId).HasMaxLength(128).IsRequired();
+            e.Property(v => v.Group).HasMaxLength(16).IsRequired();
+            e.Property(v => v.CloseReason).HasMaxLength(16);
+            e.Property(v => v.Related).HasMaxLength(220);
+            e.Property(v => v.Confidence).HasMaxLength(8).IsRequired();
+            e.Property(v => v.Summary).HasMaxLength(300).IsRequired();
+            e.Property(v => v.Reason).HasMaxLength(1000).IsRequired();
+            e.Property(v => v.Priority).HasMaxLength(4);
+            e.Property(v => v.DecidedBy).HasMaxLength(320);
+            e.Property(v => v.DecisionGroup).HasMaxLength(16);
+            e.Property(v => v.DecisionCloseReason).HasMaxLength(16);
+
+            e.Property(v => v.Evidence)
+                .HasConversion(EvidenceListConverter, EvidenceListComparer)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb")
+                .IsRequired();
+
+            // One verdict per issue: a later one replaces it.
+            e.HasIndex(v => new { v.Repository, v.Number }, "ux_planner_review_verdicts_issue").IsUnique();
+        });
+    }
+
+    private static readonly ValueConverter<List<PlannerReviewEvidence>, string> EvidenceListConverter =
+        new(v => JsonSerializer.Serialize(v, JsonOptions),
+            v => JsonSerializer.Deserialize<List<PlannerReviewEvidence>>(v, JsonOptions) ?? new List<PlannerReviewEvidence>());
+
+    private static readonly ValueComparer<List<PlannerReviewEvidence>> EvidenceListComparer =
+        new((a, b) => a!.SequenceEqual(b!),
+            v => v.Aggregate(0, (hash, x) => HashCode.Combine(hash, x.GetHashCode())),
+            v => v.ToList());
+
+    // ------------------------------------------------------------------
     // Conventions applied to every mapped property
     // ------------------------------------------------------------------
 
@@ -1031,6 +1107,9 @@ public sealed class HephaistoDbContext(DbContextOptions<HephaistoDbContext> opti
     /// past the useful part of.
     /// </summary>
     public const int MaxErrorLength = 500;
+
+    /// <summary>A review run's problem names each batch that did not answer, so it is longer than one error.</summary>
+    public const int PlannerReviewRunMaxProblem = 2000;
 
     // The frozen facts of one notification. A record with init-only members, so value equality
     // is the right comparison and there is no mutable state for a snapshot comparer to miss.

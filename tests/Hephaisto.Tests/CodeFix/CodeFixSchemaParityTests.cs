@@ -49,6 +49,9 @@ public sealed class CodeFixSchemaParityTests
         { "triage-request.json", typeof(TriageRequest) },
         { "triage-result.json", typeof(TriageResult) },
         { "triage-result-failed.json", typeof(TriageResult) },
+        { "review-request.json", typeof(ReviewRequest) },
+        { "review-result.json", typeof(ReviewResult) },
+        { "review-result-failed.json", typeof(ReviewResult) },
     };
 
     [Theory]
@@ -82,6 +85,8 @@ public sealed class CodeFixSchemaParityTests
     [InlineData("investigate-request-missing-max-turns.json", typeof(InvestigateRequest))]
     [InlineData("triage-result-unknown-member.json", typeof(TriageResult))]
     [InlineData("triage-request-missing-labels.json", typeof(TriageRequest))]
+    [InlineData("review-result-unknown-member.json", typeof(ReviewResult))]
+    [InlineData("review-request-missing-board.json", typeof(ReviewRequest))]
     public void StructurallyInvalidSamples_AreRefused(string sample, Type type)
     {
         var json = File.ReadAllText(Path.Combine(Dir, "samples", "invalid", sample));
@@ -145,6 +150,8 @@ public sealed class CodeFixSchemaParityTests
                      ("investigate-result.schema.json", typeof(InvestigateResult)),
                      ("triage-request.schema.json", typeof(TriageRequest)),
                      ("triage-result.schema.json", typeof(TriageResult)),
+                     ("review-request.schema.json", typeof(ReviewRequest)),
+                     ("review-result.schema.json", typeof(ReviewResult)),
                  })
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(Dir, schema)));
@@ -172,6 +179,42 @@ public sealed class CodeFixSchemaParityTests
 
         // Named, so that a third optional member is somebody's decision and not a slip.
         optional.Should().BeEquivalentTo("codefix-request-v2.schema.json:previous", "codefix-plan-result.schema.json:questions");
+    }
+
+    /// <summary>
+    /// The review's nested objects (#312) are records of their own, every member required: each
+    /// names exactly its schema object's members.
+    /// </summary>
+    [Fact]
+    public void TheNestedObjectsOfAReview_NameTheSchemasMembers_AndNoOthers()
+    {
+        using var request = JsonDocument.Parse(File.ReadAllText(Path.Combine(Dir, "review-request.schema.json")));
+        using var result = JsonDocument.Parse(File.ReadAllText(Path.Combine(Dir, "review-result.schema.json")));
+
+        var issue = request.RootElement.GetProperty("$defs").GetProperty("issue");
+        var issueProperties = issue.GetProperty("properties");
+        var board = issueProperties.GetProperty("board").GetProperty("oneOf")[1];
+
+        foreach (var (type, schema) in new (Type, JsonElement)[]
+                 {
+                     (typeof(ReviewRepository), request.RootElement.GetProperty("properties").GetProperty("repositories").GetProperty("items")),
+                     (typeof(ReviewIssue), issue),
+                     (typeof(ReviewBoard), board),
+                     (typeof(ReviewBoardField), board.GetProperty("properties").GetProperty("fields").GetProperty("items")),
+                     (typeof(ReviewCrossReference), issueProperties.GetProperty("cross_references").GetProperty("items")),
+                     (typeof(ReviewCommit), issueProperties.GetProperty("commits").GetProperty("items")),
+                     (typeof(ReviewSubIssue), issueProperties.GetProperty("sub_issues").GetProperty("items")),
+                     (typeof(ReviewIssueComment), issueProperties.GetProperty("comments").GetProperty("items")),
+                     (typeof(ReviewVerdictResult), result.RootElement.GetProperty("$defs").GetProperty("verdict")),
+                     (typeof(ReviewClone), result.RootElement.GetProperty("properties").GetProperty("clones").GetProperty("items")),
+                 })
+        {
+            var members = type.GetProperties().Select(p => JsonNamingPolicy.SnakeCaseLower.ConvertName(p.Name)).ToList();
+
+            members.Should().BeEquivalentTo(schema.GetProperty("required").EnumerateArray().Select(e => e.GetString()!), type.Name);
+            members.Should().BeEquivalentTo(schema.GetProperty("properties").EnumerateObject().Select(p => p.Name), type.Name);
+            schema.GetProperty("additionalProperties").GetBoolean().Should().BeFalse();
+        }
     }
 
     [Fact]

@@ -248,6 +248,244 @@ namespace Hephaisto.Agent.Persistence.Migrations
                     b.ToTable("notification_deliveries", (string)null);
                 });
 
+            modelBuilder.Entity("Hephaisto.Agent.Persistence.PlannerReviewRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("CostUsd")
+                        .HasColumnType("numeric(14,6)")
+                        .HasColumnName("cost_usd");
+
+                    b.Property<int>("CountBug")
+                        .HasColumnType("integer")
+                        .HasColumnName("count_bug");
+
+                    b.Property<int>("CountClose")
+                        .HasColumnType("integer")
+                        .HasColumnName("count_close");
+
+                    b.Property<int>("CountFeature")
+                        .HasColumnType("integer")
+                        .HasColumnName("count_feature");
+
+                    b.Property<int>("CountUnsure")
+                        .HasColumnType("integer")
+                        .HasColumnName("count_unsure");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int>("Jobs")
+                        .HasColumnType("integer")
+                        .HasColumnName("jobs");
+
+                    b.Property<int>("Kept")
+                        .HasColumnType("integer")
+                        .HasColumnName("kept");
+
+                    b.Property<int>("Open")
+                        .HasColumnType("integer")
+                        .HasColumnName("open");
+
+                    b.Property<string>("Problem")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("problem");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("Reviewed")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("reviewed")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<DateTimeOffset?>("Slot")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("slot");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("trigger");
+
+                    b.HasKey("Id")
+                        .HasName("pk_planner_review_runs");
+
+                    b.HasIndex("StartedAt")
+                        .HasDatabaseName("ix_planner_review_runs_started_at");
+
+                    b.HasIndex("State")
+                        .HasDatabaseName("ix_planner_review_runs_state");
+
+                    b.HasIndex(new[] { "Slot" }, "ux_planner_review_runs_slot")
+                        .IsUnique()
+                        .HasDatabaseName("ux_planner_review_runs_slot")
+                        .HasFilter("slot IS NOT NULL");
+
+                    b.ToTable("planner_review_runs", (string)null);
+                });
+
+            modelBuilder.Entity("Hephaisto.Agent.Persistence.PlannerReviewVerdict", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("boolean")
+                        .HasColumnName("archived");
+
+                    b.Property<string>("CloseReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("close_reason");
+
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("confidence");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedBy")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("decided_by");
+
+                    b.Property<bool>("DecisionAgreed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("decision_agreed");
+
+                    b.Property<string>("DecisionCloseReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("decision_close_reason");
+
+                    b.Property<string>("DecisionGroup")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("decision_group");
+
+                    b.Property<bool>("DecisionUnsure")
+                        .HasColumnType("boolean")
+                        .HasColumnName("decision_unsure");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("evidence")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<DateTimeOffset?>("GoneAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("gone_at");
+
+                    b.Property<string>("Group")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("group");
+
+                    b.Property<DateTimeOffset>("IssueUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("issue_updated_at");
+
+                    b.Property<string>("NodeId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("node_id");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("integer")
+                        .HasColumnName("number");
+
+                    b.Property<bool>("OnBoard")
+                        .HasColumnType("boolean")
+                        .HasColumnName("on_board");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("priority");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Related")
+                        .HasMaxLength(220)
+                        .HasColumnType("character varying(220)")
+                        .HasColumnName("related");
+
+                    b.Property<string>("Repository")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("repository");
+
+                    b.Property<DateTimeOffset>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("summary");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_planner_review_verdicts");
+
+                    b.HasIndex(new[] { "Repository", "Number" }, "ux_planner_review_verdicts_issue")
+                        .IsUnique()
+                        .HasDatabaseName("ux_planner_review_verdicts_issue");
+
+                    b.ToTable("planner_review_verdicts", (string)null);
+                });
+
             modelBuilder.Entity("Hephaisto.Agent.Persistence.TeamsBotMessage", b =>
                 {
                     b.Property<Guid>("Id")

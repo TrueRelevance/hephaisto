@@ -1034,6 +1034,34 @@ github:
       deadline: "00:15:00"
       maxConcurrentJobs: 2
 
+    # The weekly review (#312): every open issue of the owner organisation - on the board or
+    # not, in an archived repository or not - is sorted by a read-only coder Job of phase
+    # `review` into can be closed (and why), a real bug, still to build, or unsure, with the
+    # evidence. It PROPOSES ONLY and writes nothing to GitHub: closing, a Priority or a Type is a
+    # person's click on the planner. Needs codeFix.enabled, like triage: the coder's image,
+    # namespace, Secret, egress proxy, model and dev-context. The token of secrets.github needs
+    # read on every repository of the organisation (the search, timelines, sub-issues), and the
+    # coder's GITHUB_TOKEN read on the repositories it may clone.
+    #
+    # A run asks only about what is new, changed since its verdict, or reviewed more than
+    # recheckAfterDays ago, in batches of issuesPerJob; maxCostUsd bounds the whole run. A slot
+    # of the schedule runs once; one missed by less than an hour (a restart across it) runs on
+    # startup, an older one is skipped.
+    review:
+      enabled: false
+      # Five cron fields - minute hour day-of-month month day-of-week - read in timeZone.
+      schedule: "0 6 * * 1"
+      timeZone: Europe/Berlin
+      # Issues per Job, 1 to 40.
+      issuesPerJob: 25
+      recheckAfterDays: 28
+      # The whole run, across all its Jobs.
+      maxCostUsd: 10
+      maxConcurrentJobs: 2
+      # One Job's, hh:mm:ss, between 2 minutes and 4 hours.
+      deadline: "00:30:00"
+      maxTurns: 60
+
 # -----------------------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------------------

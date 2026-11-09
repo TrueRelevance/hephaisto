@@ -48,8 +48,19 @@ github:
       # The repository issues as work are taken from: the planner's work-item buttons are
       # tried on an issue opened here and handed to Hephaisto.
       - Flou21/hephaisto-fixture-dotnet
-    # Asking Claude (triage) is switched on by the Tiltfile when the coder is on: the chart
-    # refuses it without codeFix.enabled.
+    # Asking Claude (triage) and the weekly review are switched on by the Tiltfile when the coder
+    # is on: the chart refuses both without codeFix.enabled.
+    #
+    # The weekly review (#312) of the stand-in's organisation acme: two dozen open issues, so ten
+    # to a Job makes a run three batches, two at a time - the batching and its bound are part of
+    # what planner-review.spec.ts runs. The stand-in's repositories are not git repositories and
+    # no CodeFix:Repositories entry names them, so no Job clones any: the issues are reviewed
+    # from their facts.
+    review:
+      issuesPerJob: 10
+      maxConcurrentJobs: 2
+      maxCostUsd: 5
+      deadline: "00:10:00"
 
 # The issues suite (scripts/e2e/issues-local.sh) hands the agent a dozen issues a run, all in the
 # one repository the in-cluster git server holds, and every one of them is an attempt on it.

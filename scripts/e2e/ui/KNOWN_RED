@@ -13,7 +13,6 @@
 #
 # The weekly backlog review (#312) landed its suite first, stage 1 of five. Stage 2 is the
 # contract and the coder phase `review`, which no test here can see without stage 3.
-planner-review.spec.ts R01 0.15 stage 3 (#312): no ReviewRunner, facts gatherer, verdict tables or /api/planner/review yet
 planner-review.spec.ts R02 0.15 stage 4 (#312): no review page, nav entry, tabs or cards yet
 planner-review.spec.ts R03 0.15 stage 4 (#312): no review page, so no archived card that refuses Close
 planner-review.spec.ts R04 0.15 stage 4 (#312): no Agree click, so no Priority set through PlannerService

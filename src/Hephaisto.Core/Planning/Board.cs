@@ -39,6 +39,7 @@ public sealed record BoardLabel(string Name, DateTimeOffset? AddedAt);
 /// <param name="Body">The issue's description as its author wrote it: markdown, and somebody else's text. Null when nobody wrote one.</param>
 /// <param name="Comments">How many comments the issue has.</param>
 /// <param name="Dates">The board's date fields that have a value on this item: field name to day.</param>
+/// <param name="FieldsChangedAt">When each single-select value was last set, where the board says: field name to time. How long an item has been in its Status.</param>
 public sealed record BoardItem(
     string ItemId,
     string IssueId,
@@ -61,13 +62,18 @@ public sealed record BoardItem(
     IReadOnlyList<BoardPullRequest> PullRequests,
     string? Body = null,
     int Comments = 0,
-    IReadOnlyDictionary<string, DateOnly>? Dates = null)
+    IReadOnlyDictionary<string, DateOnly>? Dates = null,
+    IReadOnlyDictionary<string, DateTimeOffset>? FieldsChangedAt = null)
 {
     public string Reference => $"{Repository}#{Number}";
 
     /// <summary>The value of a date field by its name, whatever its case. Null when it is empty on this item.</summary>
     public DateOnly? Date(string name) =>
         Dates?.FirstOrDefault(d => string.Equals(d.Key, name, StringComparison.OrdinalIgnoreCase)) is { Key: not null } found ? found.Value : null;
+
+    /// <summary>When a single-select field's value was last set, by the field's name. Null when the board did not say.</summary>
+    public DateTimeOffset? FieldChangedAt(string name) =>
+        FieldsChangedAt?.FirstOrDefault(f => string.Equals(f.Key, name, StringComparison.OrdinalIgnoreCase)) is { Key: not null } found ? found.Value : null;
 
     /// <summary>The value of a field by its name, whatever its case. Null when the field is empty on this item.</summary>
     public string? Field(string name) =>

@@ -118,7 +118,8 @@ public sealed record GitHubPullRequest(
 }
 
 /// <param name="DefaultBranch">The branch a pull request targets unless told otherwise. Null when GitHub did not say.</param>
-public sealed record GitHubRepository(string FullName, string? DefaultBranch);
+/// <param name="Archived">Read-only: nothing can be written there, its issues cannot be closed, until it is unarchived (#312).</param>
+public sealed record GitHubRepository(string FullName, string? DefaultBranch, bool Archived = false);
 
 /// <summary>One label of a repository, as its owner named and described it.</summary>
 public sealed record GitHubLabel(string Name, string? Description);
@@ -248,22 +249,59 @@ public interface IGitHubClient
 
     /// <summary>A repository's labels, one page of <see cref="GitHubClient.PageSize"/>.</summary>
     Task<GitHubResult<IReadOnlyList<GitHubLabel>>> ListLabelsAsync(string repository, CancellationToken ct);
+
+    // The weekly review's reads (#312), GitHubClient.Review.cs. Reads only, each of them; a
+    // client that does not know them - a test double of the poller's - refuses, never pretends.
+
+    /// <summary>
+    /// One page of an organisation's open issues, through the search API
+    /// (<c>org:&lt;owner&gt; is:issue is:open</c>), oldest first, <see cref="GitHubClient.PageSize"/>
+    /// to a page. The search has its own rate limit, held apart from the rest (<see cref="GitHubRateLimit"/>).
+    /// </summary>
+    /// <param name="page">From 1. GitHub answers no more than the first thousand results.</param>
+    Task<GitHubResult<GitHubSearchPage>> SearchOpenIssuesAsync(string owner, int page, CancellationToken ct) =>
+        Task.FromResult(new GitHubResult<GitHubSearchPage>(GitHubOutcome.Rejected, null, "this client does not search"));
+
+    /// <summary>
+    /// What an issue's timeline says about it for the review: the pull requests and issues that
+    /// reference it, the commits that do, and its comments. The first page, and when there are
+    /// more the last one too - the newest events are at the end.
+    /// </summary>
+    Task<GitHubResult<GitHubIssueTimeline>> ReadTimelineAsync(string repository, int number, CancellationToken ct) =>
+        Task.FromResult(new GitHubResult<GitHubIssueTimeline>(GitHubOutcome.Rejected, null, "this client does not read timelines"));
+
+    /// <summary>An issue's sub-issues, open and closed, one page of <see cref="GitHubClient.PageSize"/>.</summary>
+    Task<GitHubResult<IReadOnlyList<GitHubSubIssue>>> ListSubIssuesAsync(string repository, int number, CancellationToken ct) =>
+        Task.FromResult(new GitHubResult<IReadOnlyList<GitHubSubIssue>>(GitHubOutcome.Rejected, null, "this client does not read sub-issues"));
 }
 
 /// <summary>
 /// When GitHub last said to stop asking. One for the process, shared by every client the factory
 /// builds: a rate limit is the account's, not a request's.
 /// </summary>
+/// <remarks>
+/// The search API's limit is a budget of its own (30 a minute, <c>x-ratelimit-resource: search</c>),
+/// so it is held apart (#312): a weekly review that used it up must not stop the poller, whose
+/// calls are counted against the core limit and are still allowed.
+/// </remarks>
 public sealed class GitHubRateLimit
 {
     private long untilUnixSeconds;
+    private long searchUntilUnixSeconds;
 
     public DateTimeOffset? Until =>
         Interlocked.Read(ref untilUnixSeconds) is > 0 and var s ? DateTimeOffset.FromUnixTimeSeconds(s) : null;
 
+    public DateTimeOffset? SearchUntil =>
+        Interlocked.Read(ref searchUntilUnixSeconds) is > 0 and var s ? DateTimeOffset.FromUnixTimeSeconds(s) : null;
+
     public void Hold(DateTimeOffset until) => Interlocked.Exchange(ref untilUnixSeconds, until.ToUnixTimeSeconds());
 
+    public void HoldSearch(DateTimeOffset until) => Interlocked.Exchange(ref searchUntilUnixSeconds, until.ToUnixTimeSeconds());
+
     public void Clear() => Interlocked.Exchange(ref untilUnixSeconds, 0);
+
+    public void ClearSearch() => Interlocked.Exchange(ref searchUntilUnixSeconds, 0);
 }
 
 /// <summary>
@@ -386,7 +424,10 @@ public sealed partial class GitHubClient(
             $"repos/{repository}",
             null,
             null,
-            (json, _) => new GitHubRepository(Text(json, "full_name") ?? repository, Text(json, "default_branch")),
+            (json, _) => new GitHubRepository(
+                Text(json, "full_name") ?? repository,
+                Text(json, "default_branch"),
+                json.TryGetProperty("archived", out var archived) && archived.ValueKind == JsonValueKind.True),
             ct);
 
     public async Task<GitHubResult<IReadOnlyList<GitHubAssignment>>> ListAssignmentsAsync(string repository, int number, string? etag, CancellationToken ct)
@@ -433,18 +474,26 @@ public sealed partial class GitHubClient(
         object? body,
         string? etag,
         Func<JsonElement, HttpResponseMessage, T> read,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool search = false)
     {
         var now = clock.UtcNow;
 
-        if (rateLimit.Until is { } until)
+        if ((search ? rateLimit.SearchUntil : rateLimit.Until) is { } until)
         {
             if (until > now)
             {
                 return new(GitHubOutcome.RateLimited, default, "waiting for the limit GitHub named earlier", RetryAt: until);
             }
 
-            rateLimit.Clear();
+            if (search)
+            {
+                rateLimit.ClearSearch();
+            }
+            else
+            {
+                rateLimit.Clear();
+            }
         }
 
         var o = options.Value;
@@ -492,7 +541,15 @@ public sealed partial class GitHubClient(
 
             if (RateLimitedUntil(response, now) is { } retryAt)
             {
-                rateLimit.Hold(retryAt);
+                // The search's own budget is held apart; a secondary limit there is the search's too.
+                if (search || string.Equals(Header(response, "x-ratelimit-resource"), "search", StringComparison.OrdinalIgnoreCase))
+                {
+                    rateLimit.HoldSearch(retryAt);
+                }
+                else
+                {
+                    rateLimit.Hold(retryAt);
+                }
 
                 logger.LogWarning(
                     "GitHub rate limit on {Method} {Path}: not asking again before {RetryAt:O}. {Detail}",

@@ -21,6 +21,8 @@ public sealed class PlannerRoutesTests
         // Only so that the handlers' parameter is known to be a service; nothing is resolved.
         builder.Services.AddSingleton<PlannerService>(_ => throw new NotSupportedException());
         builder.Services.AddSingleton<TriageRunner>(_ => throw new NotSupportedException());
+        builder.Services.AddSingleton<Hephaisto.Agent.Planner.Review.ReviewRunner>(_ => throw new NotSupportedException());
+        builder.Services.AddSingleton<Hephaisto.Agent.Planner.Review.ReviewReader>(_ => throw new NotSupportedException());
 
         var app = builder.Build();
 
@@ -34,11 +36,12 @@ public sealed class PlannerRoutesTests
     private static string? Policy(RouteEndpoint e) => e.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).SingleOrDefault();
 
     [Fact]
-    public void Reading_the_planner_is_four_gets_and_needs_no_approver()
+    public void Reading_the_planner_is_five_gets_and_needs_no_approver()
     {
         var gets = Routes().Where(e => Verb(e) == "GET").ToList();
 
-        gets.Select(e => e.RoutePattern.RawText).Should().BeEquivalentTo("/api/planner", "/api/planner/search", "/api/planner/comments", "/api/planner/analysis");
+        gets.Select(e => e.RoutePattern.RawText).Should().BeEquivalentTo(
+            "/api/planner", "/api/planner/search", "/api/planner/comments", "/api/planner/analysis", "/api/planner/review");
         gets.Should().OnlyContain(e => Policy(e) == null, "the console's read policy is the group's, as for every other read");
     }
 
@@ -58,6 +61,7 @@ public sealed class PlannerRoutesTests
             "/api/planner/comments",
             "/api/planner/issues",
             "/api/planner/triage",
+            "/api/planner/review/run",
         ]);
 
         writes.Should().OnlyContain(e => Verb(e) == "POST" && Policy(e) == AuthenticationExtensions.ApprovePolicy);
