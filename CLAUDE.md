@@ -702,6 +702,10 @@ fails is expected, one that passes fails the run, `UI_STRICT=1` ignores the list
 coder with `"coder-sdk": "fake"` - the verdicts are `coder/fake-scripts/default.review.json` - and
 reads the stand-in's `GET /github/control/writes` to hold that a run writes nothing. The
 organisation it reviews is the stand-in's `acme`, seeded with the board (`GitHubStandIn.Review.cs`).
+Its Job is the coder phase `review` (`coder/src/review.ts`, contract `review-*.schema.json` v1 in
+dev-context): read-only like triage, one batch of issues with the facts Hephaisto gathered, the
+batch's repositories cloned blobless by the prepare role, one verdict per batch issue kept (one
+left out is `unsure`, low) - the same rule for the fake script and a real model.
 
 ## The Teams bot, as of v0.9.0-rc4
 

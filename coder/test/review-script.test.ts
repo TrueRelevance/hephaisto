@@ -4,10 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { APP_ROOT } from '../src/config.js';
 import { FakeScriptZ } from '../src/fake-sdk.js';
 
-// The weekly review's scripted answer (#312, stage 1): it lands before the phase that plays it
-// (stage 2, src/review.ts), so what can be held now is that the fake SDK can load it and that it
-// reads nothing but dev-context. Its verdicts' shape is held by
-// tests/Hephaisto.Tests/E2e/UiSuiteTests.cs against the stand-in's seeding.
+// The weekly review's scripted answer (#312): that the fake SDK can load it and that it reads
+// nothing but dev-context. The phase that plays it (src/review.ts) is held by review.test.ts; the
+// verdicts' shape against the stand-in's seeding by tests/Hephaisto.Tests/E2e/UiSuiteTests.cs.
 
 const path = join(APP_ROOT, 'fake-scripts', 'default.review.json');
 

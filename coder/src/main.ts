@@ -5,9 +5,10 @@ import { billingOf, fakeScriptCandidates, prepareInvestigate, runInvestigate } f
 import { addRedaction, log, redact, setLogPrefix } from './log.js';
 import { type PhaseDeps, coderImplement, coderPlan, prepareImplement, preparePlan } from './phases.js';
 import { runPublish } from './publish.js';
+import { prepareReview, runReview } from './review.js';
 import { prepareTriage, runTriage } from './triage.js';
 import { NIL_UUID, emitPrBody, emitResult, hasEmitted, minimalFailed, validUuid } from './result.js';
-import { type AnyResult, type CodeFixRequest, type InvestigateRequest, type InvestigateResult, type Phase, SCHEMA_FILES, type TriageRequest, validate } from './schemas.js';
+import { type AnyResult, type CodeFixRequest, type InvestigateRequest, type InvestigateResult, type Phase, type ReviewRequest, SCHEMA_FILES, type TriageRequest, validate } from './schemas.js';
 import { loadQuery } from './sdk.js';
 
 // Entry point. One invariant above all others: exactly ONE framed result is the last thing on
@@ -19,7 +20,7 @@ import { loadQuery } from './sdk.js';
 // one of them prints:
 //
 //   plan, investigate,  prepare (init) -> coder             coder prints
-//   triage
+//   triage, review
 //   implement           prepare (init) -> coder (init) -> publish   publish prints
 //
 // A role that does not print hands its result to the next through a handoff file and exits 0,
@@ -57,7 +58,7 @@ function identityFrom(raw: unknown): Identity {
   const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   return {
     attemptId: typeof o.attempt_id === 'string' && validUuid(o.attempt_id) ? o.attempt_id : NIL_UUID,
-    phase: o.phase === 'implement' ? 'implement' : o.phase === 'investigate' ? 'investigate' : o.phase === 'triage' ? 'triage' : 'plan',
+    phase: o.phase === 'implement' ? 'implement' : o.phase === 'investigate' ? 'investigate' : o.phase === 'triage' ? 'triage' : o.phase === 'review' ? 'review' : 'plan',
   };
 }
 
@@ -189,10 +190,11 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
   printing = prints(role, identity.phase);
   const investigating = identity.phase === 'investigate';
   const triaging = identity.phase === 'triage';
+  const reviewing = identity.phase === 'review';
   // A code-fix request is one of two documents, told apart by the version it states: 1 is for an
   // incident, 2 for a work item. Each is held to its own schema, so a refusal names one file and
   // one member - never "matches neither of two shapes".
-  const schema = investigating ? 'investigateRequest' : triaging ? 'triageRequest' : (raw as { contract_version?: unknown } | null)?.contract_version === '2' ? 'requestV2' : 'request';
+  const schema = investigating ? 'investigateRequest' : triaging ? 'triageRequest' : reviewing ? 'reviewRequest' : (raw as { contract_version?: unknown } | null)?.contract_version === '2' ? 'requestV2' : 'request';
   const v = validate(schema, raw);
   if (!v.ok) {
     log.error(`request does not match ${SCHEMA_FILES[schema]}: ${v.errors.join('; ')}`);
@@ -242,6 +244,7 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
     try {
       if (investigating) return await prepareInvestigate(raw as InvestigateRequest, { env: e, paths, abort, startedAt });
       if (triaging) return await prepareTriage(raw as TriageRequest, { env: e, paths, abort, startedAt });
+      if (reviewing) return await prepareReview(raw as ReviewRequest, { env: e, paths, abort, startedAt });
       const req = raw as CodeFixRequest;
       const deps = { env: e, paths, deadline, abort, startedAt };
       return req.phase === 'plan' ? await preparePlan(req, deps) : await prepareImplement(req, deps);
@@ -308,6 +311,29 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
       log.info(`outcome ${result.outcome}${result.error ? `: ${result.error}` : ''} (cost $${result.cost_usd.toFixed(4)}, ${result.billing})`);
       return result;
     }
+    if (reviewing) {
+      const result = await runReview(
+        raw as ReviewRequest,
+        {
+          env: e,
+          paths,
+          deadline,
+          abort,
+          // the batch spans repositories: one script for all of them, CODEFIX_FAKE_SCRIPT (a plain file name) before the default
+          makeQuery: (vars) =>
+            loadQuery(e.sdkMode, {
+              scriptDir: e.fakeScriptDir,
+              repoName: '',
+              phase: 'review',
+              vars,
+              scripts: reviewFakeScripts(e.fakeScript),
+            }),
+        },
+        h,
+      );
+      log.info(`outcome ${result.outcome}${result.error ? `: ${result.error}` : ''}, ${result.verdicts.length} verdicts (cost $${result.cost_usd.toFixed(4)}, ${result.billing})`);
+      return result;
+    }
     const req = raw as CodeFixRequest;
     const deps: PhaseDeps = {
       env: e,
@@ -346,7 +372,7 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
   const terminal = (h: PrepareHandoff): AnyResult => {
     const t = { ...(h.terminal as unknown as AnyResult), attempt_id: identity.attemptId, phase: identity.phase } as AnyResult;
     // prepare holds no model credential, so it cannot say who would have paid; this role can
-    return identity.phase === 'investigate' || identity.phase === 'triage' ? ({ ...t, billing: billingOf(runnerEnv) } as AnyResult) : t;
+    return identity.phase === 'investigate' || identity.phase === 'triage' || identity.phase === 'review' ? ({ ...t, billing: billingOf(runnerEnv) } as AnyResult) : t;
   };
 
   try {
@@ -394,6 +420,18 @@ export async function main(opts: MainOptions = {}): Promise<MainResult> {
     log.error(`${role} failed: ${redact((e as Error).stack ?? String(e))}`);
     return finish(failed(`runner failed: ${(e as Error).message}`));
   }
+}
+
+/** review: CODEFIX_FAKE_SCRIPT when it is a plain file name (`x` means `x.review.json`), then default.review.json. */
+export function reviewFakeScripts(override: string | undefined): string[] {
+  const out: string[] = [];
+  if (override) {
+    const f = override.endsWith('.json') ? override : `${override}.review.json`;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,200}$/.test(f) || f.includes('..')) throw new Error(`CODEFIX_FAKE_SCRIPT ${JSON.stringify(override)} is not a plain file name`);
+    out.push(f);
+  }
+  out.push('default.review.json');
+  return out;
 }
 
 /**

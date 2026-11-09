@@ -1,0 +1,103 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000b1",
+  "phase": "review",
+  "budget": {
+    "max_cost_usd": 3,
+    "deadline_seconds": 1800,
+    "max_turns": 60
+  },
+  "context": {
+    "repository_url": "https://github.com/TrueRelevance/dev-context",
+    "ref": "main"
+  },
+  "repositories": [
+    {
+      "repository": "acme/..",
+      "url": "https://github.com/acme/api.git",
+      "default_branch": "main",
+      "archived": false
+    },
+    {
+      "repository": "acme/legacy-ttd",
+      "url": "https://github.com/acme/legacy-ttd.git",
+      "default_branch": "master",
+      "archived": true
+    }
+  ],
+  "issues": [
+    {
+      "repository": "acme/api",
+      "number": 431,
+      "url": "https://github.com/acme/api/issues/431",
+      "title": "A stale cache entry survives a config reload",
+      "type": "Bug",
+      "author": "someone",
+      "body": "After a reload the old entry is served until the pod restarts.",
+      "labels": [
+        "bug",
+        "area:cache"
+      ],
+      "created_at": "2026-10-20T08:00:00Z",
+      "updated_at": "2026-11-07T10:12:00Z",
+      "archived": false,
+      "board": {
+        "status": "In review",
+        "priority": "P1",
+        "days_in_status": 2,
+        "fields": [
+          {
+            "name": "Area",
+            "value": "Platform"
+          }
+        ]
+      },
+      "cross_references": [
+        {
+          "kind": "pull_request",
+          "reference": "acme/api#433",
+          "title": "fix(cache): drop entries on reload",
+          "state": "merged",
+          "referenced_at": "2026-11-06T09:00:00Z",
+          "closed_at": "2026-11-07T10:12:00Z"
+        }
+      ],
+      "commits": [],
+      "sub_issues": [],
+      "comments": [
+        {
+          "author": "reviewer",
+          "created_at": "2026-11-07T10:20:00Z",
+          "body": "Deployed, looks good."
+        }
+      ],
+      "comments_total": 4
+    },
+    {
+      "repository": "acme/legacy-ttd",
+      "number": 1,
+      "url": "https://github.com/acme/legacy-ttd/issues/1",
+      "title": "Retry the TTD upload",
+      "type": null,
+      "author": "someone",
+      "body": null,
+      "labels": [],
+      "created_at": "2025-03-01T08:00:00Z",
+      "updated_at": "2025-03-02T08:00:00Z",
+      "archived": true,
+      "board": null,
+      "cross_references": [],
+      "commits": [
+        {
+          "sha": "a6ac132",
+          "repository": "acme/legacy-ttd",
+          "message": null,
+          "at": null
+        }
+      ],
+      "sub_issues": [],
+      "comments": [],
+      "comments_total": 0
+    }
+  ]
+}

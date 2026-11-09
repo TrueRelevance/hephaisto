@@ -302,14 +302,26 @@ function firstLine(e: unknown): string {
  * against github.com, 126 versions in 2 s, and no request during the search that followed.
  */
 export async function prefetchPathHistory(git: Git, path: string): Promise<number> {
-  const raw = await git.ok(['log', '--no-renames', '--format=', '--raw', '--no-abbrev', '--', path]);
+  return prefetchHistoryBlobs(git, ['--', path]);
+}
+
+/**
+ * The same, for whatever `git log <revArgs>` walks: every blob those commits touch, in one
+ * request, capped at `maxBlobs` (newest commits first). The review (#312) fetches its recent
+ * history this way in the prepare role, so `git show` and `git log -p` answer in the coder
+ * role, which has no credential to fetch a missing blob with.
+ */
+export async function prefetchHistoryBlobs(git: Git, revArgs: string[], maxBlobs = 20_000): Promise<number> {
+  const raw = await git.ok(['log', '--no-renames', '--format=', '--raw', '--no-abbrev', ...revArgs]);
   const oids = new Set<string>();
   for (const line of raw.split('\n')) {
     // :100644 100644 <before> <after> M\t<path>
     if (!line.startsWith(':')) continue;
-    const [, , before, after] = line.split(/\s+/);
-    for (const oid of [before, after]) {
-      if (oid && /^[0-9a-f]{40,64}$/.test(oid) && !/^0+$/.test(oid)) oids.add(oid);
+    const [beforeMode, afterMode, before, after] = line.split(/\s+/);
+    // a submodule's entry (mode 160000) names a commit of another repository, not a blob of this one
+    for (const [mode, oid] of [[beforeMode?.slice(1), before], [afterMode, after]] as const) {
+      if (mode === '160000') continue;
+      if (oid && /^[0-9a-f]{40,64}$/.test(oid) && !/^0+$/.test(oid) && oids.size < maxBlobs) oids.add(oid);
     }
   }
   if (oids.size === 0) return 0;

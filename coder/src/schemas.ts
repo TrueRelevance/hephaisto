@@ -22,6 +22,8 @@ export const SCHEMA_FILES = {
   investigate: 'investigate-result.schema.json',
   triageRequest: 'triage-request.schema.json',
   triage: 'triage-result.schema.json',
+  reviewRequest: 'review-request.schema.json',
+  review: 'review-result.schema.json',
 } as const;
 export type SchemaName = keyof typeof SCHEMA_FILES;
 
@@ -59,6 +61,8 @@ const validators: Record<SchemaName, ValidateFunction> = {
   investigate: compiled('investigate'),
   triageRequest: compiled('triageRequest'),
   triage: compiled('triage'),
+  reviewRequest: compiled('reviewRequest'),
+  review: compiled('review'),
 };
 
 export interface Validation {
@@ -437,6 +441,142 @@ export const TriageResultZ = z
   })
   .strict();
 
+// ---- review (#312): the same runner, a Job that gives a batch of open issues one verdict each for the weekly review
+
+const RepositoryNameZ = z.string().max(200).regex(/^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?$)[A-Za-z0-9._-]+$/);
+/** owner/repo#number. Not `.` or `..` as the repository: a reference never names a path. */
+export const IssueReferenceRe = /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.\.?#)[A-Za-z0-9._-]+#[1-9][0-9]*$/;
+const ReferenceZ = z.string().max(220).regex(IssueReferenceRe);
+const TimeZ = z.iso.datetime({ offset: true }).max(40);
+
+export const ReviewIssueZ = z
+  .object({
+    repository: RepositoryNameZ,
+    number: z.number().int().min(1),
+    url: z.string().min(1).max(512),
+    title: z.string().min(1).max(512),
+    type: z.string().max(100).nullable(),
+    author: z.string().min(1).max(100),
+    body: z.string().max(3000).nullable(),
+    labels: z.array(z.string().min(1).max(100)).max(30),
+    created_at: TimeZ,
+    updated_at: TimeZ,
+    archived: z.boolean(),
+    board: z
+      .object({
+        status: z.string().max(100).nullable(),
+        priority: z.string().max(100).nullable(),
+        days_in_status: z.number().int().min(0).nullable(),
+        fields: z.array(z.object({ name: z.string().min(1).max(100), value: z.string().max(200) }).strict()).max(20),
+      })
+      .strict()
+      .nullable(),
+    cross_references: z
+      .array(
+        z
+          .object({
+            kind: z.enum(['pull_request', 'issue']),
+            reference: ReferenceZ,
+            title: z.string().max(300),
+            state: z.enum(['open', 'closed', 'merged']),
+            referenced_at: TimeZ.nullable(),
+            closed_at: TimeZ.nullable(),
+          })
+          .strict(),
+      )
+      .max(20),
+    commits: z
+      .array(
+        z
+          .object({ sha: z.string().regex(/^[0-9a-f]{7,64}$/), repository: RepositoryNameZ, message: z.string().max(300).nullable(), at: TimeZ.nullable() })
+          .strict(),
+      )
+      .max(10),
+    sub_issues: z
+      .array(z.object({ reference: ReferenceZ, title: z.string().max(300), state: z.enum(['open', 'closed']), state_reason: z.string().max(40).nullable() }).strict())
+      .max(30),
+    comments: z.array(z.object({ author: z.string().min(1).max(100), created_at: TimeZ, body: z.string().max(1000) }).strict()).max(3),
+    comments_total: z.number().int().min(0),
+  })
+  .strict();
+
+export const ReviewRequestZ = z
+  .object({
+    contract_version: z.literal('1'),
+    attempt_id: z.guid(),
+    phase: z.literal('review'),
+    budget: z
+      .object({
+        max_cost_usd: z.number().min(0).max(1000),
+        deadline_seconds: z.number().int().min(60).max(86400),
+        max_turns: z.number().int().min(1).max(500),
+      })
+      .strict(),
+    context: z.object({ repository_url: z.string().min(1).max(512), ref: z.string().min(1).max(255) }).strict(),
+    repositories: z
+      .array(
+        z
+          .object({
+            repository: RepositoryNameZ,
+            url: z.string().max(512).regex(/^(https:\/\/|http:\/\/|file:\/\/)[^\s]+$/),
+            default_branch: z.string().min(1).max(255),
+            archived: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(50),
+    issues: z.array(ReviewIssueZ).min(1).max(40),
+  })
+  .strict();
+
+export const ReviewGroupZ = z.enum(['close', 'bug', 'feature', 'unsure']);
+export const CloseReasonZ = z.literal(['done', 'superseded', 'obsolete', 'duplicate', 'answered', 'stale', null]);
+export const ConfidenceZ = z.enum(['high', 'medium', 'low']);
+
+/** The owner's rule (#312): a reason to close only for close, a priority only for a bug or a feature, and unsure is always low. */
+export const VerdictZ = z
+  .object({
+    issue: ReferenceZ,
+    group: ReviewGroupZ,
+    close_reason: CloseReasonZ,
+    related: ReferenceZ.nullable(),
+    confidence: ConfidenceZ,
+    summary: z.string().max(300),
+    reason: z.string().max(1000),
+    evidence: z.array(z.string().min(1).max(200)).max(8),
+    priority: z.literal(['P0', 'P1', 'P2', null]),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if ((v.group === 'close') !== (v.close_reason !== null)) ctx.addIssue({ code: 'custom', path: ['close_reason'], message: 'set exactly when group is close' });
+    if ((v.group === 'close' || v.group === 'unsure') && v.priority !== null) ctx.addIssue({ code: 'custom', path: ['priority'], message: 'only for a bug or a feature' });
+    if (v.group === 'unsure' && v.confidence !== 'low') ctx.addIssue({ code: 'custom', path: ['confidence'], message: 'unsure is low' });
+  });
+
+export const ReviewOutcomeZ = z.enum(['reviewed', 'budget_exhausted', 'max_turns', 'rate_limited', 'failed']);
+
+export const ReviewCloneZ = z
+  .object({ repository: z.string().max(200), cloned: z.boolean(), head: z.string().max(64).nullable(), note: z.string().max(500).nullable() })
+  .strict();
+
+export const ReviewResultZ = z
+  .object({
+    contract_version: z.literal('1'),
+    attempt_id: z.guid(),
+    phase: z.literal('review'),
+    outcome: ReviewOutcomeZ,
+    verdicts: z.array(VerdictZ).max(40),
+    clones: z.array(ReviewCloneZ).max(50),
+    cost_usd: z.number().min(0),
+    billing: BillingZ,
+    turns: z.number().int().min(0),
+    session_id: z.string().max(128).nullable(),
+    context_sha: z.string().max(64).nullable(),
+    error: z.string().max(4000).nullable(),
+    denied_tool_calls: z.array(DenialZ).max(50),
+  })
+  .strict();
+
 export type IncidentRequest = z.infer<typeof RequestZ>;
 export type WorkItemRequest = z.infer<typeof WorkItemRequestZ>;
 /** What a code-fix Job is asked to do: for an incident (version 1) or for a work item (version 2). Ask subject.ts which. */
@@ -456,6 +596,12 @@ export type CodeRef = z.infer<typeof CodeRefZ>;
 export type TriageRequest = z.infer<typeof TriageRequestZ>;
 export type TriageResult = z.infer<typeof TriageResultZ>;
 export type TriageOutcome = z.infer<typeof TriageOutcomeZ>;
+export type ReviewRequest = z.infer<typeof ReviewRequestZ>;
+export type ReviewIssue = z.infer<typeof ReviewIssueZ>;
+export type ReviewResult = z.infer<typeof ReviewResultZ>;
+export type ReviewOutcome = z.infer<typeof ReviewOutcomeZ>;
+export type Verdict = z.infer<typeof VerdictZ>;
+export type ReviewClone = z.infer<typeof ReviewCloneZ>;
 /** Every phase the runner can report; each one names its result schema. */
-export type Phase = CodeFixPhase | 'investigate' | 'triage';
-export type AnyResult = PlanResult | ImplementResult | InvestigateResult | TriageResult;
+export type Phase = CodeFixPhase | 'investigate' | 'triage' | 'review';
+export type AnyResult = PlanResult | ImplementResult | InvestigateResult | TriageResult | ReviewResult;

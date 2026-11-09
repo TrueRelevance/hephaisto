@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { CONTRACTS_DIR, ImplementResultZ, InvestigateRequestZ, InvestigateResultZ, PlanResultZ, RequestZ, ReposZ, type SchemaName, TriageRequestZ, TriageResultZ, WorkItemRequestZ, rawSchema } from '../src/schemas.js';
+import { CONTRACTS_DIR, ImplementResultZ, InvestigateRequestZ, InvestigateResultZ, PlanResultZ, RequestZ, ReposZ, ReviewRequestZ, ReviewResultZ, type SchemaName, TriageRequestZ, TriageResultZ, WorkItemRequestZ, rawSchema } from '../src/schemas.js';
 
 // The vendored contract must be byte-identical to what SCHEMAS.lock pins (so drift shows up as a
 // lock change in a PR, never as a runtime ContractViolation), and the zod mirrors that give the
@@ -89,6 +89,8 @@ const mirrors: [SchemaName, z.ZodType][] = [
   ['investigate', InvestigateResultZ],
   ['triageRequest', TriageRequestZ],
   ['triage', TriageResultZ],
+  ['reviewRequest', ReviewRequestZ],
+  ['review', ReviewResultZ],
 ];
 
 describe('zod mirrors match the vendored JSON Schemas', () => {
@@ -111,6 +113,8 @@ function sampleSchema(f: string): SchemaName {
   if (f.startsWith('investigate-result')) return 'investigate';
   if (f.startsWith('triage-request')) return 'triageRequest';
   if (f.startsWith('triage-result')) return 'triage';
+  if (f.startsWith('review-request')) return 'reviewRequest';
+  if (f.startsWith('review-result')) return 'review';
   if (f.startsWith('request-v2')) return 'requestV2';
   if (f.startsWith('request')) return 'request';
   if (f.startsWith('plan-result')) return 'plan';
@@ -138,6 +142,8 @@ const zodFor: Record<SchemaName, z.ZodType> = {
   investigate: InvestigateResultZ,
   triageRequest: TriageRequestZ,
   triage: TriageResultZ,
+  reviewRequest: ReviewRequestZ,
+  review: ReviewResultZ,
 };
 
 it('the parity walk notices drift (positive control)', () => {

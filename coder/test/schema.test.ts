@@ -14,6 +14,8 @@ function sampleSchema(f: string): SchemaName {
   if (f.startsWith('investigate-result')) return 'investigate';
   if (f.startsWith('triage-request')) return 'triageRequest';
   if (f.startsWith('triage-result')) return 'triage';
+  if (f.startsWith('review-request')) return 'reviewRequest';
+  if (f.startsWith('review-result')) return 'review';
   if (f.startsWith('request-v2')) return 'requestV2';
   if (f.startsWith('request')) return 'request';
   if (f.startsWith('plan-result')) return 'plan';
@@ -35,7 +37,7 @@ function samples(kind: 'valid' | 'invalid') {
 describe('vendored samples', () => {
   it('there are valid and invalid samples for every document kind', () => {
     for (const kind of ['valid', 'invalid'] as const) {
-      expect(new Set(samples(kind).map((s) => s.schema))).toEqual(new Set(['request', 'requestV2', 'plan', 'implement', 'investigateRequest', 'investigate', 'triageRequest', 'triage']));
+      expect(new Set(samples(kind).map((s) => s.schema))).toEqual(new Set(['request', 'requestV2', 'plan', 'implement', 'investigateRequest', 'investigate', 'triageRequest', 'triage', 'reviewRequest', 'review']));
     }
   });
   for (const s of samples('valid')) {

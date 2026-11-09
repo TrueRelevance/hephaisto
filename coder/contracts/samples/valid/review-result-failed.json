@@ -1,0 +1,15 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000b1",
+  "phase": "review",
+  "outcome": "budget_exhausted",
+  "verdicts": [],
+  "clones": [],
+  "cost_usd": 3,
+  "billing": "api",
+  "turns": 41,
+  "session_id": null,
+  "context_sha": null,
+  "error": "the review ran out of budget",
+  "denied_tool_calls": []
+}

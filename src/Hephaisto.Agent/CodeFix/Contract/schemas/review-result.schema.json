@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TrueRelevance/dev-context/schemas/review-result.schema.json",
+  "title": "ReviewResult",
+  "description": "What a review Job answers, as the last framed block of its log: one verdict per issue of the batch - can be closed (and why), a real bug, still to build - with the evidence for it, and how the read-only clones went. Hephaisto keeps the verdicts for a person to agree with or move; nothing here is applied by itself.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "attempt_id", "phase", "outcome", "verdicts", "clones", "cost_usd", "billing", "turns", "session_id", "context_sha", "error", "denied_tool_calls"],
+  "properties": {
+    "contract_version": { "const": "1" },
+    "attempt_id": { "type": "string", "format": "uuid" },
+    "phase": { "const": "review" },
+    "outcome": {
+      "enum": ["reviewed", "budget_exhausted", "max_turns", "rate_limited", "failed"],
+      "description": "reviewed = the model answered and every issue of the batch has exactly one verdict (one it left out is unsure with low confidence). Any other outcome carries no verdicts."
+    },
+    "verdicts": {
+      "type": "array",
+      "maxItems": 40,
+      "description": "In the order of the request's issues, one each, and none for an issue that is not in the batch.",
+      "items": { "$ref": "#/$defs/verdict" }
+    },
+    "clones": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "Every repository an issue of the batch lives in: whether the Job had it to read, and why not.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repository", "cloned", "head", "note"],
+        "properties": {
+          "repository": { "type": "string", "maxLength": 200 },
+          "cloned": { "type": "boolean" },
+          "head": { "type": ["string", "null"], "maxLength": 64, "description": "The default branch's commit that was read." },
+          "note": { "type": ["string", "null"], "maxLength": 500, "description": "Why it was not cloned: archived, not offered, could not be reached." }
+        }
+      }
+    },
+    "cost_usd": { "type": "number", "minimum": 0, "description": "The SDK's total_cost_usd; notional on a subscription." },
+    "billing": { "enum": ["subscription", "api", "fake"], "description": "Which credential paid: CLAUDE_CODE_OAUTH_TOKEN = subscription, ANTHROPIC_API_KEY = api, the fake SDK = fake." },
+    "turns": { "type": "integer", "minimum": 0 },
+    "session_id": { "type": ["string", "null"], "maxLength": 128 },
+    "context_sha": { "type": ["string", "null"], "maxLength": 64 },
+    "error": { "type": ["string", "null"], "maxLength": 4000 },
+    "denied_tool_calls": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tool", "input", "reason"],
+        "properties": {
+          "tool": { "type": "string", "maxLength": 64 },
+          "input": { "type": "string", "maxLength": 500 },
+          "reason": { "type": "string", "maxLength": 500 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reference": {
+      "type": "string",
+      "maxLength": 220,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*/(?!\\.\\.?#)[A-Za-z0-9._-]+#[1-9][0-9]*$",
+      "description": "owner/repo#number."
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issue", "group", "close_reason", "related", "confidence", "summary", "reason", "evidence", "priority"],
+      "properties": {
+        "issue": { "$ref": "#/$defs/reference" },
+        "group": {
+          "enum": ["close", "bug", "feature", "unsure"],
+          "description": "close = can be closed; bug = a problem that still exists; feature = a feature or task worth doing. unsure is never the model's: the runner gives it to an issue the model left out, or whose close came without a reason."
+        },
+        "close_reason": {
+          "enum": ["done", "superseded", "obsolete", "duplicate", "answered", "stale", null],
+          "description": "Set exactly when group is close."
+        },
+        "related": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/reference" }], "description": "The pull request, issue or epic the verdict leans on most, when there is one." },
+        "confidence": { "enum": ["high", "medium", "low"], "description": "low means a person decides: Hephaisto shows it as unsure, whatever the group." },
+        "summary": { "type": "string", "maxLength": 300, "description": "One line: what the issue is, as it stands now." },
+        "reason": { "type": "string", "maxLength": 1000, "description": "Why this group, in plain text, naming the evidence." },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "description": "Short facts, one each: `PR owner/repo#n merged`, `commit <sha> on main`, `sub-issue owner/repo#n closed`, `repository archived`, `no pull request`.",
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "priority": {
+          "enum": ["P0", "P1", "P2", null],
+          "description": "The suggested board Priority, only for a bug or a feature: P0 drop everything, P1 important, P2 nice to have."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "group": { "const": "close" } } },
+          "then": { "properties": { "close_reason": { "type": "string" }, "priority": { "type": "null" } } },
+          "else": { "properties": { "close_reason": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "group": { "const": "unsure" } } },
+          "then": { "properties": { "priority": { "type": "null" }, "confidence": { "const": "low" } } }
+        }
+      ]
+    }
+  }
+}

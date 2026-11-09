@@ -1,0 +1,53 @@
+{
+  "contract_version": "1",
+  "attempt_id": "0192a6f0-0000-7000-8000-0000000000b1",
+  "phase": "review",
+  "outcome": "reviewed",
+  "verdicts": [
+    {
+      "issue": "acme/api#431",
+      "group": "close",
+      "close_reason": null,
+      "related": "acme/api#433",
+      "confidence": "high",
+      "summary": "The stale cache entry is fixed.",
+      "reason": "Its pull request acme/api#433 was merged two days ago and a reviewer says it is deployed.",
+      "evidence": [
+        "PR acme/api#433 merged"
+      ],
+      "priority": null
+    },
+    {
+      "issue": "acme/legacy-ttd#1",
+      "group": "unsure",
+      "close_reason": null,
+      "related": null,
+      "confidence": "low",
+      "summary": "Claude gave no verdict for this issue.",
+      "reason": "The model's answer did not name this issue, so a person decides.",
+      "evidence": [],
+      "priority": null
+    }
+  ],
+  "clones": [
+    {
+      "repository": "acme/api",
+      "cloned": true,
+      "head": "0123456789abcdef0123456789abcdef01234567",
+      "note": null
+    },
+    {
+      "repository": "acme/legacy-ttd",
+      "cloned": false,
+      "head": null,
+      "note": "archived: not cloned"
+    }
+  ],
+  "cost_usd": 0.61,
+  "billing": "subscription",
+  "turns": 14,
+  "session_id": "4f7c1c1e-0000-4000-8000-000000000002",
+  "context_sha": "0123456789abcdef0123456789abcdef01234567",
+  "error": null,
+  "denied_tool_calls": []
+}

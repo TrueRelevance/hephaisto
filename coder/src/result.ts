@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RESULT_MAX_BYTES } from './config.js';
 import { log } from './log.js';
-import { type AnyResult, type Billing, type CodeFixPhase, type ImplementResult, type InvestigateResult, type Phase, type PlanResult, type TriageResult, rawSchema, validate } from './schemas.js';
+import { type AnyResult, type Billing, type CodeFixPhase, type ImplementResult, type InvestigateResult, type Phase, type PlanResult, type ReviewResult, type TriageResult, rawSchema, validate } from './schemas.js';
 
 // The runner's only output that matters. Hephaisto reads the last 1 MiB of the pod log, takes
 // the LAST begin/end pair, and checks bytes + sha256 before it deserialises anything, so the
@@ -104,6 +104,7 @@ function resolveRef(ref: string, current: Schema): Schema {
       'codefix-request.schema.json': rawSchema('request'),
       'investigate-result.schema.json': rawSchema('investigate'),
       'triage-result.schema.json': rawSchema('triage'),
+      'review-result.schema.json': rawSchema('review'),
     };
     base = byFile[file] ?? current;
   }
@@ -143,10 +144,28 @@ export function clampToSchema(value: unknown, schema: Schema, root: Schema, fact
 
 export function minimalFailed(phase: 'investigate', attemptId: string, error: string, billing?: Billing): InvestigateResult;
 export function minimalFailed(phase: 'triage', attemptId: string, error: string, billing?: Billing): TriageResult;
+export function minimalFailed(phase: 'review', attemptId: string, error: string, billing?: Billing): ReviewResult;
 export function minimalFailed(phase: CodeFixPhase, attemptId: string, error: string): PlanResult | ImplementResult;
 export function minimalFailed(phase: Phase, attemptId: string, error: string, billing?: Billing): AnyResult;
 export function minimalFailed(phase: Phase, attemptId: string, error: string, billing: Billing = 'api'): AnyResult {
   const err = truncateString(error, 4000, false);
+  if (phase === 'review') {
+    return {
+      contract_version: '1',
+      attempt_id: attemptId,
+      phase: 'review',
+      outcome: 'failed',
+      verdicts: [],
+      clones: [],
+      cost_usd: 0,
+      billing,
+      turns: 0,
+      session_id: null,
+      context_sha: null,
+      error: err,
+      denied_tool_calls: [],
+    };
+  }
   if (phase === 'triage') {
     return {
       contract_version: '1',

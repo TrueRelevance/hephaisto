@@ -22,7 +22,9 @@ export type TemplateName =
   // for a work item that is planned again: the earlier plan, and how to read the answers
   | 'replan-block'
   // for the planner: label and analyse one GitHub issue (v0.15.0)
-  | 'triage';
+  | 'triage'
+  // for the weekly review: one verdict for each issue of a batch (#312)
+  | 'review';
 
 /** investigate.md, the section appended to Hephaisto's investigation prompt. */
 export const INVESTIGATE_VARS = ['context_dir', 'memory_dir', 'source_block'] as const;

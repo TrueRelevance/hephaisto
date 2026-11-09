@@ -2,7 +2,7 @@ import { closeSync, constants, createWriteStream, existsSync, fstatSync, lstatSy
 import { join } from 'node:path';
 import { z } from 'zod';
 import { BUNDLE_MAX_BYTES, HANDOFF_MAX_BYTES } from './config.js';
-import { DraftModeZ, VerificationLevelZ } from './schemas.js';
+import { DraftModeZ, ReviewCloneZ, VerificationLevelZ } from './schemas.js';
 
 // What one role leaves for the next (backlog #116). Three files, and who may believe which:
 //
@@ -32,7 +32,7 @@ export const PrepareHandoffZ = z
     handoff_version: z.literal(HANDOFF_VERSION),
     role: z.literal('prepare'),
     attempt_id: z.string().max(64),
-    phase: z.enum(['plan', 'implement', 'investigate', 'triage']),
+    phase: z.enum(['plan', 'implement', 'investigate', 'triage', 'review']),
     /** When prepare started. The Job's deadline has been running since then, so the later roles count from here. */
     started_at_ms: z.number().int().min(0),
     /** An early result - already_exists, or a failure. The role that prints prints it, and nothing else runs. */
@@ -59,6 +59,8 @@ export const PrepareHandoffZ = z
       .nullable(),
     /** investigate: how the read-only source clone went. */
     source: z.object({ cloned: z.boolean(), analysed_ref: z.string().max(64).nullable(), error: z.string().max(1000).nullable() }).strict().nullable(),
+    /** review: every repository of the batch, cloned read-only under <work>/repos/<owner>/<repo> or not, and why not. */
+    clones: z.array(ReviewCloneZ).max(50).optional(),
   })
   .strict();
 export type PrepareHandoff = z.infer<typeof PrepareHandoffZ>;
