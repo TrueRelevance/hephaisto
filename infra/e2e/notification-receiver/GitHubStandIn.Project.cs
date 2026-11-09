@@ -30,7 +30,11 @@ namespace NotificationReceiver;
 // repositories `acme/...`, which no install lists, so the poller never asks about them and the
 // planner's suite finds the same board every time. One of each: finished and still open, a
 // parent whose sub-issues are all done, a quiet pull request, an empty field, planned on an
-// earlier day, put away today, closed today.
+// earlier day, put away today, closed today. The weekly review's issues that are NOT on the
+// board are seeded with it (GitHubStandIn.Review.cs), so one reset gives both suites their start.
+//
+// Every time in the seeding is relative to the moment of the seeding, so a reset moves every
+// seeded issue's updated_at: to the review's incremental run, a reset board is a changed board.
 public static partial class GitHubStandIn
 {
     private const string ProjectId = "PVT_standin";
@@ -68,31 +72,35 @@ public static partial class GitHubStandIn
         public Dictionary<string, string> Dates { get; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset? ClosedAt { get; set; }
         public string? ClosedAs { get; set; }
+
+        /// <summary>When each single-select field got its value: GraphQL's <c>updatedAt</c> of the value, the review's "days in status".</summary>
+        public Dictionary<string, DateTimeOffset> FieldsAt { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
     /// Maps the board's routes and seeds it. Returns the seeding, for the control that forgets
     /// everything; it must be called under <paramref name="gate"/>.
     /// </summary>
-    private static Action MapProject(WebApplication app, RouteGroupBuilder api, object gate, Dictionary<(string Repo, int Number), Issue> issues, List<Comment> comments, Account bot)
+    private static Action MapProject(WebApplication app, RouteGroupBuilder api, object gate, Dictionary<(string Repo, int Number), Issue> issues, List<Comment> comments, Account bot, OrgState org)
     {
         var board = new Dictionary<(string Repo, int Number), BoardRow>();
 
         void Seed()
         {
-            foreach (var key in board.Keys.ToList())
+            foreach (var key in board.Keys.Concat(org.Seeded).ToList())
             {
                 issues.Remove(key);
                 comments.RemoveAll(c => c.Repo == key.Repo && c.Number == key.Number);
             }
 
             board.Clear();
+            org.Pulls.Clear();
 
             var now = Now();
             var reporter = new Account("reporter", 3003);
 
             Issue Add(string repo, int number, string type, string title, string? status, string? priority, string? area,
-                (string Repo, int Number)? parent = null, BoardPull[]? pulls = null, int updatedDaysAgo = 1, string? body = null, int comments = 0)
+                (string Repo, int Number)? parent = null, BoardPull[]? pulls = null, int updatedDaysAgo = 1, string? body = null, int comments = 0, int? statusDaysAgo = null)
             {
                 var issue = new Issue
                 {
@@ -108,6 +116,7 @@ public static partial class GitHubStandIn
                     // its last change.
                     CreatedAt = now.AddDays(-30).AddHours(number),
                     UpdatedAt = now.AddDays(-updatedDaysAgo),
+                    Parent = parent,
                 };
 
                 var row = new BoardRow { ItemId = $"PVTI_{repo.Replace('/', '_')}_{number}", Parent = parent, Pulls = [.. pulls ?? []] };
@@ -116,8 +125,19 @@ public static partial class GitHubStandIn
                 if (priority is not null) row.Fields["Priority"] = priority;
                 if (area is not null) row.Fields["Area"] = area;
 
+                foreach (var field in row.Fields.Keys)
+                {
+                    row.FieldsAt[field] = now.AddDays(-(statusDaysAgo ?? updatedDaysAgo));
+                }
+
                 issues[(repo, number)] = issue;
                 board[(repo, number)] = row;
+
+                // The same list: what the board's GraphQL timeline shows is what REST's shows.
+                if (row.Pulls.Count > 0)
+                {
+                    org.Pulls[(repo, number)] = row.Pulls;
+                }
 
                 return issue;
             }
@@ -131,6 +151,8 @@ public static partial class GitHubStandIn
             void Close(string repo, int number, DateTimeOffset at)
             {
                 issues[(repo, number)].State = "closed";
+                issues[(repo, number)].StateReason = "completed";
+                issues[(repo, number)].ClosedAt = at;
                 board[(repo, number)].ClosedAt = at;
                 board[(repo, number)].ClosedAs = "COMPLETED";
             }
@@ -199,6 +221,13 @@ public static partial class GitHubStandIn
             // Closed today.
             Add("acme/web", 229, "Bug", "Receipt e-mail links to the old shop", "Done", "P1", "Web");
             Close("acme/web", 229, now.AddMinutes(-30));
+
+            // A real bug with no priority, three weeks in the backlog: the weekly review's
+            // suggestion is the board's first Priority.
+            Add("acme/api", 475, "Bug", "Webhook signature check accepts an empty secret", "Backlog", null, "API", updatedDaysAgo: 21,
+                body: "A provider that sends no signature header is let through when the secret is empty.");
+
+            SeedReview(org, issues, now, reporter);
         }
 
         lock (gate)
@@ -216,7 +245,12 @@ public static partial class GitHubStandIn
 
             foreach (var (name, option) in row.Fields)
             {
-                values.Add(new JsonObject { ["name"] = option, ["field"] = new JsonObject { ["name"] = name } });
+                values.Add(new JsonObject
+                {
+                    ["name"] = option,
+                    ["updatedAt"] = Stamp(row.FieldsAt.GetValueOrDefault(name, issue.CreatedAt)),
+                    ["field"] = new JsonObject { ["name"] = name },
+                });
             }
 
             foreach (var (name, date) in row.Dates)
@@ -332,6 +366,7 @@ public static partial class GitHubStandIn
                     }
 
                     row.Fields[field.Name] = chosen;
+                    row.FieldsAt[field.Name] = Now();
                     Console.WriteLine($"GITHUB board: {row.ItemId} {field.Name} = {chosen}");
 
                     return Json(new JsonObject { ["data"] = new JsonObject { ["updateProjectV2ItemFieldValue"] = new JsonObject { ["projectV2Item"] = new JsonObject { ["id"] = row.ItemId } } } });
@@ -357,20 +392,35 @@ public static partial class GitHubStandIn
                     return Json(new JsonObject { ["data"] = new JsonObject { ["addProjectV2ItemById"] = new JsonObject { ["item"] = new JsonObject { ["id"] = row.ItemId } } } });
                 }
 
+                // Any issue of the organisation, on the board or not: the weekly review closes both.
                 if (query.Contains("closeIssue", StringComparison.Ordinal))
                 {
-                    var key = board.Keys.FirstOrDefault(k => NodeId("I", k.Repo, k.Number) == Field(variables, "issue"));
+                    var key = issues.Keys.FirstOrDefault(k => NodeId("I", k.Repo, k.Number) == Field(variables, "issue"));
 
                     if (key == default || !issues.TryGetValue(key, out var issue))
                     {
                         return GraphQlError("closeIssue", "NOT_FOUND", "Could not resolve to a node with the global id given.");
                     }
 
+                    if (org.Archived.Contains(key.Repo))
+                    {
+                        return GraphQlError("closeIssue", "FORBIDDEN", "Repository was archived so is read-only.");
+                    }
+
+                    var reason = Field(variables, "reason");
+
                     issue.State = "closed";
                     issue.UpdatedAt = Now();
-                    board[key].ClosedAt = Now();
-                    board[key].ClosedAs = Field(variables, "reason");
-                    Console.WriteLine($"GITHUB board: {key.Repo}#{key.Number} closed as {board[key].ClosedAs}");
+                    issue.ClosedAt = Now();
+                    issue.StateReason = (reason ?? "COMPLETED").ToLowerInvariant();
+
+                    if (board.TryGetValue(key, out var closedRow))
+                    {
+                        closedRow.ClosedAt = Now();
+                        closedRow.ClosedAs = reason;
+                    }
+
+                    Console.WriteLine($"GITHUB board: {key.Repo}#{key.Number} closed as {reason}");
 
                     return Json(new JsonObject { ["data"] = new JsonObject { ["closeIssue"] = new JsonObject { ["issue"] = new JsonObject { ["id"] = Field(variables, "issue"), ["state"] = "CLOSED" } } } });
                 }
@@ -528,6 +578,28 @@ public static partial class GitHubStandIn
                 if (body is JsonObject o && o.ContainsKey("body"))
                 {
                     issue.Body = Field(body, "body") is { Length: > 0 } text ? text : null;
+                }
+
+                // Closing by REST, as `gh issue close` does: state and state_reason.
+                if (Field(body, "state") is { } state)
+                {
+                    if (state is not ("open" or "closed") || Field(body, "state_reason") is { } why && why is not ("completed" or "not_planned" or "duplicate" or "reopened"))
+                    {
+                        return Problem(422, "Validation Failed");
+                    }
+
+                    if (state != issue.State)
+                    {
+                        issue.State = state;
+                        issue.ClosedAt = state == "closed" ? Now() : null;
+                        issue.StateReason = state == "closed" ? Field(body, "state_reason") ?? "completed" : "reopened";
+
+                        if (board.TryGetValue((issue.Repo, number), out var closedRow))
+                        {
+                            closedRow.ClosedAt = issue.ClosedAt;
+                            closedRow.ClosedAs = state == "closed" ? issue.StateReason.ToUpperInvariant() : null;
+                        }
+                    }
                 }
 
                 issue.UpdatedAt = Now();

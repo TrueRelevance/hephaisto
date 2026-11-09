@@ -1,4 +1,6 @@
-import { Page, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { Page, TestInfo, expect } from '@playwright/test';
 
 /**
  * Navigate and wait until the Blazor circuit has started coming up.
@@ -107,4 +109,37 @@ export async function incidents(page: Page, query = '') {
     .toBeLessThan(INCIDENT_LIMIT);
 
   return body;
+}
+
+/**
+ * A test that lands before the code that turns it green (scripts/e2e/ui/KNOWN_RED).
+ *
+ * The UI suite's form of the pager's and the issues suite's known-red list, and held to the same
+ * two rules by Playwright itself: a listed test that FAILS is an expected failure and the run
+ * stays green; a listed test that PASSES is "expected to fail, but passed" and the run is red -
+ * so the code that turns it green and the line's removal land in one commit.
+ *
+ * A line is `<spec file> <test id> <major.minor> <stage and why>`; the test id is the first word
+ * of the test's title. A spec opts in by calling this from a beforeEach:
+ *
+ *     test.beforeEach(({}, info) => knownRed(info));
+ *
+ * `UI_STRICT=1` ignores the list - the release gate's mode, where every listed test fails.
+ * tests/Hephaisto.Tests/E2e/UiSuiteTests.cs holds the list to its form and its milestone.
+ */
+export function knownRed(info: TestInfo) {
+  if (process.env.UI_STRICT === '1') return;
+
+  const id = info.title.split(' ')[0];
+  const file = basename(info.file);
+  const entry = readFileSync(join(__dirname, '..', 'KNOWN_RED'), 'utf8')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('#'))
+    .map(l => l.split(/\s+/))
+    .find(([f, t]) => f === file && t === id);
+
+  if (entry) {
+    info.fail(true, `KNOWN RED ${file} ${id} (${entry[2]}): ${entry.slice(3).join(' ')}`);
+  }
 }

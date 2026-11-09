@@ -559,3 +559,43 @@ does not: GitHub sometimes gives an added issue an item and never lists it (the 
 alone and adds it again); a board's own workflow may close an issue whose status reaches the last
 column (the field spec presses that one last); and nothing is retried, because a second attempt
 would start from what the first one closed.
+
+## The weekly review's suite (`ui/tests/planner-review.spec.ts`), #312
+
+The weekly backlog review is accepted by the console suite, against the stand-in and the
+scripted coder, and landed before its code: every test is on `ui/KNOWN_RED` until the stage that
+turns it green.
+
+```sh
+# tilt_config.json: "github": "stand-in", "coder": true, "coder-sdk": "fake", "teams-bot": "stand-in"
+HEPHAISTO_URL=http://$H:8100 GITHUB_STANDIN_URL=http://$H:8110 scripts/e2e/ui/run.sh planner-review.spec.ts
+curl -s "http://$H:8110/github/control/writes?owner=acme" | jq .   # every write, and whether one was tried
+```
+
+Eight tests, serial, each named by its id (R01 to R08). R01 resets the stand-in and starts a
+run with `POST /api/planner/review/run` - the entry point the weekly schedule calls - then holds
+that every open issue of the organisation `acme` got the verdict of
+`coder/fake-scripts/default.review.json`, that the run read the organisation (the search, the
+timeline of an issue no board holds, a repository's `archived`) and that it wrote **nothing**.
+R02 to R06 are the page: the tabs, the close cards by reason with their evidence, the archived
+repository's card that cannot be closed, Agree setting a bug's priority on the board, a verdict
+moved, and Close N issues - each closed issue with one comment that carries its reason, the
+archived one untouched. R07 comments on one issue and runs again: only that one is looked at, and
+what people decided stays. R08 is the Teams message of each run.
+
+What the stand-in adds for it (`GitHubStandIn.Review.cs`): `GET /search/issues` (422 without
+`is:issue`, as GitHub since 2025), `GET .../issues/{n}/sub_issues`, `archived` on a repository,
+`cross-referenced` and `referenced` events on a timeline, writes to an archived repository refused,
+`closeIssue` for an issue that is not on the board, and `GET /github/control/writes`, the record
+of every write apart from `/requests`. The organisation is seeded with the board, and every seeded
+time is relative to the reset - so after `POST /github/control/project/reset` every issue has
+changed since any earlier verdict, and R01 starts from scratch without anything reset in the agent.
+
+### Known red in the console suite
+
+`ui/KNOWN_RED` lists tests that land before their code: `<spec file> <test id> <milestone> <why>`.
+A spec opts in with `test.beforeEach(({}, info) => knownRed(info))`; Playwright then counts a
+listed test that fails as expected, and fails a listed test that passes - so the fix and the
+line's removal land in one commit. `run.sh` names what is still known red after every run, and
+`UI_STRICT=1` ignores the list: the release gate. `UiSuiteTests` holds the list's form and
+milestones, and that the stand-in serves every control the review spec calls.

@@ -57,7 +57,12 @@ namespace NotificationReceiver;
 //   POST  /github/api/repos/{owner}/{repo}/issues/comments/{id}/reactions {content}   201, or 200 when it was there
 //   GET   /github/api/repos/{owner}/{repo}/pulls/{number}
 //   GET   /github/api/repos/{owner}/{repo}/issues/{number}/timeline?per_page=&page=
-//   GET   /github/api/repos/{owner}/{repo}                                   full_name, default_branch
+//   GET   /github/api/repos/{owner}/{repo}                                   full_name, default_branch, archived
+//   GET   /github/api/repos/{owner}/{repo}/issues/{number}/sub_issues?per_page=&page=
+//   GET   /github/api/search/issues?q=&sort=&order=&per_page=&page=            the weekly review's org-wide read (#312)
+//
+// A write to a repository that is archived is refused as GitHub refuses it: a 403, "Repository
+// was archived so is read-only." - and still recorded, like every other call.
 //
 // The harness's side: what a person at github.com would do, and what the agent was seen doing.
 // Not authenticated, like /teams/messages - it is not part of the thing being imitated:
@@ -75,6 +80,12 @@ namespace NotificationReceiver;
 //   POST   /github/control/fail/{500|rate-limit|off}?count=N              the next N API calls fail
 //   GET    /github/control/requests       every API call: seq, method, path, query, status, when
 //   DELETE /github/control/requests
+//   GET    /github/control/writes?since=&owner=   every call that writes or tried to: a REST call
+//                                         that is not a GET, and a GraphQL mutation (by name, with
+//                                         the issue it names). A board READ is a POST and is not
+//                                         one. {seq, writes}; seq is the newest call's, to ask
+//                                         "since" next time. Kept apart from /requests, so a busy
+//                                         poller cannot push a write out of the record
 //   GET    /github/control/comments       every comment, with its issue, its author, its edits and its reactions
 //   GET    /github/control/state          the bot, the failure mode, every issue and pull request
 //   DELETE /github/control                forget everything but the counters
@@ -100,6 +111,14 @@ public static partial class GitHubStandIn
         public int Comments { get; set; }
         public DateTimeOffset CreatedAt { get; init; }
         public DateTimeOffset UpdatedAt { get; set; }
+
+        /// <summary>The issue this one is a sub-issue of, as GitHub's sub-issues have it: one parent at most.</summary>
+        public (string Repo, int Number)? Parent { get; set; }
+
+        /// <summary>REST's <c>state_reason</c>: <c>completed</c>, <c>not_planned</c>, <c>duplicate</c> or <c>reopened</c>.</summary>
+        public string? StateReason { get; set; }
+
+        public DateTimeOffset? ClosedAt { get; set; }
     }
 
     private sealed class Comment
@@ -151,6 +170,7 @@ public static partial class GitHubStandIn
         var events = new List<Event>();
         var reactions = new List<Reaction>();
         var requests = new Queue<JsonObject>();
+        var org = new OrgState();
         var failMode = "off";
         var failLeft = 0;
         var seq = 0L;
@@ -182,9 +202,33 @@ public static partial class GitHubStandIn
                 ["at"] = DateTimeOffset.UtcNow.ToString("O"),
             };
 
+            // What a GraphQL call is, read before the handler: a board read is a POST like a
+            // mutation, and only the document tells the two apart.
+            if (ctx.Request.Path.Value![Prefix.Length..] == "/graphql" && HttpMethods.IsPost(ctx.Request.Method))
+            {
+                ctx.Request.EnableBuffering();
+                using (var peek = new StreamReader(ctx.Request.Body, leaveOpen: true))
+                {
+                    TagGraphQl(record, await peek.ReadToEndAsync());
+                }
+
+                ctx.Request.Body.Position = 0;
+            }
+            else if (!HttpMethods.IsGet(ctx.Request.Method) && !HttpMethods.IsHead(ctx.Request.Method)
+                && IssuePath().Match(record["path"]!.GetValue<string>()) is { Success: true } target)
+            {
+                record["issue"] = $"{target.Groups[1].Value}#{target.Groups[2].Value}";
+            }
+
+            var written = IsWrite(record);
+            var repoPath = RepoPath().Match(record["path"]!.GetValue<string>());
+
             string failing;
+            bool archived;
             lock (gate)
             {
+                archived = written && repoPath.Success && org.Archived.Contains(repoPath.Groups[1].Value);
+
                 // Numbered, because only the last 2000 are kept: "what was asked since" is a
                 // number to compare, never a position in the list or a clock on another machine.
                 record["seq"] = ++seq;
@@ -222,6 +266,7 @@ public static partial class GitHubStandIn
                 _ when header.Length == 0 => Problem(401, "Requires authentication"),
                 // GitHub takes both spellings of the scheme.
                 _ when header != $"Bearer {token}" && header != $"token {token}" => Problem(401, "Bad credentials"),
+                _ when archived => Problem(403, "Repository was archived so is read-only.", $"{Docs}/repos/repos#update-a-repository"),
                 _ => null,
             };
 
@@ -237,6 +282,16 @@ public static partial class GitHubStandIn
             lock (gate)
             {
                 record["status"] = ctx.Response.StatusCode;
+
+                if (written)
+                {
+                    org.Writes.Enqueue(record);
+
+                    while (org.Writes.Count > Kept)
+                    {
+                        org.Writes.Dequeue();
+                    }
+                }
             }
 
             Console.WriteLine($"GITHUB {ctx.Request.Method} {record["path"]}{record["query"]} -> {ctx.Response.StatusCode}");
@@ -248,13 +303,23 @@ public static partial class GitHubStandIn
 
         // A repository's own page, asked for its default branch. Any name is a repository here -
         // there is no list of them - and its branch is `main` unless the pod is told another.
-        api.MapGet("/repos/{owner}/{repo}", (string owner, string repo) => Results.Json(new JsonObject
+        api.MapGet("/repos/{owner}/{repo}", (string owner, string repo) =>
         {
-            ["full_name"] = $"{owner}/{repo}",
-            ["name"] = repo,
-            ["private"] = false,
-            ["default_branch"] = configuration["GITHUB_STANDIN_DEFAULT_BRANCH"] is { Length: > 0 } branch ? branch : "main",
-        }));
+            bool archived;
+            lock (gate)
+            {
+                archived = org.Archived.Contains($"{owner}/{repo}");
+            }
+
+            return Results.Json(new JsonObject
+            {
+                ["full_name"] = $"{owner}/{repo}",
+                ["name"] = repo,
+                ["private"] = false,
+                ["default_branch"] = configuration["GITHUB_STANDIN_DEFAULT_BRANCH"] is { Length: > 0 } branch ? branch : "main",
+                ["archived"] = archived,
+            });
+        });
 
         api.MapGet("/repos/{owner}/{repo}/issues", (string owner, string repo, HttpContext ctx) =>
         {
@@ -278,7 +343,7 @@ public static partial class GitHubStandIn
             lock (gate)
             {
                 return issues.TryGetValue(($"{owner}/{repo}", number), out var issue)
-                    ? Etagged(ctx, IssueJson(issue))
+                    ? Etagged(ctx, IssueJson(issue, issues.Values))
                     : Problem(404, "Not Found");
             }
         });
@@ -401,6 +466,7 @@ public static partial class GitHubStandIn
                     .Concat(comments
                         .Where(c => c.Repo == $"{owner}/{repo}" && c.Number == number)
                         .Select(c => (At: c.CreatedAt, c.Id, Json: CommentedJson(c))))
+                    .Concat(ReferenceEvents(org, ($"{owner}/{repo}", number)))
                     .OrderBy(e => e.At)
                     .ThenBy(e => e.Id)
                     .Select(e => e.Json)
@@ -441,13 +507,17 @@ public static partial class GitHubStandIn
         {
             lock (gate)
             {
-                return Etagged(ctx, PullJson($"{owner}/{repo}", number, pulls.GetValueOrDefault(($"{owner}/{repo}", number)) ?? new Pull()));
+                return Etagged(ctx, PullJson($"{owner}/{repo}", number, pulls.GetValueOrDefault(($"{owner}/{repo}", number)) ?? SeededPull(org, $"{owner}/{repo}", number) ?? new Pull()));
             }
         });
 
         // GitHub's 404 rather than an empty one, for a call this stand-in does not serve.
         // The project board of the planner (v0.15.0): GitHubStandIn.Project.cs.
-        var seedBoard = MapProject(app, api, gate, issues, comments, bot);
+        var seedBoard = MapProject(app, api, gate, issues, comments, bot, org);
+
+        // The weekly review's reads (#312): the organisation's open issues, sub-issues and what
+        // the board's seeding adds beyond it. GitHubStandIn.Review.cs.
+        MapReview(api, gate, issues, org);
 
         api.MapFallback(() => Problem(404, "Not Found"));
 
@@ -501,7 +571,13 @@ public static partial class GitHubStandIn
                 }
 
                 issue.Title = Field(body, "title") ?? issue.Title;
-                issue.State = Field(body, "state") ?? issue.State;
+
+                if (Field(body, "state") is { } next && next != issue.State)
+                {
+                    issue.State = next;
+                    issue.ClosedAt = next == "closed" ? Now() : null;
+                    issue.StateReason = next == "closed" ? Field(body, "state_reason") ?? "completed" : "reopened";
+                }
 
                 // Present and null clears it, absent leaves it: an edit to the title is not one
                 // to the body.
@@ -699,6 +775,24 @@ public static partial class GitHubStandIn
             return Results.NoContent();
         });
 
+        // The record of writes, kept apart from /requests. `owner` keeps the REST calls under
+        // /repos/<owner>/ and every GraphQL mutation (the planner's alone; no poller writes
+        // through GraphQL).
+        control.MapGet("/writes", (long? since, string? owner) =>
+        {
+            lock (gate)
+            {
+                var found = org.Writes
+                    .Where(w => w["seq"]!.GetValue<long>() > (since ?? 0))
+                    .Where(w => owner is null || w["path"]!.GetValue<string>() == "/graphql"
+                        || w["path"]!.GetValue<string>().StartsWith($"/repos/{owner}/", StringComparison.OrdinalIgnoreCase));
+
+                return Results.Text(
+                    new JsonObject { ["seq"] = seq, ["writes"] = new JsonArray([.. found.Select(w => w.DeepClone())]) }.ToJsonString(),
+                    "application/json");
+            }
+        });
+
         control.MapGet("/comments", () =>
         {
             lock (gate)
@@ -753,6 +847,7 @@ public static partial class GitHubStandIn
                 events.Clear();
                 reactions.Clear();
                 requests.Clear();
+                org.Writes.Clear();
                 failMode = "off";
                 failLeft = 0;
 
@@ -811,6 +906,30 @@ public static partial class GitHubStandIn
 
     private static JsonObject AccountJson(Account a) => new() { ["login"] = a.Login, ["id"] = a.Id };
 
+    /// <summary>
+    /// An issue as REST answers it. With <paramref name="all"/> it carries <c>sub_issues_summary</c>,
+    /// as GitHub's does; the lists that were here before the weekly review leave it out.
+    /// </summary>
+    private static JsonObject IssueJson(Issue i, IEnumerable<Issue>? all = null)
+    {
+        var json = IssueJson(i);
+
+        if (all is not null)
+        {
+            var children = all.Where(c => c.Parent == (i.Repo, i.Number)).ToList();
+            var completed = children.Count(c => c.State == "closed");
+
+            json["sub_issues_summary"] = new JsonObject
+            {
+                ["total"] = children.Count,
+                ["completed"] = completed,
+                ["percent_completed"] = children.Count == 0 ? 0 : completed * 100 / children.Count,
+            };
+        }
+
+        return json;
+    }
+
     private static JsonObject IssueJson(Issue i) => new()
     {
         ["number"] = i.Number,
@@ -818,7 +937,11 @@ public static partial class GitHubStandIn
         ["title"] = i.Title,
         ["body"] = string.IsNullOrEmpty(i.Body) ? null : i.Body,
         ["state"] = i.State,
+        ["state_reason"] = i.StateReason,
         ["html_url"] = $"https://github.com/{i.Repo}/issues/{i.Number}",
+        // GitHub's own host, not the stand-in's: a client takes the repository from its last
+        // two segments and must never follow it.
+        ["repository_url"] = $"https://api.github.com/repos/{i.Repo}",
         ["user"] = AccountJson(i.Author),
         ["assignees"] = new JsonArray([.. i.Assignees.Select(AccountJson)]),
         ["labels"] = new JsonArray([.. i.Labels.Select(l => new JsonObject { ["name"] = l })]),
@@ -829,6 +952,7 @@ public static partial class GitHubStandIn
         ["comments"] = i.Comments,
         ["created_at"] = Stamp(i.CreatedAt),
         ["updated_at"] = Stamp(i.UpdatedAt),
+        ["closed_at"] = i.ClosedAt is { } closed ? Stamp(closed) : null,
     };
 
     private static JsonObject CommentJson(Comment c) => new()

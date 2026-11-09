@@ -1,0 +1,258 @@
+{
+  "description": "Default FAKE SDK review (#312): looks at dev-context and answers one verdict for every open issue of the GitHub stand-in's organisation acme (infra/e2e/notification-receiver/GitHubStandIn.Project.cs and GitHubStandIn.Review.cs). No model runs. The phase keeps only the verdicts for the issues of its batch, as it must for a real model's answer too, and answers an issue of the batch this script does not name as unsure with low confidence. scripts/e2e/ui/tests/planner-review.spec.ts reads this file for what to expect; change both together.",
+  "steps": [
+    { "tool": "Glob", "input": { "pattern": "*" } },
+    {
+      "result": {
+        "cost_usd": 0,
+        "structured_output": {
+          "outcome": "reviewed",
+          "verdicts": [
+            {
+              "issue": "acme/api#431",
+              "group": "close",
+              "close_reason": "done",
+              "related": "acme/api#433",
+              "confidence": "high",
+              "summary": "FAKE SDK review: the stale cache entry is fixed.",
+              "reason": "Its closing pull request was merged two days ago and nothing in the issue is left to do.",
+              "evidence": ["PR acme/api#433 merged"],
+              "priority": null
+            },
+            {
+              "issue": "acme/planning#9",
+              "group": "close",
+              "close_reason": "done",
+              "related": "acme/planning#10",
+              "confidence": "high",
+              "summary": "FAKE SDK review: the epic's only dashboard is built.",
+              "reason": "Every sub-issue of the epic is closed, and the epic asks for nothing beyond them.",
+              "evidence": ["sub-issue acme/planning#10 closed"],
+              "priority": null
+            },
+            {
+              "issue": "acme/web#160",
+              "group": "close",
+              "close_reason": "done",
+              "related": "acme/web#161",
+              "confidence": "high",
+              "summary": "FAKE SDK review: receipt totals round half-up now.",
+              "reason": "The pull request that rounds half-up was merged three weeks ago; it said follow-up instead of closing the issue.",
+              "evidence": ["PR acme/web#161 merged"],
+              "priority": null
+            },
+            {
+              "issue": "acme/infra#44",
+              "group": "close",
+              "close_reason": "done",
+              "related": null,
+              "confidence": "high",
+              "summary": "FAKE SDK review: the probe accepts both issuers.",
+              "reason": "A commit on main six days ago made the probe accept both issuers, which is what the issue asks for.",
+              "evidence": ["commit a6ac13278 on main"],
+              "priority": null
+            },
+            {
+              "issue": "acme/legacy-ttd#1",
+              "group": "close",
+              "close_reason": "obsolete",
+              "related": null,
+              "confidence": "high",
+              "summary": "FAKE SDK review: the repository is archived.",
+              "reason": "The repository is archived and nothing can land there any more.",
+              "evidence": ["repository archived"],
+              "priority": null
+            },
+            {
+              "issue": "acme/web#118",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "high",
+              "summary": "FAKE SDK review: the login page still fails on an old session.",
+              "reason": "No pull request or commit references it, and the session handling it names has not changed.",
+              "evidence": ["no pull request", "no commit"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/api#475",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "high",
+              "summary": "FAKE SDK review: an empty webhook secret lets every request through.",
+              "reason": "The signature check is still skipped when the secret is empty; nothing references the issue.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/api#440",
+              "group": "bug",
+              "close_reason": null,
+              "related": "acme/web#441",
+              "confidence": "medium",
+              "summary": "FAKE SDK review: large mirror deletes still fail.",
+              "reason": "The pull request that is part of the fix is open and has been quiet for nine days.",
+              "evidence": ["PR acme/web#441 open"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/billing#88",
+              "group": "bug",
+              "close_reason": null,
+              "related": "acme/billing#90",
+              "confidence": "high",
+              "summary": "FAKE SDK review: refund webhooks are retried after a 200.",
+              "reason": "Its fix is an open pull request that moved today.",
+              "evidence": ["PR acme/billing#90 open"],
+              "priority": "P0"
+            },
+            {
+              "issue": "acme/billing#92",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: dunning mails go out twice.",
+              "reason": "Planned for today and not started; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/web#250",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: the invoice PDF misses the VAT id.",
+              "reason": "Left over from yesterday's plan; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/web#262",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: the checkout button hides behind the banner.",
+              "reason": "Planned for today; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/infra#31",
+              "group": "bug",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: a replica cannot keep up with replication.",
+              "reason": "Put away today and not fixed; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/planning#17",
+              "group": "feature",
+              "close_reason": null,
+              "related": "acme/planning#21",
+              "confidence": "high",
+              "summary": "FAKE SDK review: the move to the column store is under way.",
+              "reason": "One of its two sub-issues is open and in progress.",
+              "evidence": ["sub-issue acme/planning#21 open"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/planning#21",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: replaying the accounts is still to do.",
+              "reason": "In progress on the board; nothing references it yet.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/web#240",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: dark mode for invoices is still to build.",
+              "reason": "Nothing references it; it is an inbox request nobody started.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            },
+            {
+              "issue": "acme/scraper#57",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: robots rules are still fetched per URL.",
+              "reason": "Planned two days ago and not started.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            },
+            {
+              "issue": "acme/web#251",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: the CSV export of receipts is still to build.",
+              "reason": "Planned for a later day; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            },
+            {
+              "issue": "acme/api#452",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: the export signing key is still to rotate.",
+              "reason": "Left over from an earlier plan; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            },
+            {
+              "issue": "acme/api#461",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "medium",
+              "summary": "FAKE SDK review: the invoice webhook still needs a backoff.",
+              "reason": "Planned for today; nothing references it.",
+              "evidence": ["no pull request"],
+              "priority": "P1"
+            },
+            {
+              "issue": "acme/api#205",
+              "group": "feature",
+              "close_reason": null,
+              "related": null,
+              "confidence": "high",
+              "summary": "FAKE SDK review: the XLSX export is still to build.",
+              "reason": "Never on the board and never started; accounting still asks for it.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            },
+            {
+              "issue": "acme/planning#30",
+              "group": "bug",
+              "close_reason": null,
+              "related": "acme/planning#17",
+              "confidence": "low",
+              "summary": "FAKE SDK review: the slower calculations may belong to the column-store epic.",
+              "reason": "No fix has landed, and the facts do not say whether it is a bug of its own or part of the move.",
+              "evidence": ["no pull request"],
+              "priority": "P2"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -45,6 +45,15 @@ unexpected=$(jq -r '.stats.unexpected // 0' results.json)
 
 echo "playwright: expected=$expected skipped=$skipped unexpected=$unexpected"
 
+# Known red (KNOWN_RED, tests/helpers.ts knownRed): a listed test that failed is counted as
+# expected by Playwright itself, so it is named here - a green run must not hide what is still red.
+known=$(jq -r '[ .. | objects | select(has("annotations")) | .annotations[]? | select(.type == "fail")
+                | select((.description // "") | startswith("KNOWN RED")) | .description ] | unique | .[]' results.json 2>/dev/null || true)
+if [ -n "$known" ]; then
+    echo "playwright: known red, expected to fail (scripts/e2e/ui/KNOWN_RED; UI_STRICT=1 runs them for real):"
+    printf '%s\n' "$known" | sed 's/^/  - /'
+fi
+
 if [ "$expected" -eq 0 ]; then
     echo "no spec actually ran (expected=0); refusing to report this as a pass" >&2
     exit 1

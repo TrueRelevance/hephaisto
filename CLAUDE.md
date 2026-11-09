@@ -696,6 +696,13 @@ HEPHAISTO_MCP_TOKEN_READONLY=$PAGER_MCP_TOKEN_READONLY` beside the two URLs abov
 `scripts/e2e/planner-live.sh` is the same suite against
 github.com and needs a token that can see the project - the bot's cannot; its header says how.
 
+**The weekly review (#312) is accepted by `planner-review.spec.ts`**, which landed before its code,
+every test on `scripts/e2e/ui/KNOWN_RED` (the console suite's known-red list: a listed test that
+fails is expected, one that passes fails the run, `UI_STRICT=1` ignores the list). It needs the
+coder with `"coder-sdk": "fake"` - the verdicts are `coder/fake-scripts/default.review.json` - and
+reads the stand-in's `GET /github/control/writes` to hold that a run writes nothing. The
+organisation it reviews is the stand-in's `acme`, seeded with the board (`GitHubStandIn.Review.cs`).
+
 ## The Teams bot, as of v0.9.0-rc4
 
 `notifications.teamsBot`: one board in a channel, edited in place, and alerts by personal chat.
