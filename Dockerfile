@@ -2,7 +2,7 @@
 # args. Hephaisto references no internal package, which is why this Dockerfile takes no
 # credentials at all - and therefore why the Tiltfile never has to default one.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 WORKDIR /src
 
 # Restore against the manifests alone so a source-only change reuses the layer.
