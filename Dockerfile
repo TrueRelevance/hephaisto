@@ -56,7 +56,7 @@ RUN dotnet publish src/Hephaisto.Agent/Hephaisto.Agent.csproj \
         -p:Version=${VERSION} \
         -p:InformationalVersion=${VERSION}+${COMMIT}
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 WORKDIR /app
 
 # OCI metadata. `licenses` in particular: an image is the form most people will actually
