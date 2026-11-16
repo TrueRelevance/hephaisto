@@ -183,8 +183,9 @@ turn it on - the project, the token, the values - is one page:
   and both themes keep the same contrast checks. The landing page, docs and demo share the token
   file and change with it. Nothing about what is shown, or where, changed; the e2e suite reads the
   same markup.
-- **MessagePack is pinned to 2.5.303** for the dev-time Aspire host, past GHSA-qhrr-8q5h-9q3h;
-  nothing that is deployed uses it.
+- **The dev-time Aspire host is on 13.6.5**, past CVE-2026-120006 (GHSA-f7vh-h5g3-7jrh), with
+  MessagePack 2.5.307 (past GHSA-qhrr-8q5h-9q3h) and Microsoft.Extensions 10.0.14, which it asks
+  for; nothing that is deployed uses Aspire.
 - **The agent can close an issue now** - from the planner, on a person's click, and from nowhere
   else. Until this release its GitHub client held "nothing that deletes or closes"; it still
   deletes nothing, and a test holds that only the planner's service calls what closes, labels or
