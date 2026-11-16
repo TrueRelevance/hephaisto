@@ -88,6 +88,25 @@ else
         </p>
     }
 
+    @if (Actions.Closing is { } closing)
+    {
+        <div class="hp-review-closing" role="status" aria-live="polite" data-testid="review-closing"
+             data-done="@closing.Done" data-total="@closing.Total">
+            <span class="hp-state st-investigating"><span class="glyph">~</span> closing</span>
+            <span data-testid="review-closing-count"><b>@closing.Done</b> of <b>@closing.Total</b> done</span>
+            <progress max="@closing.Total" value="@closing.Done">@closing.Done of @closing.Total</progress>
+            @if (closing.Current is { } current)
+            {
+                <span>now <span class="mono" data-testid="review-closing-current">@current</span></span>
+            }
+            @if (closing.Refused > 0)
+            {
+                <span class="hp-error" data-testid="review-closing-refused"><span class="glyph">!!</span> @closing.Refused refused</span>
+            }
+            <span class="hp-muted">started by @closing.Actor, @When(closing.StartedAt)</span>
+        </div>
+    }
+
     @if (_message is { } message)
     {
         <p class="@(message.Ok ? "hp-yes" : "hp-error")" data-testid="review-message" data-ok="@(message.Ok ? "true" : "false")">
@@ -125,9 +144,9 @@ else
                     }
                 </p>
                 <button type="button" class="hp-submit" data-testid="review-close-agreed"
-                        disabled="@(!_ready || _busy || closable.Count == 0 || _view.State == ReviewState.Running)"
+                        disabled="@(!_ready || _busy || closable.Count == 0 || _view.State == ReviewState.Running || Actions.Closing is not null)"
                         title="@(_view.State == ReviewState.Running ? "A run is under way: close when it has finished." : null)"
-                        @onclick="CloseAgreedAsync">Close @closable.Count @(closable.Count == 1 ? "issue" : "issues")</button>
+                        @onclick="CloseAgreedAsync">@(Actions.Closing is { } under ? $"Closing… {under.Done} of {under.Total}" : $"Close {closable.Count} {(closable.Count == 1 ? "issue" : "issues")}")</button>
             </div>
         }
     }
@@ -183,6 +202,7 @@ else
 
     private (bool Ok, string Text)? _message;
     private CancellationTokenSource? _cts;
+    private bool _subscribed;
 
     [SupplyParameterFromQuery(Name = "tab")]
     public string? TabParameter { get; set; }
@@ -192,6 +212,7 @@ else
 
     private string? LockedBecause =>
         !_viewer.MayDecide ? NotAnApprover
+        : Actions.Closing is { } closing ? $"{closing.Actor} is closing {closing.Total} {(closing.Total == 1 ? "issue" : "issues")}: the buttons are back when that is through."
         : string.IsNullOrWhiteSpace(_viewer.Actor(_actor)) ? "Type your name above: every click is recorded under it."
         : null;
 
@@ -237,9 +258,27 @@ else
 
         if (_ready && _cts is { } cts)
         {
+            // A close and a decision raise an event, a run does not: so the first two are
+            // followed as they happen, on every open page, and the run by looking again.
+            Actions.ClosingChanged += OnActionsChanged;
+            Actions.Changed += OnActionsChanged;
+            _subscribed = true;
+
             _ = PollAsync(cts.Token);
         }
     }
+
+    /// <summary>An issue closed, or one more was tried, or another person decided: read the review again.</summary>
+    private void OnActionsChanged() => _ = InvokeAsync(async () =>
+    {
+        if (_cts is not { IsCancellationRequested: false })
+        {
+            return;
+        }
+
+        await LoadAsync();
+        StateHasChanged();
+    });
 
     private async Task LoadAsync()
     {
@@ -307,8 +346,9 @@ else
         var reference = $"{v.Repository}#{v.Number}";
         var actions = ReviewQueue.ActionsFor(v, _tab);
         var agreed = v.Decision is { Agreed: true };
+        var closingNow = string.Equals(Actions.Closing?.Current, reference, StringComparison.OrdinalIgnoreCase);
 
-        <article class="hp-codefix hp-review-card @(v.Decision is null ? string.Empty : "is-decided")" data-testid="review-card" data-reference="@reference">
+        <article class="hp-codefix hp-review-card @(v.Decision is null ? string.Empty : "is-decided") @(closingNow ? "is-closing" : string.Empty)" data-testid="review-card" data-reference="@reference">
             <div class="hp-review-head">
                 @if (Display.HttpUrl(v.Url) is { } url)
                 {
@@ -319,6 +359,10 @@ else
                     <span class="mono">@reference</span>
                 }
                 <span class="hp-review-title">@v.Title</span>
+                @if (closingNow)
+                {
+                    <span class="hp-state st-investigating" data-testid="review-card-closing"><span class="glyph">~</span> closing…</span>
+                }
             </div>
 
             <div class="hp-review-chips">
@@ -575,6 +619,12 @@ else
 
     public void Dispose()
     {
+        if (_subscribed)
+        {
+            Actions.ClosingChanged -= OnActionsChanged;
+            Actions.Changed -= OnActionsChanged;
+        }
+
         _cts?.Cancel();
         _cts?.Dispose();
     }

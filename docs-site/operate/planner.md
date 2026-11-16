@@ -239,7 +239,9 @@ verdicts are kept in Postgres, so a review can be worked through over the week.
 every card: *agree*, *move* to another group (a move to close asks for the reason), or *unsure*.
 Agreeing with a bug on the board sets its suggested Priority there; a feature's agree writes
 nothing. *Close N issues* then closes what was decided as closed: on each issue one comment with
-the reason and the evidence, signed with the person's name, then the close. Every close is
+the reason and the evidence, signed with the person's name, then the close. While it runs, every
+open review page shows how far it is and which issue it is on, and each card goes as its issue
+closes; the other buttons wait until it is through. Every close is
 recorded as *completed* on GitHub, also for an obsolete, stale or duplicate one. An issue in an
 archived repository can be agreed but is never closed - GitHub refuses any write there - and its
 card says to unarchive the repository first. Each click is one `planner.review` audit row, each

@@ -2609,6 +2609,37 @@ button.hp-review-tab.tab-unsure[aria-selected="true"] { background: var(--wash-y
     margin-bottom: 0;
 }
 
+/* "Close N issues" under way, on every open page: how far it is, and which issue it is on. */
+.hp-review-closing {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1rem;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    margin: 0 0 1rem;
+    border-radius: var(--radius);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    background: var(--bg-sunken);
+    color: var(--fg-dim);
+}
+
+.hp-review-closing b {
+    color: var(--fg);
+    font-weight: 600;
+}
+
+.hp-review-closing progress {
+    flex: 1 1 10rem;
+    max-width: 22rem;
+    height: 0.5rem;
+    accent-color: var(--accent);
+}
+
+/* The card being closed this moment. */
+.hp-review-card.is-closing {
+    outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
 /* Decided: settled into the page, the way an agreed card was drawn in the mock. */
 .hp-review-card.is-decided {
     background: var(--bg-sunken);

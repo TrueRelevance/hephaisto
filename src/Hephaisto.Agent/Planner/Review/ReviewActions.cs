@@ -43,6 +43,14 @@ public sealed record ReviewCloseResult(
 }
 
 /// <summary>
+/// "Close N issues" while it is under way: a comment and a close per issue, so twenty of them take
+/// a minute, and every open page shows how far it is.
+/// </summary>
+/// <param name="Done">The issues tried so far, closed or refused.</param>
+/// <param name="Current">The one being closed now, <c>owner/repo#n</c>; null between two.</param>
+public sealed record ReviewClosing(string Actor, DateTimeOffset StartedAt, int Total, int Done, int Closed, int Refused, string? Current);
+
+/// <summary>
 /// A person's clicks on the weekly review (#312): agree with a verdict, move it to another group,
 /// mark it unsure, and close what was agreed. The console's page and the API both come here.
 /// </summary>
@@ -67,8 +75,16 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
 {
     private readonly SemaphoreSlim gate = new(1, 1);
 
+    private volatile ReviewClosing? closing;
+
     /// <summary>A click changed a verdict's decision or closed issues: for the navigation's badge.</summary>
     public event Action? Changed;
+
+    /// <summary>A close began, went one issue further, or ended: <see cref="Closing"/> says where it is.</summary>
+    public event Action? ClosingChanged;
+
+    /// <summary>The close under way, whoever clicked it; null when none is.</summary>
+    public ReviewClosing? Closing => closing;
 
     /// <summary>Agree with the verdict as it stands. On a bug on the board, its suggested Priority is set there.</summary>
     public Task<ReviewActionResult> AgreeAsync(string repository, int number, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
@@ -187,8 +203,12 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
             var closed = new List<string>();
             var failed = new List<string>();
 
+            Progress(new ReviewClosing(who, clock.UtcNow, closable.Count, 0, 0, 0, closable[0].Reference));
+
             foreach (var row in closable)
             {
+                Progress(closing! with { Current = row.Reference });
+
                 var reason = row.DecisionCloseReason ?? row.CloseReason ?? "done";
                 var (outcome, message) = await planner.CloseReviewedAsync(
                     row.Repository, row.Number, row.NodeId, ReviewQueue.CloseReasonWord(reason), ReviewComment.Render(row), who, ct, origin).ConfigureAwait(false);
@@ -197,6 +217,9 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
                 {
                     await store.MarkGoneAsync(row.Repository, row.Number, clock.UtcNow, ct).ConfigureAwait(false);
                     closed.Add(row.Reference);
+
+                    // At once, not when all are through: the badge counts down as the page does.
+                    Changed?.Invoke();
                 }
                 else
                 {
@@ -208,6 +231,8 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
                         break;
                     }
                 }
+
+                Progress(closing! with { Done = closed.Count + failed.Count, Closed = closed.Count, Refused = failed.Count, Current = null });
             }
 
             var text = new StringBuilder($"Closed {closed.Count} {(closed.Count == 1 ? "issue" : "issues")}");
@@ -227,16 +252,34 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
                 text.Append(". ").Append(char.ToUpperInvariant(ArchivedWords(archived.Count)[0])).Append(ArchivedWords(archived.Count)[1..]);
             }
 
-            if (closed.Count > 0)
-            {
-                Changed?.Invoke();
-            }
-
             return new(failed.Count == 0 ? ReviewActionOutcome.Done : ReviewActionOutcome.Refused, text.ToString(), closed, failed, archived);
         }
         finally
         {
+            if (closing is not null)
+            {
+                Progress(null);
+            }
+
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// A page's handler that throws must not stop the closing: the issues are what counts, the
+    /// bar is a convenience.
+    /// </summary>
+    private void Progress(ReviewClosing? now)
+    {
+        closing = now;
+
+        try
+        {
+            ClosingChanged?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "A listener to the review's close progress failed");
         }
     }
 

@@ -376,8 +376,24 @@ test.describe('weekly review', () => {
     await expect(page.getByTestId('review-apply-note')).toContainText(/archived/i);
 
     const since = await writeSeq(page.request);
+
+    // Slow writes, as GitHub's are many in a row: the page shows the close as it goes - how far,
+    // which issue - and every button waits for it, rather than sitting still until it is through.
+    const slow = await page.request.post(`${STANDIN}/github/control/slow?ms=1500&count=4`);
+    expect(slow.ok()).toBeTruthy();
     await close.click();
+
+    const closing = page.getByTestId('review-closing');
+    await expect(closing).toBeVisible();
+    await expect(closing).toHaveAttribute('data-total', '2');
+    await expect(page.getByTestId('review-closing-current')).toHaveText(/acme\//);
+    await expect(page.getByTestId('review-card-closing')).toHaveCount(1);
+    await expect(close).toBeDisabled();
+    await expect(close).toHaveText(/Closing… \d of 2/);
+    await expect(page.getByTestId('review-locked')).toContainText(/is closing 2 issues/);
+
     await said(page, /Closed 2/);
+    await expect(closing).toHaveCount(0);
 
     for (const reference of [ISSUES.doneByPull, ISSUES.doneOffBoard]) {
       await expect.poll(async () => standInIssue(page.request, reference)).toMatchObject({ state: 'closed', state_reason: 'completed' });

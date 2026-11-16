@@ -128,6 +128,10 @@ turn it on - the project, the token, the values - is one page:
   comment with the reason and the evidence, signed with the person's name, then the close, as
   completed. An issue in an archived repository can be agreed and is never closed. Each click is a
   `planner.review` audit row. The navigation shows how many verdicts wait for a person.
+- **A close is followed as it goes** (rc13). Twenty issues are a minute of GitHub writes: while
+  they run, every open review page shows a bar with how many are done, which issue is being closed
+  and how many GitHub refused, each card leaves the page as its issue closes, and the buttons wait
+  with the reason said. Agreeing and moving are followed live by the other open pages as well.
 - **One Teams message per review run** - the new notification event `PlannerReviewFinished`, for
   a route that lists it: *"Weekly review: 5 to close, 8 bugs, 8 to build, 1 unsure"*, how many were
   reviewed and wait for a person, and a button to the review page; a failed run says so and why,

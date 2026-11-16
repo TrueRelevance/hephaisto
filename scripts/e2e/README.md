@@ -586,8 +586,9 @@ what people decided stays. R08 is the Teams message of each run.
 What the stand-in adds for it (`GitHubStandIn.Review.cs`): `GET /search/issues` (422 without
 `is:issue`, as GitHub since 2025), `GET .../issues/{n}/sub_issues`, `archived` on a repository,
 `cross-referenced` and `referenced` events on a timeline, writes to an archived repository refused,
-`closeIssue` for an issue that is not on the board, and `GET /github/control/writes`, the record
-of every write apart from `/requests`. The organisation is seeded with the board, and every seeded
+`closeIssue` for an issue that is not on the board, `GET /github/control/writes`, the record
+of every write apart from `/requests`, and `POST /github/control/slow?ms=&count=`, which makes the
+next writes slow so R06 can watch a close while it is under way. The organisation is seeded with the board, and every seeded
 time is relative to the reset - so after `POST /github/control/project/reset` every issue has
 changed since any earlier verdict, and R01 starts from scratch without anything reset in the agent.
 

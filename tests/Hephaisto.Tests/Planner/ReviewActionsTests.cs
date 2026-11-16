@@ -178,15 +178,57 @@ public sealed class ReviewActionsTests
     }
 
     [Fact]
+    public async Task A_close_says_where_it_is_as_it_goes_and_is_gone_when_it_ends()
+    {
+        var (actions, store, _, _) = Build(
+            Verdict("acme/api", 431, "close", closeReason: "done"),
+            Verdict("acme/web", 160, "close", closeReason: "done", onBoard: false));
+        await actions.AgreeAsync("acme/api", 431, "flo", Ct);
+        await actions.AgreeAsync("acme/web", 160, "flo", Ct);
+
+        var seen = new List<ReviewClosing?>();
+        var gone = new List<int>();
+        actions.ClosingChanged += () => seen.Add(actions.Closing);
+        actions.Changed += () => gone.Add(store.Rows.Count(r => r.GoneAt is not null));
+
+        actions.Closing.Should().BeNull();
+        var result = await actions.CloseAgreedAsync("flo", Ct);
+
+        result.Outcome.Should().Be(ReviewActionOutcome.Done, result.Message);
+        seen.Select(c => c is null ? "end" : $"{c.Done}/{c.Total} {c.Current ?? "-"}").Should().Equal(
+            "0/2 acme/api#431", "0/2 acme/api#431", "1/2 -", "1/2 acme/web#160", "2/2 -", "end");
+        seen.OfType<ReviewClosing>().Should().OnlyContain(c => c.Actor == "flo" && c.Refused == 0);
+        actions.Closing.Should().BeNull("nothing is under way once the click has its answer");
+
+        // The badge hears of each issue as it closes, not of all of them at the end.
+        gone.Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task A_listener_that_throws_does_not_stop_the_close()
+    {
+        var (actions, store, _, _) = Build(Verdict("acme/api", 431, "close", closeReason: "done"));
+        await actions.AgreeAsync("acme/api", 431, "flo", Ct);
+        actions.ClosingChanged += () => throw new InvalidOperationException("a page went away");
+
+        (await actions.CloseAgreedAsync("flo", Ct)).Closed.Should().Equal("acme/api#431");
+        store.Verdict("acme/api#431").GoneAt.Should().NotBeNull();
+        actions.Closing.Should().BeNull();
+    }
+
+    [Fact]
     public async Task A_close_github_refuses_keeps_the_issue_in_the_review_and_says_the_comment_is_there()
     {
         var (actions, store, github, audit) = Build(Verdict("acme/api", 431, "close", closeReason: "done"));
         await actions.AgreeAsync("acme/api", 431, "flo", Ct);
 
         github.FailWrite = new(GitHubOutcome.Unauthorized, false, "HTTP 403: Repository was archived so is read-only.");
+        var last = (ReviewClosing?)null;
+        actions.ClosingChanged += () => last = actions.Closing ?? last;
         var result = await actions.CloseAgreedAsync("flo", Ct);
 
         result.Outcome.Should().Be(ReviewActionOutcome.Refused);
+        last.Should().BeEquivalentTo(new { Done = 1, Closed = 0, Refused = 1 });
         result.Closed.Should().BeEmpty();
         result.Message.Should().Contain("the comment is on the issue, but GitHub would not close it");
         store.Verdict("acme/api#431").GoneAt.Should().BeNull();

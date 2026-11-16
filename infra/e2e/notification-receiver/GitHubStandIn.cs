@@ -78,6 +78,7 @@ namespace NotificationReceiver;
 //   PUT    /github/control/repos/{owner}/{repo}/pulls/{number}            {merged?, state?, draft?, head?, body?}
 //   DELETE /github/control/repos/{owner}/{repo}/pulls/{number}            forget it: an open draft again
 //   POST   /github/control/fail/{500|rate-limit|off}?count=N              the next N API calls fail
+//   POST   /github/control/slow?ms=M&count=N                              the next N writes each take M ms more (ms=0: off)
 //   GET    /github/control/requests       every API call: seq, method, path, query, status, when
 //   DELETE /github/control/requests
 //   GET    /github/control/writes?since=&owner=   every call that writes or tried to: a REST call
@@ -173,6 +174,8 @@ public static partial class GitHubStandIn
         var org = new OrgState();
         var failMode = "off";
         var failLeft = 0;
+        var slowMs = 0;
+        var slowLeft = 0;
         var seq = 0L;
 
         // Seconds since 2026 for an issue, milliseconds since 1970 for a comment: both only grow
@@ -225,8 +228,15 @@ public static partial class GitHubStandIn
 
             string failing;
             bool archived;
+            var delay = 0;
             lock (gate)
             {
+                if (written && slowLeft > 0)
+                {
+                    delay = slowMs;
+                    slowLeft--;
+                }
+
                 archived = written && repoPath.Success && org.Archived.Contains(repoPath.Groups[1].Value);
 
                 // Numbered, because only the last 2000 are kept: "what was asked since" is a
@@ -269,6 +279,11 @@ public static partial class GitHubStandIn
                 _ when archived => Problem(403, "Repository was archived so is read-only.", $"{Docs}/repos/repos#update-a-repository"),
                 _ => null,
             };
+
+            if (delay > 0)
+            {
+                await Task.Delay(delay, ctx.RequestAborted);
+            }
 
             if (refusal is null)
             {
@@ -757,6 +772,20 @@ public static partial class GitHubStandIn
             }
         });
 
+        // The next `count` writes are slow, as GitHub's are when many go out in a row: what a
+        // scenario needs to watch something that is under way, not only what it ended in.
+        control.MapPost("/slow", (int? ms, int? count) =>
+        {
+            lock (gate)
+            {
+                slowMs = Math.Clamp(ms ?? 0, 0, 30_000);
+                slowLeft = slowMs == 0 ? 0 : Math.Max(1, count ?? 1);
+                Console.WriteLine($"GITHUB slow writes {slowMs} ms for {slowLeft} calls");
+
+                return Results.Json(new { ms = slowMs, remaining = slowLeft });
+            }
+        });
+
         control.MapGet("/requests", () =>
         {
             lock (gate)
@@ -850,6 +879,8 @@ public static partial class GitHubStandIn
                 org.Writes.Clear();
                 failMode = "off";
                 failLeft = 0;
+                slowMs = 0;
+                slowLeft = 0;
 
                 // The board is not a scenario's doing: it is there again after everything went.
                 seedBoard();
