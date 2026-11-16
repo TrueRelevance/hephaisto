@@ -2719,15 +2719,6 @@ button.hp-review-tab.tab-unsure[aria-selected="true"] { background: var(--wash-y
 .hp-review-ev.ev-ok { color: var(--green); }
 .hp-review-ev.ev-bad { color: var(--red); }
 
-.hp-review-archived {
-    margin: 0;
-    padding: 0.45rem 0.7rem;
-    border-radius: var(--radius);
-    background: var(--wash-yellow);
-    color: var(--fg);
-    font-size: var(--text-xl);
-}
-
 .hp-review-decide,
 .hp-review-reasons {
     display: flex;

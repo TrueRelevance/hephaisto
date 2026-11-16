@@ -265,8 +265,9 @@ there. The planner shows what GitHub says after the click, not what it expected.
 
 *`github.planner.review`, off by default* ([#312](https://github.com/TrueRelevance/hephaisto/issues/312)).
 Once a week Hephaisto goes through **every open issue of the organisation** - on the board or not,
-opened before the board existed, in an archived repository - and sorts each into one of three
-groups, with the evidence:
+opened before the board existed - and sorts each into one of three groups, with the evidence. An
+issue in an **archived repository** is left out: GitHub refuses every change there, so there is
+nothing to decide until somebody unarchives the repository, and then it is reviewed again.
 
 - **Can be closed**: done (a merged pull request, a commit on the default branch, every sub-issue
   closed), superseded, obsolete (the component or the repository is gone), a duplicate, answered,
@@ -278,8 +279,7 @@ Each verdict has a one-line summary, the reason, its evidence and a confidence. 
 or an issue Claude gave no usable verdict for, is put under **unsure** for a person.
 
 **It proposes, and writes nothing to GitHub.** Hephaisto gathers the facts first - the issue's
-timeline with the state of every pull request that mentions it, its sub-issues, whether its
-repository is archived - and hands them, in batches, to read-only coder Jobs of the phase
+timeline with the state of every pull request that mentions it, its sub-issues - and hands them, in batches, to read-only coder Jobs of the phase
 `review`. A verdict whose evidence the gathered facts do not bear out says so on its card. The
 verdicts are kept in Postgres, so a review can be worked through over the week.
 
@@ -292,9 +292,7 @@ so what was decided is on GitHub before anything is closed. *Close N issues* the
 the reason and the evidence, signed with the person's name, then the close. While it runs, every
 open review page shows how far it is and which issue it is on, and each card goes as its issue
 closes; the other buttons wait until it is through. Every close is
-recorded as *completed* on GitHub, also for an obsolete, stale or duplicate one. An issue in an
-archived repository can be agreed but is never closed - GitHub refuses any write there - and its
-card says to unarchive the repository first. Each click is one `planner.review` audit row, each
+recorded as *completed* on GitHub, also for an obsolete, stale or duplicate one. Each click is one `planner.review` audit row, each
 close a `planner.close` row, both under the person's name. Clicks need the approver role.
 
 **Incremental.** A run asks only about an issue that is new, changed since its verdict (its

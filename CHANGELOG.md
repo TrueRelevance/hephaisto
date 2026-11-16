@@ -115,18 +115,21 @@ turn it on - the project, the token, the values - is one page:
 - **The weekly backlog review** ([#312](https://github.com/TrueRelevance/hephaisto/issues/312),
   `github.planner.review.enabled`, off by default). Once a week - `schedule`, a cron in `timeZone`,
   Monday 06:00 Europe/Berlin by default - or on *run now*, every open issue of the organisation, on
-  the board or not and in archived repositories too, gets a verdict from a read-only coder Job of
+  the board or not, gets a verdict from a read-only coder Job of
   the new phase `review`: **can be closed** (done, superseded, obsolete, duplicate, answered or
   stale), **a real bug**, **still to build**, or **unsure**, with a summary, the reason, its
   evidence checked against the facts Hephaisto gathered (timeline, pull requests, commits,
   sub-issues, archived), a confidence and a suggested priority. Only what is new, changed or older
   than `recheckAfterDays` (28) is asked about again; `maxCostUsd` bounds a run. The verdicts are
   kept in Postgres (`planner_review_runs`, `planner_review_verdicts`).
+- **An issue in an archived repository is out of the weekly review** (rc14). GitHub refuses
+  every change there, so it was a card nobody could act on; the run leaves it out and the page
+  hides a verdict it got before. Unarchiving the repository brings it back at the next run.
 - **The run proposes and writes nothing to GitHub.** `/planner/review` shows the verdicts in four
   tabs, and every write is a person's click there: agree (on a bug of the board it sets the
   suggested Priority), move to another group, mark unsure, and *Close N issues* - per issue one
   comment with the reason and the evidence, signed with the person's name, then the close, as
-  completed. An issue in an archived repository can be agreed and is never closed. Each click is a
+  completed. Each click is a
   `planner.review` audit row. The navigation shows how many verdicts wait for a person.
 - **The GitHub board is the source of truth** (rc13). Hephaisto is a faster way to work the
   project, and everything it does is on GitHub for anybody who looks there:

@@ -104,10 +104,6 @@ public static class ReviewQueue
     public static IReadOnlyList<ReviewVerdictView> Closable(IEnumerable<ReviewVerdictView> verdicts) =>
         [.. verdicts.Where(v => DecidedToClose(v) && !v.Archived)];
 
-    /// <summary>Decided to close and in an archived repository: counted out of the bar, and the bar says so.</summary>
-    public static IReadOnlyList<ReviewVerdictView> ArchivedAgreed(IEnumerable<ReviewVerdictView> verdicts) =>
-        [.. verdicts.Where(v => DecidedToClose(v) && v.Archived)];
-
     /// <summary>The reason a close card is grouped under: the person's, when they moved it here, else Claude's.</summary>
     public static string CloseReasonOf(ReviewVerdictView v)
     {

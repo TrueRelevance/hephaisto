@@ -329,19 +329,19 @@ public sealed class McpPlannerTests
 
         var all = await mcp.ReviewAsync(null, null, 50, Ct);
 
-        all.Counts.Should().Be(new WeeklyReviewCounts { Close = 2, Bug = 1, Feature = 0, Unsure = 1 });
-        all.Pending.Should().Be(3);
-        all.Total.Should().Be(4);
+        // The archived repository's issue is out of the review, as on its page.
+        all.Counts.Should().Be(new WeeklyReviewCounts { Close = 1, Bug = 1, Feature = 0, Unsure = 1 });
+        all.Pending.Should().Be(2);
+        all.Total.Should().Be(3);
         all.ConsoleUrl!.Value.Should().Be("https://hephaisto.example/planner/review");
         all.Note.Should().Contain("person's clicks");
 
         var close = await mcp.ReviewAsync("close", null, 50, Ct);
 
-        close.Verdicts.Select(v => v.Issue).Should().Equal("acme/api#431", "acme/legacy-ttd#1");
+        close.Verdicts.Select(v => v.Issue).Should().Equal("acme/api#431");
         close.Verdicts[0].CloseReason.Should().Be("done");
         close.Verdicts[0].Evidence.Single().Text.Value.Should().StartWith("<untrusted-evidence>");
         close.Verdicts[0].Reason.Value.Should().StartWith("<untrusted-evidence>", "a model's reason is not the server's");
-        close.Verdicts[1].Archived.Should().BeTrue();
 
         var web = await mcp.ReviewAsync("BUG", "web", 50, Ct);
 

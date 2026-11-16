@@ -130,18 +130,13 @@ else
     @if (_tab == ReviewVerdicts.Close)
     {
         var closable = ReviewQueue.Closable(_view.Verdicts);
-        var archived = ReviewQueue.ArchivedAgreed(_view.Verdicts);
 
-        @if (closable.Count > 0 || archived.Count > 0)
+        @if (closable.Count > 0)
         {
             <div class="hp-review-apply">
                 <p data-testid="review-apply-note">
                     <b>@closable.Count agreed.</b>
                     Close them now: each gets one comment with its reason, written by you in Hephaisto's planner.
-                    @if (archived.Count > 0)
-                    {
-                        <span>@archived.Count more @(archived.Count == 1 ? "is" : "are") agreed in an archived repository and @(archived.Count == 1 ? "stays" : "stay") open: GitHub refuses any change there until it is unarchived.</span>
-                    }
                 </p>
                 <button type="button" class="hp-submit" data-testid="review-close-agreed"
                         disabled="@(!_ready || _busy || closable.Count == 0 || _view.State == ReviewState.Running || Actions.Closing is not null)"
@@ -407,14 +402,6 @@ else
                         <span class="hp-review-ev @EvidenceClass(e.Ok)" data-testid="review-evidence" data-ok="@(e.Ok is { } ok ? (ok ? "true" : "false") : "unknown")" title="@EvidenceTitle(e.Ok)"><span class="glyph">@EvidenceGlyph(e.Ok)</span> @e.Text</span>
                     }
                 </div>
-            }
-
-            @if (v.Archived)
-            {
-                <p class="hp-review-archived" data-testid="review-archived">
-                    <span class="glyph">!</span> The repository is archived. GitHub refuses every change there, so this issue
-                    cannot be closed until the repository is unarchived; it can still be agreed with.
-                </p>
             }
 
             <div class="hp-review-decide">

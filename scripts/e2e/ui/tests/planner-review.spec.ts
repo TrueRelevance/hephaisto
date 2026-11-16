@@ -4,7 +4,7 @@ import { test, expect, Page, APIRequestContext } from '@playwright/test';
 import { knownRed, open, settle } from './helpers';
 
 // The weekly backlog review (#312): once a week every open issue of the planner's organisation -
-// on the board or not, in an archived repository or not - gets a verdict from a read-only coder
+// on the board or not, except one in an archived repository, gets a verdict from a read-only coder
 // Job of phase `review`: can be closed (and why), a real bug, still to build, or unsure. A person
 // agrees with a verdict or moves it, and closing what was agreed is one click.
 //
@@ -216,18 +216,23 @@ test.describe('weekly review', () => {
     const after = await review(request);
     const open = await openInOrg(request);
 
-    // Everything open in the organisation, and the script answers every seeded issue.
+    // Everything open in the organisation but what is in an archived repository, and the script
+    // answers every seeded issue.
     for (const v of SCRIPT) {
       expect(open, `${v.issue} is seeded open on the stand-in`).toContain(v.issue);
-      expect(first.reviewed, `${v.issue} was looked at by the first run`).toContain(v.issue);
+      if (v.issue === ISSUES.archived) {
+        expect(first.reviewed, `${v.issue} is in an archived repository: out of the review`).not.toContain(v.issue);
+      } else {
+        expect(first.reviewed, `${v.issue} was looked at by the first run`).toContain(v.issue);
+      }
     }
 
     expect(first.reviewed.every(r => open.includes(r)), 'only open issues of the organisation are reviewed').toBe(true);
-    expect(first.open).toBe(open.length);
+    expect(first.open, 'the archived repository\'s issue is not counted').toBe(open.length - 1);
     expect(first.jobs).toBeGreaterThan(0);
 
     // Each verdict is the script's, where it is shown is its confidence's, and nothing is decided yet.
-    for (const s of SCRIPT) {
+    for (const s of SCRIPT.filter(s => s.issue !== ISSUES.archived)) {
       const v = verdict(after, s.issue);
       expect(v, s.issue).toMatchObject({
         group: s.group, closeReason: s.close_reason, related: s.related, confidence: s.confidence,
@@ -235,11 +240,11 @@ test.describe('weekly review', () => {
       });
     }
 
-    // The facts are GitHub's, gathered before the model: on the board or not, archived or not.
+    // The facts are GitHub's, gathered before the model: on the board or not. An issue in an
+    // archived repository has no verdict at all.
     expect(verdict(after, ISSUES.doneByPull).onBoard).toBe(true);
     expect(verdict(after, ISSUES.doneOffBoard).onBoard).toBe(false);
-    expect(verdict(after, ISSUES.archived).archived).toBe(true);
-    expect(verdict(after, ISSUES.bug).archived).toBe(false);
+    expect(after.verdicts.map(ref)).not.toContain(ISSUES.archived);
 
     // The counts are the verdicts', and the badge is what waits for a person.
     const counts = (t: Tab) => after.verdicts.filter(v => v.tab === t).length;
@@ -287,7 +292,6 @@ test.describe('weekly review', () => {
     for (const reference of [ISSUES.doneByPull, ISSUES.doneOffBoard, ISSUES.doneByCommit, ISSUES.doneBySubIssues]) {
       await expect(group('done').locator(`[data-testid="review-card"][data-reference="${reference}"]`)).toHaveCount(1);
     }
-    await expect(group('obsolete').locator(`[data-testid="review-card"][data-reference="${ISSUES.archived}"]`)).toHaveCount(1);
 
     // The reason is the verdict's own words, as text; the chips are the evidence, a fact each.
     const chips = (reference: string) => card(page, reference).getByTestId('review-evidence');
@@ -297,23 +301,17 @@ test.describe('weekly review', () => {
     await expect(chips(ISSUES.doneOffBoard).filter({ hasText: 'acme/web#161' }).filter({ hasText: /merged/i })).toHaveCount(1);
     await expect(chips(ISSUES.doneByCommit).filter({ hasText: /a6ac132/ })).toHaveCount(1);
     await expect(chips(ISSUES.doneBySubIssues).filter({ hasText: /sub-issue/i })).toHaveCount(1);
-    await expect(chips(ISSUES.archived).filter({ hasText: /archived/i })).toHaveCount(1);
     await expect(card(page, ISSUES.doneOffBoard).getByTestId('review-card-board')).toContainText(/not on the board/i);
   });
 
-  test('R03 the card of an issue in an archived repository can be agreed with, offers no Close, and says why', async ({ page }) => {
+  test('R03 an issue in an archived repository is not on the page: nothing can be done there until it is unarchived', async ({ page }) => {
     await ready(page.request);
     await openReview(page);
-    await showTab(page, 'close');
 
-    const archived = card(page, ISSUES.archived);
-    await expect(archived.getByTestId('review-archived')).toContainText(/archived/i);
-    await expect(archived.getByTestId('review-archived')).toContainText(/unarchived/i);
-    await expect(archived.getByTestId('review-agree')).toBeEnabled();
-    await expect(archived.getByTestId('review-close-one')).toHaveCount(0);
-
-    // Every other close card is not in an archived repository and says nothing of the kind.
-    await expect(card(page, ISSUES.doneByPull).getByTestId('review-archived')).toHaveCount(0);
+    for (const t of ['close', 'bug', 'feature', 'unsure'] as Tab[]) {
+      await showTab(page, t);
+      await expect(card(page, ISSUES.archived)).toHaveCount(0);
+    }
   });
 
   test('R04 agreeing with a bug on the board sets the suggested priority there, as a click of the planner', async ({ page }) => {
@@ -380,21 +378,19 @@ test.describe('weekly review', () => {
     await expect(page.getByTestId('review-tab-unsure')).toHaveAttribute('data-count', String((await review(page.request)).verdicts.filter(v => v.tab === 'unsure').length));
   });
 
-  test('R06 Close N issues closes the agreed ones that can be closed, each with a comment that carries its reason, and leaves the archived one open', async ({ page }) => {
+  test('R06 Close N issues closes the agreed ones, each with a comment that carries its reason, and nothing else', async ({ page }) => {
     await ready(page.request);
     await openReview(page);
     await showTab(page, 'close');
 
-    for (const reference of [ISSUES.doneByPull, ISSUES.doneOffBoard, ISSUES.archived]) {
+    for (const reference of [ISSUES.doneByPull, ISSUES.doneOffBoard]) {
       await card(page, reference).getByTestId('review-agree').click();
       await said(page, reference);
       await expect(card(page, reference).getByTestId('review-agree')).toHaveAttribute('aria-pressed', 'true');
     }
 
-    // Three agreed, two that can be closed: the archived one is counted out, and the bar says so.
     const close = page.getByTestId('review-close-agreed');
     await expect(close).toHaveText(/Close 2 issues/);
-    await expect(page.getByTestId('review-apply-note')).toContainText(/archived/i);
 
     const since = await writeSeq(page.request);
 
@@ -427,7 +423,7 @@ test.describe('weekly review', () => {
       expect(fromAgent[0].body).toContain(NAME);
     }
 
-    // Nothing was tried on the archived one, and nothing on the close cards nobody agreed with.
+    // Nothing on the archived repository's issue, and nothing on the close cards nobody agreed with.
     expect(await standInIssue(page.request, ISSUES.archived)).toMatchObject({ state: 'open' });
     expect(await commentsOn(page.request, ISSUES.archived)).toEqual([]);
 
@@ -444,7 +440,6 @@ test.describe('weekly review', () => {
     expect(after.verdicts.map(ref)).not.toContain(ISSUES.doneByPull);
     expect(after.verdicts.map(ref)).not.toContain(ISSUES.doneOffBoard);
     await expect(card(page, ISSUES.doneByPull)).toHaveCount(0);
-    expect(verdict(after, ISSUES.archived).decision).toMatchObject({ by: NAME, agreed: true });
   });
 
   test('R07 the next run looks again only at the issue that changed, writes nothing, and a person\'s verdict sticks', async ({ request }) => {
@@ -463,7 +458,8 @@ test.describe('weekly review', () => {
     second = await runReview(request);
     expect(second.id).not.toBe(first!.id);
     expect(second.reviewed).toEqual([ISSUES.bug]);
-    expect(second.kept).toBe((await openInOrg(request)).length - 1);
+    // Every other open issue kept its verdict - all but the archived repository's, which has none.
+    expect(second.kept).toBe((await openInOrg(request)).length - 2);
     expect(await writesSince(request, writes), 'the weekly run proposes only').toEqual([]);
 
     const after = await review(request);
@@ -474,7 +470,6 @@ test.describe('weekly review', () => {
     // What people decided is still theirs.
     expect(verdict(after, ISSUES.unsure)).toMatchObject({ tab: 'bug', decision: { by: NAME, group: 'bug' } });
     expect(verdict(after, ISSUES.bugOnBoard).decision).toMatchObject({ by: NAME, agreed: true });
-    expect(verdict(after, ISSUES.archived).decision).toMatchObject({ by: NAME, agreed: true });
   });
 
   test('R08 every finished run posts one message to Teams, with its counts and a link to the review', async ({ request }) => {

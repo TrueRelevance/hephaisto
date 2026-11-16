@@ -236,8 +236,13 @@ public sealed class ReviewRunner(
             }
 
             var listing = listed.Value!;
-            var open = listing.Issues;
-            var repositories = await gatherer.RepositoriesAsync(open.Select(i => i.Repository), ct).ConfigureAwait(false);
+            var repositories = await gatherer.RepositoriesAsync(listing.Issues.Select(i => i.Repository), ct).ConfigureAwait(false);
+
+            // An issue in an archived repository is out of the review: GitHub refuses every change
+            // there, so there is nothing to decide about it until somebody unarchives the repository.
+            // A verdict kept from before is gone with it, and comes back with the repository.
+            var open = listing.Issues.Where(i => repositories.GetValueOrDefault(i.Repository) is not { Archived: true }).ToList();
+            var archivedOut = listing.Issues.Count - open.Count;
             var items = onBoard.Items
                 .GroupBy(i => i.Reference, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -272,8 +277,8 @@ public sealed class ReviewRunner(
             await store.UpdateRunAsync(run, ct).ConfigureAwait(false);
 
             logger.LogInformation(
-                "The weekly review {Run}: {Open} open issues, {Asked} to ask about in {Batches} batches.",
-                run.Id, open.Count, batches.Sum(b => b.Count), batches.Count);
+                "The weekly review {Run}: {Open} open issues, {Asked} to ask about in {Batches} batches; {Archived} in archived repositories left out.",
+                run.Id, open.Count, batches.Sum(b => b.Count), batches.Count, archivedOut);
 
             var byReference = open.ToDictionary(i => i.Reference, StringComparer.OrdinalIgnoreCase);
             var budget = new ReviewBudget(review.MaxCostUsd, review.MaxConcurrentJobs);

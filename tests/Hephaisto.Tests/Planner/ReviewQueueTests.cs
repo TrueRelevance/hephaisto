@@ -54,19 +54,17 @@ public sealed class ReviewQueueTests
     }
 
     [Fact]
-    public void Close_closes_what_a_person_decided_to_close_and_counts_an_archived_repository_out()
+    public void Close_closes_what_a_person_decided_to_close()
     {
         var verdicts = new[]
         {
             View("acme/api#431", "close", closeReason: "done", decision: Agreed("close", "done")),
-            View("acme/legacy-ttd#1", "close", closeReason: "obsolete", archived: true, decision: Agreed("close", "obsolete")),
             View("acme/api#205", "feature", decision: Moved("close", "stale")),
             View("acme/infra#44", "close", closeReason: "done"),
             View("acme/web#160", "close", closeReason: "done", decision: Unsure()),
         };
 
         ReviewQueue.Closable(verdicts).Select(v => v.Number).Should().Equal(431, 205);
-        ReviewQueue.ArchivedAgreed(verdicts).Select(v => v.Number).Should().Equal(1);
     }
 
     [Fact]

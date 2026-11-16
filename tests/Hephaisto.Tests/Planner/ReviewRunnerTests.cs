@@ -26,7 +26,7 @@ public sealed class ReviewRunnerTests
     private static readonly DateTimeOffset Then = Given.Now.AddDays(-2);
 
     [Fact]
-    public async Task A_run_reviews_every_open_issue_on_the_board_and_off_it_and_writes_nothing_to_github()
+    public async Task A_run_reviews_every_open_issue_on_the_board_and_off_it_leaves_archived_repositories_out_and_writes_nothing_to_github()
     {
         var h = Harness.Build(issuesPerJob: 2);
         h.Org(("acme/api", 431), ("acme/api", 475), ("acme/web", 118), ("acme/web", 160), ("acme/legacy-ttd", 1));
@@ -36,11 +36,11 @@ public sealed class ReviewRunnerTests
 
         run.State.Should().Be(PlannerReviewRunState.Finished, run.Problem);
         run.Trigger.Should().Be(PlannerReviewTrigger.Manual);
-        run.Open.Should().Be(5);
-        run.Reviewed.Should().BeEquivalentTo("acme/api#431", "acme/api#475", "acme/web#118", "acme/web#160", "acme/legacy-ttd#1");
+        run.Open.Should().Be(4, "an archived repository's issue is out of the review");
+        run.Reviewed.Should().BeEquivalentTo("acme/api#431", "acme/api#475", "acme/web#118", "acme/web#160");
         run.Kept.Should().Be(0);
-        run.Jobs.Should().Be(3, "five issues in batches of two");
-        run.CountBug.Should().Be(5);
+        run.Jobs.Should().Be(2, "four issues in batches of two");
+        run.CountBug.Should().Be(4);
 
         h.GitHub.Writes.Should().BeEmpty("the weekly run proposes and writes nothing");
         h.GitHub.Reads.Should().Contain("timeline acme/web#160", "an issue that is not on the board is read like one that is");
@@ -48,15 +48,32 @@ public sealed class ReviewRunnerTests
 
         h.Store.Verdict("acme/api#431").OnBoard.Should().BeTrue();
         h.Store.Verdict("acme/web#160").OnBoard.Should().BeFalse();
-        h.Store.Verdict("acme/legacy-ttd#1").Archived.Should().BeTrue();
+        h.Store.Rows.Should().NotContain(v => v.Repository == "acme/legacy-ttd");
 
-        // A batch's repositories, each once; an archived one is never offered, and against a
-        // GitHub that is not github.com no address is guessed.
+        // Against a GitHub that is not github.com no repository address is guessed.
         h.Launcher.Requests.Should().OnlyContain(r => r.Repositories.Count == 0);
-        h.Launcher.Requests.SelectMany(r => r.Issues).Single(i => i.Number == 1).Archived.Should().BeTrue();
+        h.Launcher.Requests.SelectMany(r => r.Issues).Should().NotContain(i => i.Repository == "acme/legacy-ttd");
         h.Launcher.Requests.SelectMany(r => r.Issues).Single(i => i.Number == 431).Board!.Status.Should().Be("In review");
         h.Launcher.Requests.SelectMany(r => r.Issues).Single(i => i.Number == 160).Board.Should().BeNull();
-        h.Launcher.Deleted.Should().HaveCount(3, "every Job is removed once it answered");
+        h.Launcher.Deleted.Should().HaveCount(2, "every Job is removed once it answered");
+    }
+
+    [Fact]
+    public async Task A_repository_archived_after_its_issue_was_reviewed_takes_the_verdict_out_and_unarchiving_brings_it_back()
+    {
+        var h = Harness.Build(issuesPerJob: 10);
+        h.Org(("acme/api", 431), ("acme/legacy-ttd", 1));
+        (await h.RunAsync()).Reviewed.Should().Contain("acme/legacy-ttd#1");
+
+        h.GitHub.Archived.Add("acme/legacy-ttd");
+        var archived = await h.RunAsync();
+
+        archived.Open.Should().Be(1);
+        h.Store.Verdict("acme/legacy-ttd#1").GoneAt.Should().NotBeNull("its verdict is out of the review with the repository");
+
+        h.GitHub.Archived.Clear();
+        (await h.RunAsync()).Reviewed.Should().Contain("acme/legacy-ttd#1");
+        h.Store.Verdict("acme/legacy-ttd#1").GoneAt.Should().BeNull();
     }
 
     [Fact]

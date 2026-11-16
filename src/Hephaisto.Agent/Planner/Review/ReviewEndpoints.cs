@@ -20,7 +20,7 @@ public enum ReviewState
 /// <param name="Run">The newest run, finished or not.</param>
 /// <param name="NextRunAt">The schedule's next moment; null when the review is off.</param>
 /// <param name="Pending">Verdicts nobody decided yet: the console's badge.</param>
-/// <param name="Verdicts">One per open issue that has one; closed issues drop out.</param>
+/// <param name="Verdicts">One per open issue that has one; closed issues and those in an archived repository drop out.</param>
 public sealed record ReviewView(
     ReviewState State,
     string? Problem,
@@ -124,7 +124,10 @@ public sealed class ReviewReader(ReviewRunner runner, IReviewStore store, IRevie
             .GroupBy(i => i.Reference, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First().Field(Hephaisto.Core.Planning.PlannerQueue.StatusField), StringComparer.OrdinalIgnoreCase);
 
+        // An archived repository's issues are out of the review (see ReviewRunner): one kept from
+        // before the repository was archived is not shown either.
         var verdicts = (await store.VerdictsAsync(includeGone: false, ct).ConfigureAwait(false))
+            .Where(v => !v.Archived)
             .Where(v => !(closedAt.TryGetValue(v.Reference, out var at) && at > v.ReviewedAt))
             .Select(v => onBoard.TryGetValue(v.Reference, out var status)
                 ? View(v) with { OnBoard = true, BoardStatus = status, Scheduled = statuses.Stage(status) is not (Hephaisto.Core.Planning.BoardStage.None or Hephaisto.Core.Planning.BoardStage.Inbox or Hephaisto.Core.Planning.BoardStage.Backlog) }
