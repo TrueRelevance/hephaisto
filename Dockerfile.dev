@@ -2,7 +2,7 @@
 # git - a build file that exists only on one machine is how that workspace ended up with
 # repos that cannot be rebuilt from a fresh clone.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0
+FROM mcr.microsoft.com/dotnet/sdk:11.0
 
 # The manifest pins runAsUser 64198, so everything below has to be owned by and writable by
 # that uid. Restoring as root and then running as 64198 leaves a NuGet cache under /root the
