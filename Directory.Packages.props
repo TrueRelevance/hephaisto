@@ -51,7 +51,7 @@
   </ItemGroup>
 
   <ItemGroup Label="Kubernetes">
-    <PackageVersion Include="KubernetesClient" Version="19.0.2" />
+    <PackageVersion Include="KubernetesClient" Version="21.0.8" />
   </ItemGroup>
 
   <ItemGroup Label="Persistence">
