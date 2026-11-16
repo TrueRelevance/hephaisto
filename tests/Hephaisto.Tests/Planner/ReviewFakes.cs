@@ -153,6 +153,19 @@ internal sealed class InMemoryReviewStore : IReviewStore
         return Task.CompletedTask;
     }
 
+    public Task TouchAsync(string repository, int number, DateTimeOffset at, CancellationToken ct)
+    {
+        lock (gate)
+        {
+            foreach (var row in Rows.Where(r => r.Repository == repository && r.Number == number && (r.TouchedAt is null || r.TouchedAt < at)))
+            {
+                row.TouchedAt = at;
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     public PlannerReviewVerdict Verdict(string reference)
     {
         lock (gate)

@@ -688,7 +688,7 @@ public sealed class PlannerServiceTests
         var backlog = await planner.ScheduleAsync("PVTI_431", PlannerSchedule.Backlog, "flo", Ct);
 
         backlog.Outcome.Should().Be(PlannerActionOutcome.Done, backlog.Message);
-        backlog.Message.Should().Be("back in the backlog");
+        backlog.Message.Should().Be("back in the backlog; Status Inbox → Backlog");
         github.Calls.Should().ContainInOrder(
             $"date PVT_1 PVTI_431 F_planned {PlannerQueue.DayFor(PlannerSchedule.NextWeek, Given.Now):yyyy-MM-dd}", "undate PVT_1 PVTI_431 F_planned", "field PVT_1 PVTI_431 F_status s3");
         backlog.Snapshot.Entry("PVTI_431")!.Item.Field("Status").Should().Be("Backlog");
@@ -818,15 +818,15 @@ public sealed class PlannerServiceTests
         }
     }
 
-    internal static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null, string dayField = "Planned for")
+    internal static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit) Build(bool enabled = true, string[]? repositories = null, string dayField = "Planned for", bool activity = false, bool keepStatus = false)
     {
-        var (planner, github, clock, audit, _, _) = Parts(enabled, repositories ?? [], triage: false, dayField);
+        var (planner, github, clock, audit, _, _) = Parts(enabled, repositories ?? [], triage: false, dayField, activity, keepStatus);
 
         return (planner, github, clock, audit);
     }
 
     internal static (PlannerService Planner, FakeGitHub GitHub, Given.FixedClock Clock, FakeAudit Audit, IServiceScopeFactory Scopes, GitHubOptions Options) Parts(
-        bool enabled, string[] repositories, bool triage, string dayField = "Planned for")
+        bool enabled, string[] repositories, bool triage, string dayField = "Planned for", bool activity = false, bool keepStatus = false)
     {
         var github = new FakeGitHub();
         var audit = new FakeAudit();
@@ -852,6 +852,10 @@ public sealed class PlannerServiceTests
                 Repositories = [.. repositories],
                 Triage = new GitHubPlannerTriageOptions { Enabled = triage },
                 DayField = dayField,
+
+                // Its own tests turn it on: the others hold the click's own writes, one by one.
+                ActivityComment = activity,
+                KeepStatus = keepStatus,
             },
         };
 
@@ -932,6 +936,8 @@ public sealed class PlannerServiceTests
 
         public GitHubResult<bool>? FailUnlabel { get; set; }
 
+        public GitHubResult<IReadOnlyList<GitHubComment>>? FailComments { get; set; }
+
         public bool LeaveOut { get; set; }
 
         public Action? OnWrite { get; set; }
@@ -1010,6 +1016,11 @@ public sealed class PlannerServiceTests
         {
             Calls.Add($"comments {repository}#{number}");
 
+            if (FailComments is { } failed)
+            {
+                return Task.FromResult(failed);
+            }
+
             return Task.FromResult(new GitHubResult<IReadOnlyList<GitHubComment>>(
                 GitHubOutcome.Ok, [.. Comments.Where(c => c.Repository == repository && c.Number == number).Select(c => c.Comment)]));
         }
@@ -1062,7 +1073,23 @@ public sealed class PlannerServiceTests
                 GitHubOutcome.Ok, [new("bug", "Something isn't working"), new("area:api", null), new("today", null)]));
         }
 
-        public Task<GitHubResult<GitHubComment>> UpdateCommentAsync(string repository, long commentId, string body, CancellationToken ct) => throw new NotSupportedException();
+        public Task<GitHubResult<GitHubComment>> UpdateCommentAsync(string repository, long commentId, string body, CancellationToken ct)
+        {
+            OnWrite?.Invoke();
+            Calls.Add($"edit comment {repository} {commentId}");
+
+            var at = Comments.FindIndex(c => c.Repository == repository && c.Comment.Id == commentId);
+
+            if (at < 0)
+            {
+                return Task.FromResult(new GitHubResult<GitHubComment>(GitHubOutcome.NotFound, null, "Not Found"));
+            }
+
+            var edited = Comments[at].Comment with { Body = body };
+            Comments[at] = (Comments[at].Repository, Comments[at].Number, edited);
+
+            return Task.FromResult(new GitHubResult<GitHubComment>(GitHubOutcome.Ok, edited));
+        }
 
         public Task<GitHubResult<IReadOnlyList<GitHubReaction>>> ListCommentReactionsAsync(string repository, long commentId, string? etag, CancellationToken ct) => throw new NotSupportedException();
 

@@ -1220,5 +1220,46 @@ test.describe('planner', () => {
         await context.close();
       }
     });
+
+    test('the board view shows the project\'s Status columns, and a card moved there moves on GitHub with a line on the issue that names the person', async ({ page }) => {
+      const board = await planner(page.request, true);
+      const field = board.fields.find(f => f.name === 'Status');
+      test.skip(!field, 'PRECONDITION: the board has no Status field');
+      const status = { options: field!.options.map(o => o.name) };
+
+      await open(page, '/planner?view=board');
+      const columns = page.getByTestId('planner-column');
+      await expect(columns.first()).toBeVisible();
+
+      // The board's own columns, in its own order.
+      const names = await columns.evaluateAll(cs => cs.map(c => c.getAttribute('data-status')));
+      expect(names.filter(n => n !== 'no status')).toEqual(status!.options);
+
+      // The first open card of the first column that has one and a column after it.
+      const from = status!.options.findIndex((o, i) => i < status!.options.length - 1
+        && board.items.some(it => it.fields.Status === o));
+      test.skip(from < 0, 'PRECONDITION: no open issue stands in a column with one after it');
+
+      const column = page.locator(`[data-testid="planner-column"][data-status="${status!.options[from]}"]`);
+      const card = column.getByTestId('planner-card').first();
+      const reference = (await card.getAttribute('data-reference'))!;
+      const next = card.getByTestId('planner-card-next');
+      await expect(next).toBeEnabled();
+      await next.click();
+      await said(page, status!.options[from + 1]);
+
+      await expect.poll(async () => (await truth(page.request, reference)).fields.Status, { timeout: 30_000 }).toBe(status!.options[from + 1]);
+      await expect(page.locator(`[data-testid="planner-column"][data-status="${status!.options[from + 1]}"]`)
+        .locator(`[data-reference="${reference}"]`)).toHaveCount(1);
+
+      if (STANDIN) {
+        const comments = (await (await page.request.get(`${STANDIN}/github/control/comments`)).json())
+          .filter((c: { repository: string; number: number }) => ref(c) === reference)
+          .filter((c: { body: string }) => c.body.startsWith('<!-- hephaisto:activity -->'));
+        expect(comments, 'one activity comment on the issue').toHaveLength(1);
+        expect(comments[0].body).toContain(`**${NAME}**`);
+        expect(comments[0].body).toContain(`Status set to ${status!.options[from + 1]}`);
+      }
+    });
   });
 });

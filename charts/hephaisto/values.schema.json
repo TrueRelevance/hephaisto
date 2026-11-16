@@ -1392,13 +1392,11 @@
           "properties": {
             "dayField": {
               "type": "string",
-              "minLength": 1,
-              "description": "The board's date field tomorrow and next week plan an issue by."
+              "description": "Unused: it is github.planner.dayField. Accepted so an older values file still validates."
             },
             "backlogStatus": {
               "type": "string",
-              "minLength": 1,
-              "description": "The Status option backlog sets."
+              "description": "Unused: it is github.planner.backlogStatus. Accepted so an older values file still validates."
             },
             "repositories": {
               "type": "array",
@@ -1452,6 +1450,36 @@
               "type": "integer",
               "minimum": 1,
               "description": "Days an open pull request may be quiet before its issue is put in front of a person."
+            },
+            "dayField": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The board's date field tomorrow and next week plan an issue by."
+            },
+            "backlogStatus": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The Status option backlog sets."
+            },
+            "statuses": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "The board's Status options by what they mean. A column the board does not have is skipped.",
+              "properties": {
+                "inbox": { "type": "string", "minLength": 1 },
+                "ready": { "type": "string", "minLength": 1 },
+                "inProgress": { "type": "string", "minLength": 1 },
+                "inReview": { "type": "string", "minLength": 1 },
+                "done": { "type": "string", "minLength": 1 }
+              }
+            },
+            "keepStatus": {
+              "type": "boolean",
+              "description": "After every read of the board, move the Status GitHub's facts ask for: closed to Done, an open pull request to In review, assigned to the agent to In progress, triaged out of the Inbox."
+            },
+            "activityComment": {
+              "type": "boolean",
+              "description": "Every click leaves a line in one comment per issue that names the person."
             },
             "assignees": {
               "type": "array",

@@ -118,16 +118,37 @@ front of the person. `/planner?walk=newest` (or `newest-unplanned`) opens the pa
 
 ## What a click does on GitHub
 
-| Button | On GitHub |
-|---|---|
-| an option of a field | sets that single-select field of the project item |
-| **close: done**, **close: not planned** | closes the issue, with that reason |
-| **today** | puts the label `today` on the issue, and takes `not today` off |
-| **not today** | puts the label `not today` on the issue, and takes `today` off |
-| the marked one of the two, again | takes the label off |
-| **work on it** | puts the label `active` on the issue and takes it off every other open issue of the board; on a left-over issue, sets `today` again first |
-| **stop working on it** | takes `active` off; not today, tomorrow, next week and backlog take it off too |
-| an account under *assignee* | assigns the issue to it, or takes it off |
+| Button | On GitHub | Status |
+|---|---|---|
+| an option of a field | sets that single-select field of the project item | the option, when the field is Status |
+| **← / →** on the *board* view | moves the card one column | the column next to it |
+| **close: done**, **close: not planned** | closes the issue, with that reason | Done |
+| **today** | puts the label `today` on the issue, and takes `not today` off | Ready |
+| **not today** | puts the label `not today` on the issue, and takes `today` off | unchanged |
+| the marked one of the two, again | takes the label off | unchanged |
+| **tomorrow**, **next week** | sets the board's day field | Ready |
+| **backlog** | empties the day field, takes the labels off | Backlog |
+| **work on it** | puts the label `active` on the issue and takes it off every other open issue of the board; on a left-over issue, sets `today` again first | In progress |
+| **stop working on it** | takes `active` off; not today, tomorrow, next week and backlog take it off too | Ready, from In progress |
+| an account under *assignee* | assigns the issue to it, or takes it off | In progress, for the agent's own account |
+
+A click moves the Status **forward only** - today never takes an issue in review back to Ready -
+and never out of a column that `github.planner.statuses` does not name; a column the board does
+not have is skipped. Backlog and Done are the exceptions a person asks for by name.
+
+**Every click is a line on the issue.** One comment per issue, by the agent's account, holds what
+was done to it through Hephaisto, newest last - who, when, what, and the Status move:
+
+```
+2026-11-16 14:02 UTC · **flo** · today; Status Backlog → Ready
+2026-11-16 14:30 UTC · **flo** · worked on now; Status Ready → In progress
+2026-11-16 16:10 UTC · **Hephaisto board rules** · Status In progress → In review: pull request acme/api#433 is open
+```
+
+The first line is a new comment and notifies the issue's watchers once; every line after it is an
+edit, which notifies nobody. The project's own timeline entries ("moved this to Ready") say which
+account moved a card; this says whose click it was. `github.planner.activityComment: false`
+turns it off. Only the agent's own comment counts - anybody can type its marker.
 
 Everything is done by the **agent's account**. The audit trail records the person who clicked: a
 row `planner.field`, `planner.close`, `planner.day`, `planner.active` or `planner.assign` is written *before* GitHub
@@ -207,6 +228,33 @@ The agent's own account is the first under *assignee*. In a repository listed in
 [GitHub issues as work](./github-issues) means: the issue becomes a work item and is planned.
 Anywhere else it is an assignment and nothing more.
 
+### The board's rules keep the Status
+
+With `github.planner.keepStatus` on, every read of the board - every two minutes - moves what
+GitHub's facts say has moved, and nobody has to run a checkup:
+
+| When | Status |
+|---|---|
+| the issue is closed | Done |
+| a pull request that names it is open | In review, from anything before it |
+| it is In progress, every pull request is merged and nothing happened for a day | In review: it waits for verification and deploy |
+| it is assigned to the agent's account | In progress, from anything before it |
+| it is a parent in Backlog or Ready and a sub-issue began or is done | In progress |
+| it is in the Inbox, or has no Status, and has a type and every `requiredFields` | Backlog |
+
+A rule fires on **news**: only when the fact behind it is newer than the item's last Status
+change. A card a person put back where they want it stays there until the next fact. A column
+`statuses` does not name is never touched. At most 25 moves a read, each an audit row
+`planner.status` under *Hephaisto (board rules)* and a line on the issue.
+
+### The board view
+
+*board* shows the project's Status columns side by side, in the board's own order, each with its
+open issues by priority and the last week's closed ones that still stand in it. A card says who
+is assigned, its pull requests, how long it has been in its column and whether it is planned for
+today or being worked on; ← and → move it a column, which is a move on GitHub with a line on the
+issue. The field filters of *all open* work here too, Status aside.
+
 ### A board may act too
 
 A project's own workflows keep running. On a board with GitHub's *auto-close issue* workflow,
@@ -237,8 +285,10 @@ verdicts are kept in Postgres, so a review can be worked through over the week.
 
 **A person decides, on `/planner/review`.** Four tabs - close, bugs, to build, unsure - and on
 every card: *agree*, *move* to another group (a move to close asks for the reason), or *unsure*.
-Agreeing with a bug on the board sets its suggested Priority there; a feature's agree writes
-nothing. *Close N issues* then closes what was decided as closed: on each issue one comment with
+Agreeing with a bug or something to build puts it where work is: on the board when it is not,
+in the backlog when it stands before it, and a bug with its suggested Priority; **→ Ready** does
+the same and makes it next up. Every decision - agree, move, unsure - is a line on the issue,
+so what was decided is on GitHub before anything is closed. *Close N issues* then closes what was decided as closed: on each issue one comment with
 the reason and the evidence, signed with the person's name, then the close. While it runs, every
 open review page shows how far it is and which issue it is on, and each card goes as its issue
 closes; the other buttons wait until it is through. Every close is
@@ -325,6 +375,14 @@ github:
       - example/planning
     dayField: Planned for    # the board's Date field tomorrow / next week set
     backlogStatus: Backlog   # the Status option backlog sets
+    statuses:                # the other columns, by what they mean
+      inbox: Inbox
+      ready: Ready
+      inProgress: In progress
+      inReview: In review
+      done: Done
+    keepStatus: true         # the board's rules on every read; default false
+    activityComment: true    # a line on the issue for every click; default true
     triage:                  # Claude labels and analyses an issue when asked
       enabled: true          # needs codeFix.enabled
       maxCostUsd: 2

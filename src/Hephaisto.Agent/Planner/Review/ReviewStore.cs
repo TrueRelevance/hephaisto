@@ -53,6 +53,9 @@ public interface IReviewStore
 
     /// <summary>A person closed the issue: it drops out of the review at once.</summary>
     Task MarkGoneAsync(string repository, int number, DateTimeOffset at, CancellationToken ct);
+
+    /// <summary>Hephaisto wrote on the issue at <paramref name="at"/>, as GitHub dated it: see <see cref="PlannerReviewVerdict.TouchedAt"/>.</summary>
+    Task TouchAsync(string repository, int number, DateTimeOffset at, CancellationToken ct);
 }
 
 /// <summary>Postgres, one scope per call: the runner is a singleton and its batches run side by side.</summary>
@@ -211,6 +214,17 @@ public sealed class EfReviewStore(IServiceScopeFactory scopes) : IReviewStore
         await db.PlannerReviewVerdicts
             .Where(v => v.Repository == repository && v.Number == number && v.GoneAt == null)
             .ExecuteUpdateAsync(u => u.SetProperty(v => v.GoneAt, at), ct)
+            .ConfigureAwait(false);
+    }
+
+    public async Task TouchAsync(string repository, int number, DateTimeOffset at, CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HephaistoDbContext>();
+
+        await db.PlannerReviewVerdicts
+            .Where(v => v.Repository == repository && v.Number == number && (v.TouchedAt == null || v.TouchedAt < at))
+            .ExecuteUpdateAsync(u => u.SetProperty(v => v.TouchedAt, at), ct)
             .ConfigureAwait(false);
     }
 }

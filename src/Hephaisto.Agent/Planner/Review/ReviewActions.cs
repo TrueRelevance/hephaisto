@@ -100,27 +100,69 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
 
             await RecordAsync(who, row, said, decision, ct, origin).ConfigureAwait(false);
 
-            if (row.Group == ReviewVerdicts.Bug && row.Priority is { } priority && row.OnBoard)
+            return await ApplyAsync(row, row.Group, row.Group == ReviewVerdicts.Close ? row.CloseReason : null, BoardStage.Backlog, $"agreed with the weekly review: {Verdict(row.Group, row.CloseReason)}", said, decision, who, ct, origin).ConfigureAwait(false);
+        });
+
+    /// <summary>
+    /// Agree that it is work, and that it is next: a bug or a feature onto the board in Ready,
+    /// with the suggested Priority for a bug. What a person picks for working on from the review.
+    /// </summary>
+    public Task<ReviewActionResult> ReadyAsync(string repository, int number, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
+        DecideAsync(repository, number, actor, origin, ct, async (row, who) =>
+        {
+            var group = row.DecidedBy is not null && row.DecisionGroup is { } decided && !row.DecisionUnsure ? decided : row.Group;
+
+            if (group is not (ReviewVerdicts.Bug or ReviewVerdicts.Feature))
             {
-                if ((await planner.ReadAsync(refresh: false, ct).ConfigureAwait(false)).Entries.FirstOrDefault(e => Same(e.Item, row)) is not { } entry)
-                {
-                    return (ReviewActionOutcome.Done, $"{said}; it is not among the board's open issues now, so no Priority was set", decision);
-                }
-
-                if (string.Equals(entry.Item.Field(PlannerQueue.PriorityField), priority, StringComparison.OrdinalIgnoreCase))
-                {
-                    return (ReviewActionOutcome.Done, $"{said}; Priority is {priority} already", decision);
-                }
-
-                var set = await planner.SetFieldAsync(entry.Item.ItemId, PlannerQueue.PriorityField, priority, who, ct, origin).ConfigureAwait(false);
-
-                return set.Done
-                    ? (ReviewActionOutcome.Done, $"{said}; Priority set to {priority}", decision)
-                    : (set.Outcome == PlannerActionOutcome.Refused ? ReviewActionOutcome.Refused : ReviewActionOutcome.Conflict, $"Priority {priority} was not set: {set.Message}", null);
+                return (ReviewActionOutcome.Conflict, "only a bug or something to build goes to Ready: move it there first", null);
             }
 
-            return (ReviewActionOutcome.Done, said, decision);
+            var agreed = group == row.Group;
+            var said = $"{(agreed ? "agreed" : "moved")}: {ReviewQueue.GroupWord(group)}, ready to work on";
+            var decision = new ReviewDecision(who, clock.UtcNow, group, null, Agreed: agreed, Unsure: false);
+
+            await RecordAsync(who, row, said, decision, ct, origin).ConfigureAwait(false);
+
+            return await ApplyAsync(row, group, null, BoardStage.Ready, $"from the weekly review: {Verdict(group, null)}, ready to work on", said, decision, who, ct, origin).ConfigureAwait(false);
         });
+
+    /// <summary>
+    /// What a decision does on GitHub. Work - a bug, something to build - is put on the board
+    /// in <paramref name="stage"/> (and a bug gets its suggested Priority); anything else is a line
+    /// on the issue, so what was decided is there for anybody who looks, also before it is closed.
+    /// </summary>
+    private async Task<(ReviewActionOutcome, string, ReviewDecision?)> ApplyAsync(
+        PlannerReviewVerdict row, string group, string? closeReason, BoardStage stage, string line, string said, ReviewDecision decision, string who, CancellationToken ct, AuditOrigin? origin)
+    {
+        if (group is ReviewVerdicts.Bug or ReviewVerdicts.Feature)
+        {
+            var priority = group == ReviewVerdicts.Bug ? row.Priority : null;
+            var (outcome, message) = await planner.TrackAsync(row.Repository, row.Number, row.NodeId, stage, priority, who, line, ct, origin).ConfigureAwait(false);
+
+            return outcome == PlannerActionOutcome.Done
+                ? (ReviewActionOutcome.Done, $"{said}; {Without(message, line)}", decision)
+                : (outcome == PlannerActionOutcome.Refused ? ReviewActionOutcome.Refused : ReviewActionOutcome.Conflict, $"not recorded: {message}", null);
+        }
+
+        var tail = group == ReviewVerdicts.Close ? $"; it is closed with \"Close N issues\"" : string.Empty;
+
+        // GitHub refuses every write in an archived repository, a comment too.
+        if (row.Archived)
+        {
+            return (ReviewActionOutcome.Done, said, decision);
+        }
+
+        return await planner.NoteAsync(row.Repository, row.Number, who, line + tail, ct).ConfigureAwait(false) is { } notNoted
+            ? (ReviewActionOutcome.Done, $"{said} (the line on the issue could not be written: {notNoted})", decision)
+            : (ReviewActionOutcome.Done, said, decision);
+    }
+
+    private static string Verdict(string group, string? closeReason) =>
+        group == ReviewVerdicts.Close ? $"can be closed, as {ReviewQueue.CloseReasonWord(closeReason)}" : ReviewQueue.GroupWord(group);
+
+    /// <summary>The planner's words for what it did, without the line it was given back first.</summary>
+    private static string Without(string message, string line) =>
+        message.StartsWith(line, StringComparison.Ordinal) ? message[line.Length..].TrimStart(';', ' ') is { Length: > 0 } rest ? rest : "nothing to change on the board" : message;
 
     /// <summary>Put the issue in another group: the person's word, not Claude's. A close needs a reason.</summary>
     public Task<ReviewActionResult> MoveAsync(string repository, int number, string? group, string? closeReason, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
@@ -146,7 +188,7 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
 
             await RecordAsync(who, row, said, decision, ct, origin).ConfigureAwait(false);
 
-            return (ReviewActionOutcome.Done, said, decision);
+            return await ApplyAsync(row, to, reason, BoardStage.Backlog, $"the weekly review said {Verdict(row.Group, row.CloseReason)}; {said}", said, decision, who, ct, origin).ConfigureAwait(false);
         });
 
     /// <summary>The person cannot tell either: the issue is shown under unsure, and nothing closes it.</summary>
@@ -157,7 +199,9 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
 
             await RecordAsync(who, row, "marked unsure", decision, ct, origin).ConfigureAwait(false);
 
-            return (ReviewActionOutcome.Done, "marked unsure", decision);
+            return !row.Archived && await planner.NoteAsync(row.Repository, row.Number, who, $"the weekly review said {Verdict(row.Group, row.CloseReason)}; marked unsure, so nothing closes it", ct).ConfigureAwait(false) is { } notNoted
+                ? (ReviewActionOutcome.Done, $"marked unsure (the line on the issue could not be written: {notNoted})", decision)
+                : (ReviewActionOutcome.Done, "marked unsure", decision);
         });
 
     /// <summary>
@@ -361,8 +405,6 @@ public sealed class ReviewActions(PlannerService planner, IReviewStore store, IC
             ct,
             origin);
 
-    private static bool Same(BoardItem item, PlannerReviewVerdict row) =>
-        string.Equals(item.Repository, row.Repository, StringComparison.OrdinalIgnoreCase) && item.Number == row.Number;
 }
 
 /// <summary>

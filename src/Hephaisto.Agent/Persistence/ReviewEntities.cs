@@ -136,6 +136,13 @@ public sealed class PlannerReviewVerdict
 
     public DateTimeOffset? GoneAt { get; set; }
 
+    /// <summary>
+    /// When Hephaisto itself last wrote on the issue - an activity line, a label - as GitHub dated
+    /// it. An <c>updated_at</c> that is only that write is not a change a run asks about again,
+    /// nor one that clears a person's decision (<see cref="Hephaisto.Core.Planning.ReviewSelection.IsChanged(DateTimeOffset, DateTimeOffset, DateTimeOffset?)"/>).
+    /// </summary>
+    public DateTimeOffset? TouchedAt { get; set; }
+
     // A person's decision (stage 4 writes it). Null DecidedBy: nobody decided.
     public string? DecidedBy { get; set; }
 

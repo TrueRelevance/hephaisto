@@ -185,7 +185,7 @@ public static partial class ReviewVerdicts
         ArgumentNullException.ThrowIfNull(kept);
         ArgumentNullException.ThrowIfNull(fresh);
 
-        var changed = ReviewSelection.IsChanged(fresh.IssueUpdatedAt, kept.IssueUpdatedAt) || kept.GoneAt is not null;
+        var changed = ReviewSelection.IsChanged(fresh.IssueUpdatedAt, kept.IssueUpdatedAt, kept.TouchedAt) || kept.GoneAt is not null;
 
         kept.Title = fresh.Title;
         kept.Url = fresh.Url;

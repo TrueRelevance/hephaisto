@@ -383,6 +383,10 @@ else
                 {
                     <span class="hp-chip" data-testid="review-card-board">not on the board</span>
                 }
+                else if (v.BoardStatus is { } status)
+                {
+                    <span class="hp-chip" data-testid="review-card-status" title="its Status on the board">@status</span>
+                }
                 @if (v.Related is { } related)
                 {
                     <span class="hp-chip">related <span class="mono">@related</span></span>
@@ -425,6 +429,11 @@ else
                             aria-pressed="@(v.Decision is { Agreed: false, Unsure: false } d && d.Group == to ? "true" : "false")"
                             @onclick="() => MoveAsync(v, to)">→ @ReviewQueue.MoveWord(to)</button>
                 }
+                @if (ReadyFits(v))
+                {
+                    <button type="button" data-testid="review-ready" disabled="@Locked"
+                            title="@(LockedBecause ?? "Agree, and put it on the board as next up")" @onclick="() => ReadyAsync(v)">→ Ready</button>
+                }
                 @if (actions.Unsure)
                 {
                     <button type="button" data-testid="review-mark-unsure" disabled="@Locked" title="@(LockedBecause ?? "You cannot tell either")"
@@ -451,11 +460,26 @@ else
         </article>
     };
 
-    /// <summary>Agree, and on a bug what agreeing sets: a Priority on the board, nothing for an issue that is not on it.</summary>
-    private static string AgreeWord(ReviewVerdictView v) =>
-        v.Group == ReviewVerdicts.Bug && v.Priority is { } p
-            ? v.OnBoard ? $"Agree, set {p}" : $"Agree ({p}, not on the board)"
-            : "Agree";
+    /// <summary>Agree, and what agreeing does: work goes on the board in the backlog, a bug with its Priority.</summary>
+    private static string AgreeWord(ReviewVerdictView v) => v.Group switch
+    {
+        ReviewVerdicts.Bug when v.Priority is { } p => v.OnBoard ? $"Agree, set {p}" : $"Agree, to the backlog as {p}",
+        ReviewVerdicts.Bug or ReviewVerdicts.Feature when !v.OnBoard => "Agree, to the backlog",
+        _ => "Agree",
+    };
+
+    /// <summary>"→ Ready" on what is work - by Claude's word or by the person's - and not yet scheduled or under way.</summary>
+    private bool ReadyFits(ReviewVerdictView v)
+    {
+        var group = v.Decision is { Unsure: false } d ? d.Group : v.Group;
+
+        return _tab is ReviewVerdicts.Bug or ReviewVerdicts.Feature
+            && group is ReviewVerdicts.Bug or ReviewVerdicts.Feature
+            && !v.Scheduled;
+    }
+
+    private Task ReadyAsync(ReviewVerdictView v) =>
+        ClickAsync((actor, ct) => Actions.ReadyAsync(v.Repository, v.Number, actor, ct));
 
     private static string EvidenceGlyph(bool? ok) => ok switch { true => "+", false => "!!", _ => "." };
 

@@ -263,7 +263,7 @@ public sealed class ReviewRunner(
             var known = await store.VerdictsAsync(includeGone: true, ct).ConfigureAwait(false);
             var selected = ReviewSelection.Select(
                 open.Select(i => new ReviewOpen(i.Reference, i.Repository, i.Issue.Number, i.UpdatedAt)),
-                known.Select(k => new ReviewKnown(k.Reference, k.IssueUpdatedAt, k.ReviewedAt, k.GoneAt is not null)),
+                known.Select(k => new ReviewKnown(k.Reference, k.IssueUpdatedAt, k.ReviewedAt, k.GoneAt is not null, k.TouchedAt)),
                 now,
                 TimeSpan.FromDays(review.RecheckAfterDays));
             var batches = ReviewSelection.Batches(selected, review.IssuesPerJob);

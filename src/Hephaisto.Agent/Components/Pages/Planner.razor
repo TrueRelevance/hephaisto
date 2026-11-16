@@ -43,6 +43,8 @@ else
         <span class="hp-seg" data-testid="planner-views">
             <button type="button" class="@Seg(ViewPlan)" aria-pressed="@Pressed(ViewName == ViewPlan)" data-testid="planner-view-plan"
                     @onclick="() => Go(ViewPlan)">plan the day</button>
+            <button type="button" class="@Seg(ViewBoard)" aria-pressed="@Pressed(ViewName == ViewBoard)" data-testid="planner-view-board"
+                    @onclick="() => Go(ViewBoard)">board</button>
             <button type="button" class="@Seg(ViewToday)" aria-pressed="@Pressed(ViewName == ViewToday)" data-testid="planner-view-today"
                     @onclick="() => Go(ViewToday)">today @ForToday.Count</button>
             <button type="button" class="@Seg(ViewAll)" aria-pressed="@Pressed(ViewName == ViewAll)" data-testid="planner-view-all"
@@ -66,9 +68,9 @@ else
                 </select>
             </label>
         }
-        else if (ViewName == ViewAll && _snapshot.Board is { } filterBoard)
+        else if (ViewName is ViewAll or ViewBoard && _snapshot.Board is { } filterBoard)
         {
-            @foreach (var field in filterBoard.Fields)
+            @foreach (var field in filterBoard.Fields.Where(f => ViewName == ViewAll || !IsStatus(f)))
             {
                 <label>
                     @field.Name
@@ -530,6 +532,95 @@ else
                 </table>
             }
         }
+        else if (ViewName == ViewBoard && _snapshot.Board is { } kanban)
+        {
+            var columns = Columns(kanban);
+
+            <p class="hp-muted" data-testid="planner-board-note">
+                The board's Status, column by column - what GitHub shows, read @(_snapshot.ReadAt is { } read ? Display.TimeOnly(read) : "now").
+                Every move here is a move on GitHub, with a line on the issue that names you.
+            </p>
+
+            <div class="hp-kanban" data-testid="planner-kanban">
+                @foreach (var column in columns)
+                {
+                    var key = "column:" + column.Name;
+                    var cards = _expanded.Contains(key) ? column.Items : [.. column.Items.Take(ColumnCards)];
+
+                    <section class="hp-kanban-col" @key="key" data-testid="planner-column" data-status="@column.Name" data-count="@column.Items.Count">
+                        <h2>@column.Name <small>@column.Items.Count</small></h2>
+                        @if (column.Note is { } note)
+                        {
+                            <p class="hp-faint hp-kanban-note">@note</p>
+                        }
+                        @foreach (var item in cards)
+                        {
+                            var entry = _snapshot.Entry(item.ItemId);
+
+                            <article class="hp-kanban-card @(entry?.Active == true ? "is-active" : null)" @key="item.ItemId" data-testid="planner-card" data-item="@item.ItemId" data-reference="@item.Reference">
+                                <div class="hp-kanban-head">
+                                    <a class="mono" href="@(entry is null ? item.Url : DetailHref(entry))" target="@(entry is null ? "_blank" : null)" rel="@(entry is null ? "noopener" : null)">@item.Reference</a>
+                                    @if (item.Field(PlannerQueue.PriorityField) is { } priority)
+                                    {
+                                        <span class="mono @(entry is null ? null : PriorityClass(kanban, entry))">@priority</span>
+                                    }
+                                    @if (item.Type is { Length: > 0 } type)
+                                    {
+                                        <span class="hp-chip">@type</span>
+                                    }
+                                    @if (entry?.Active == true)
+                                    {
+                                        <span class="hp-state st-investigating" data-testid="planner-card-active"><span class="glyph">~</span> working on it</span>
+                                    }
+                                    else if (entry?.Day == PlannerDay.Today)
+                                    {
+                                        <span class="hp-chip">today</span>
+                                    }
+                                </div>
+                                <span class="hp-kanban-title">@item.Title</span>
+                                <div class="hp-kanban-meta">
+                                    @if (item.Assignees.Count > 0)
+                                    {
+                                        <span class="hp-muted">@string.Join(", ", item.Assignees)</span>
+                                    }
+                                    @if (item.PullRequests.Count > 0)
+                                    {
+                                        <span>@Pulls(item)</span>
+                                    }
+                                    @if (item.FieldChangedAt(PlannerQueue.StatusField) is { } since)
+                                    {
+                                        <span class="hp-faint" title="@Display.Timestamp(since)">here @Display.Ago(since, _now)</span>
+                                    }
+                                </div>
+                                @if (item.Open && column.Index >= 0)
+                                {
+                                    var status = kanban.Field(PlannerQueue.StatusField)!;
+
+                                    <div class="hp-kanban-move">
+                                        @if (column.Index > 0)
+                                        {
+                                            var back = status.Options[column.Index - 1].Name;
+                                            <button type="button" data-testid="planner-card-back" disabled="@RowLocked" title="@(LockedBecause ?? $"to {back}")"
+                                                    @onclick="() => FieldAsync(item.ItemId, status.Name, back)">← @back</button>
+                                        }
+                                        @if (column.Index < status.Options.Count - 1)
+                                        {
+                                            var next = status.Options[column.Index + 1].Name;
+                                            <button type="button" class="hp-submit" data-testid="planner-card-next" disabled="@RowLocked" title="@(LockedBecause ?? $"to {next}")"
+                                                    @onclick="() => FieldAsync(item.ItemId, status.Name, next)">@next →</button>
+                                        }
+                                    </div>
+                                }
+                            </article>
+                        }
+                        @if (column.Items.Count > cards.Count)
+                        {
+                            <button type="button" data-testid="planner-column-more" @onclick="() => _expanded.Add(key)">show @(column.Items.Count - cards.Count) more</button>
+                        }
+                    </section>
+                }
+            </div>
+        }
         else if (ViewName == ViewNew)
         {
             <section class="hp-section hp-planner-new" data-testid="planner-new">
@@ -796,6 +887,13 @@ else
     private const string ViewAll = "all";
     private const string ViewNew = "new";
     private const string ViewSearch = "search";
+    private const string ViewBoard = "board";
+
+    /// <summary>Cards a column of the board shows before "show N more".</summary>
+    private const int ColumnCards = 25;
+
+    /// <summary>How far back the Done column looks.</summary>
+    private static readonly TimeSpan DoneFor = TimeSpan.FromDays(7);
 
     private const string SearchOpen = "open";
     private const string SearchClosed = "closed";
@@ -897,7 +995,53 @@ else
             ? picked
             : _snapshot.NewIssueRepositories.FirstOrDefault();
 
-    private string ViewName => View is ViewToday or ViewAll or ViewNew or ViewSearch ? View : ViewPlan;
+    private string ViewName => View is ViewToday or ViewAll or ViewNew or ViewSearch or ViewBoard ? View : ViewPlan;
+
+    /// <summary>A column of the board view: a Status option by its place, or the items with no Status (index -1).</summary>
+    private sealed record Column(string Name, int Index, IReadOnlyList<BoardItem> Items, string? Note = null);
+
+    /// <summary>
+    /// The board's columns in the board's own order, each holding its open items by priority. A
+    /// column holds the closed items of the last week only when they still stand in it - Done,
+    /// mostly - so the board shows what was finished without every issue ever closed.
+    /// </summary>
+    private IReadOnlyList<Column> Columns(Board board)
+    {
+        var items = board.Items
+            .Where(i => i.Open || (i.ClosedAt is { } closed && _now - closed <= DoneFor))
+            .Where(i => _filters.All(f => Matches(i.Field(f.Key), f.Value)))
+            .ToList();
+
+        IReadOnlyList<BoardItem> Ordered(IEnumerable<BoardItem> them) => [.. them
+            .OrderBy(i => i.Open ? 0 : 1)
+            .ThenBy(i => PlannerQueue.PriorityRank(board, i))
+            .ThenByDescending(i => i.ClosedAt ?? i.UpdatedAt)
+            .ThenBy(i => i.Repository, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.Number)];
+
+        var columns = new List<Column>();
+
+        if (board.Field(PlannerQueue.StatusField) is not { } status)
+        {
+            return [new Column("all", -1, Ordered(items), "The board has no Status field.")];
+        }
+
+        var none = items.Where(i => i.Open && status.Options.All(o => !string.Equals(o.Name, i.Field(status.Name), StringComparison.OrdinalIgnoreCase))).ToList();
+
+        if (none.Count > 0)
+        {
+            columns.Add(new Column("no status", -1, Ordered(none), "Not in any column: the board's rules put a triaged one in the backlog."));
+        }
+
+        for (var i = 0; i < status.Options.Count; i++)
+        {
+            var name = status.Options[i].Name;
+            var here = items.Where(it => string.Equals(it.Field(status.Name), name, StringComparison.OrdinalIgnoreCase)).ToList();
+            columns.Add(new Column(name, i, Ordered(here), here.Any(it => !it.Open) ? "closed in the last week included" : null));
+        }
+
+        return columns;
+    }
 
     /// <summary>What the search view looks for: <c>?q=</c>, so a search can be linked.</summary>
     [SupplyParameterFromQuery(Name = "q")]
@@ -941,6 +1085,7 @@ else
         ViewAll => $"{_snapshot.Entries.Count} open",
         ViewNew => "new issue",
         ViewSearch => "search",
+        ViewBoard => $"{_snapshot.Entries.Count} open",
         _ when _order.Count == 0 => Day,
         _ => $"{Day} · {_index + 1} of {_order.Count}",
     };

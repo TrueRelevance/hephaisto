@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Hephaisto.Agent.CodeFix.Contract;
 using Hephaisto.Agent.GitHub;
@@ -139,6 +140,12 @@ public sealed class PlannerService(
     /// <summary>A person's decision on a verdict of the weekly review (#312): agree, move, unsure. Its history.</summary>
     public const string AuditReview = "planner.review";
 
+    /// <summary>A move of the board's rules (<see cref="BoardFlow"/>): nobody's click, the agent's own.</summary>
+    public const string AuditStatus = "planner.status";
+
+    /// <summary>The name the board's rules write under: on the issue's activity line and in the audit.</summary>
+    public const string RulesActor = "Hephaisto (board rules)";
+
     public const int MaxComment = 60_000;
 
     /// <summary>What begins every comment the agent posts with Claude's analysis. Only one by the agent's own account counts.</summary>
@@ -153,6 +160,16 @@ public sealed class PlannerService(
 
     private PlannerSnapshot? kept;
     private string? botLogin;
+
+    // The activity comment of each issue it was written on, with its body: so a click edits it
+    // without reading the issue's comments first. Lost on a restart; then they are read once.
+    private readonly ConcurrentDictionary<string, (long Id, string Body)> activity = new(StringComparer.OrdinalIgnoreCase);
+
+    // What the board's rules moved lately, by item: a read that has not heard of the move yet
+    // would otherwise ask for it again - and write a second line for it.
+    private readonly Dictionary<string, (BoardStage To, DateTimeOffset At)> ruled = [];
+
+    private static readonly TimeSpan RuledFor = TimeSpan.FromMinutes(15);
 
     // How many times a click has changed the kept board. Under the gate, like kept itself: a warm
     // read notes it before fetching and drops what it fetched if it moved meanwhile.
@@ -222,11 +239,13 @@ public sealed class PlannerService(
 
             var fields = new Dictionary<string, string>(item.Fields, StringComparer.OrdinalIgnoreCase) { [boardField.Name] = chosen.Name };
 
-            return (PlannerActionOutcome.Done, $"{boardField.Name} set to {chosen.Name}", item with { Fields = fields });
+            var changedAt = new Dictionary<string, DateTimeOffset>(item.FieldsChangedAt ?? new Dictionary<string, DateTimeOffset>(), StringComparer.OrdinalIgnoreCase) { [boardField.Name] = clock.UtcNow };
+
+            return (PlannerActionOutcome.Done, $"{boardField.Name} set to {chosen.Name}", item with { Fields = fields, FieldsChangedAt = changedAt });
         });
 
     public Task<PlannerActionResult> CloseAsync(string itemId, bool notPlanned, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
-        ActAsync(itemId, actor, origin, ct, async (client, _, entry) =>
+        ActAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
             var how = notPlanned ? "not planned" : "done";
@@ -235,9 +254,15 @@ public sealed class PlannerService(
 
             var closed = await client.CloseIssueAsync(item.IssueId, notPlanned, ct).ConfigureAwait(false);
 
-            return closed.Ok
-                ? (PlannerActionOutcome.Done, $"closed as {how}", item with { Open = false, ClosedAt = clock.UtcNow })
-                : (PlannerActionOutcome.Refused, closed.Describe(), null);
+            if (!closed.Ok)
+            {
+                return (PlannerActionOutcome.Refused, closed.Describe(), null);
+            }
+
+            // Closed is closed: a Status GitHub would not set is said, and the board's rules set it on the next read.
+            var (refused, done, moved) = await StageAsync(client, board, item with { Open = false, ClosedAt = clock.UtcNow }, BoardStage.Done, forwardOnly: false, ct).ConfigureAwait(false);
+
+            return (PlannerActionOutcome.Done, $"closed as {how}{Moved(moved)}{(refused is null ? string.Empty : $"; Status not set: {refused}")}", done);
         });
 
     /// <summary>
@@ -256,9 +281,22 @@ public sealed class PlannerService(
 
             var (refused, changed) = await ApplyDayAsync(client, board, item, day, ct).ConfigureAwait(false);
 
-            return refused is not null
-                ? (PlannerActionOutcome.Refused, refused, changed)
-                : (PlannerActionOutcome.Done, word, changed);
+            if (refused is not null)
+            {
+                return (PlannerActionOutcome.Refused, refused, changed);
+            }
+
+            if (day != PlannerDay.Today)
+            {
+                return (PlannerActionOutcome.Done, word, changed);
+            }
+
+            // Planned for today is next up: the board shows it under Ready.
+            var (notMoved, ready, moved) = await StageAsync(client, board, changed, BoardStage.Ready, forwardOnly: true, ct).ConfigureAwait(false);
+
+            return notMoved is not null
+                ? (PlannerActionOutcome.Refused, $"{word}, and the Status was not set: {notMoved}", ready)
+                : (PlannerActionOutcome.Done, word + Moved(moved), ready);
         });
 
     /// <summary>
@@ -335,9 +373,24 @@ public sealed class PlannerService(
 
                 var removed = await client.RemoveLabelAsync(item.Repository, item.Number, label.Name, ct).ConfigureAwait(false);
 
-                return !removed.Ok && removed.Outcome != GitHubOutcome.NotFound
-                    ? (PlannerActionOutcome.Refused, removed.Describe(), [])
-                    : (PlannerActionOutcome.Done, "no longer worked on", [item with { Labels = [.. item.Labels.Where(l => !ReferenceEquals(l, label))] }]);
+                if (!removed.Ok && removed.Outcome != GitHubOutcome.NotFound)
+                {
+                    return (PlannerActionOutcome.Refused, removed.Describe(), []);
+                }
+
+                var stopped = item with { Labels = [.. item.Labels.Where(l => !ReferenceEquals(l, label))] };
+
+                // Back to Ready, but only from In progress: a pull request may have moved it on meanwhile.
+                if (Statuses.Stage(stopped.Field(PlannerQueue.StatusField)) != BoardStage.InProgress)
+                {
+                    return (PlannerActionOutcome.Done, "no longer worked on", [stopped]);
+                }
+
+                var (notMoved, back, moved) = await StageAsync(client, board, stopped, BoardStage.Ready, forwardOnly: false, ct).ConfigureAwait(false);
+
+                return notMoved is not null
+                    ? (PlannerActionOutcome.Refused, $"no longer worked on, and the Status was not set: {notMoved}", [back])
+                    : (PlannerActionOutcome.Done, "no longer worked on" + Moved(moved), [back]);
             }
 
             if (entry.Day != PlannerDay.Today)
@@ -394,11 +447,15 @@ public sealed class PlannerService(
                 item = item with { Labels = [.. item.Labels, new BoardLabel(PlannerQueue.ActiveLabel, clock.UtcNow)] };
             }
 
-            return (PlannerActionOutcome.Done, "worked on now", [.. changed, item]);
+            var (stageRefused, started, stageMoved) = await StageAsync(client, board, item, BoardStage.InProgress, forwardOnly: true, ct).ConfigureAwait(false);
+
+            return stageRefused is not null
+                ? (PlannerActionOutcome.Refused, $"worked on now, and the Status was not set: {stageRefused}", [.. changed, started])
+                : (PlannerActionOutcome.Done, "worked on now" + Moved(stageMoved), [.. changed, started]);
         });
 
     public Task<PlannerActionResult> AssignAsync(string itemId, string login, bool assign, string actor, CancellationToken ct, AuditOrigin? origin = null) =>
-        ActAsync(itemId, actor, origin, ct, async (client, _, entry) =>
+        ActAsync(itemId, actor, origin, ct, async (client, board, entry) =>
         {
             var item = entry.Item;
 
@@ -431,7 +488,19 @@ public sealed class PlannerService(
                 assignees.Add(account);
             }
 
-            return (PlannerActionOutcome.Done, assign ? $"assigned to {account}" : $"{account} taken off", item with { Assignees = assignees });
+            var now = item with { Assignees = assignees };
+
+            // Handed to the agent is being worked on: its Job starts on the next poll.
+            if (assign && string.Equals(account, botLogin, StringComparison.OrdinalIgnoreCase))
+            {
+                var (refused, working, moved) = await StageAsync(client, board, now, BoardStage.InProgress, forwardOnly: true, ct).ConfigureAwait(false);
+
+                return refused is not null
+                    ? (PlannerActionOutcome.Refused, $"assigned to {account}, and the Status was not set: {refused}", working)
+                    : (PlannerActionOutcome.Done, $"assigned to {account}" + Moved(moved), working);
+            }
+
+            return (PlannerActionOutcome.Done, assign ? $"assigned to {account}" : $"{account} taken off", now);
         });
 
     /// <summary>
@@ -600,6 +669,9 @@ public sealed class PlannerService(
             snapshot = kept = Present(board with { Items = [.. board.Items.Where(i => i.ItemId != item.ItemId), item] }, snapshot.ReadAt ?? now, snapshot.Problem);
             patches++;
             Changed?.Invoke();
+
+            await NoteAsync(client, repository, opened.Number, who,
+                fields.Count == 0 ? "opened and put on the board" : $"opened and put on the board with {string.Join(", ", fields.Select(f => $"{f.Key} {f.Value}"))}", ct).ConfigureAwait(false);
 
             if (failed.Count > 0)
             {
@@ -834,7 +906,11 @@ public sealed class PlannerService(
 
                 dates[field.Name] = planned;
 
-                return (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = dates });
+                var (notMoved, ready, toReady) = await StageAsync(client, board, item with { Labels = labels, Dates = dates }, BoardStage.Ready, forwardOnly: true, ct).ConfigureAwait(false);
+
+                return notMoved is not null
+                    ? (PlannerActionOutcome.Refused, $"{word}, and the Status was not set: {notMoved}", ready)
+                    : (PlannerActionOutcome.Done, word + Moved(toReady), ready);
             }
 
             var (cleared, after) = await ClearPlannedAsync(client, board, item, ct).ConfigureAwait(false);
@@ -852,8 +928,11 @@ public sealed class PlannerService(
             }
 
             var fields = new Dictionary<string, string>(item.Fields, StringComparer.OrdinalIgnoreCase) { [status.Name] = backlog.Name };
+            var was = item.Field(status.Name);
+            var changedAt = new Dictionary<string, DateTimeOffset>(item.FieldsChangedAt ?? new Dictionary<string, DateTimeOffset>(), StringComparer.OrdinalIgnoreCase) { [status.Name] = clock.UtcNow };
 
-            return (PlannerActionOutcome.Done, word, item with { Labels = labels, Dates = after, Fields = fields });
+            return (PlannerActionOutcome.Done, string.Equals(was, backlog.Name, StringComparison.OrdinalIgnoreCase) ? word : word + Moved($"Status {was ?? "none"} → {backlog.Name}"),
+                item with { Labels = labels, Dates = after, Fields = fields, FieldsChangedAt = changedAt });
         });
 
     /// <summary>
@@ -1089,6 +1168,393 @@ public sealed class PlannerService(
     /// <summary>An item of the kept board by its id, open or closed.</summary>
     public BoardItem? BoardItem(string itemId) => Kept?.Board?.Items.FirstOrDefault(i => i.ItemId == itemId);
 
+    private BoardStatuses Statuses => options.CurrentValue.Planner.BoardStatuses();
+
+    private static string Moved(string? moved) => moved is null ? string.Empty : $"; {moved}";
+
+    /// <summary>
+    /// Puts an item in the column that means <paramref name="to"/>: with <paramref name="forwardOnly"/>
+    /// only from an earlier stage, never back and never out of a column nobody named. Nothing to
+    /// do when the board has no such column. The item as it is now, and the words for the move.
+    /// </summary>
+    private async Task<(string? Refused, BoardItem Item, string? Moved)> StageAsync(
+        IGitHubClient client, Board board, BoardItem item, BoardStage to, bool forwardOnly, CancellationToken ct)
+    {
+        var statuses = Statuses;
+
+        if (board.Field(PlannerQueue.StatusField) is not { } field
+            || statuses.Name(to) is not { } name
+            || field.Options.FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.OrdinalIgnoreCase)) is not { } option)
+        {
+            return (null, item, null);
+        }
+
+        var before = item.Field(field.Name);
+        var from = statuses.Stage(before);
+
+        if (from == to || (forwardOnly && !BoardStatuses.MovesForward(from, to)))
+        {
+            return (null, item, null);
+        }
+
+        var set = await client.SetProjectFieldAsync(board.Id, item.ItemId, field.Id, option.Id, ct).ConfigureAwait(false);
+
+        if (!set.Ok)
+        {
+            return (set.Describe(), item, null);
+        }
+
+        var fields = new Dictionary<string, string>(item.Fields, StringComparer.OrdinalIgnoreCase) { [field.Name] = option.Name };
+        var changedAt = new Dictionary<string, DateTimeOffset>(item.FieldsChangedAt ?? new Dictionary<string, DateTimeOffset>(), StringComparer.OrdinalIgnoreCase) { [field.Name] = clock.UtcNow };
+
+        return (null, item with { Fields = fields, FieldsChangedAt = changedAt }, $"Status {before ?? "none"} → {option.Name}");
+    }
+
+    /// <summary>
+    /// A line on the issue's activity comment (<see cref="PlannerActivity"/>), for a click or a move
+    /// of the board's rules. Null when it was written or the comment is off; otherwise why not -
+    /// the click itself stands, the line is its record on GitHub.
+    /// </summary>
+    private async Task<string?> NoteAsync(IGitHubClient client, string repository, int number, string who, string what, CancellationToken ct)
+    {
+        if (!options.CurrentValue.Planner.ActivityComment)
+        {
+            return null;
+        }
+
+        var key = $"{repository}#{number}";
+        var line = PlannerActivity.Line(clock.UtcNow, who, what);
+
+        try
+        {
+            if (!activity.TryGetValue(key, out var known))
+            {
+                botLogin ??= await BotLoginAsync(client, ct).ConfigureAwait(false);
+                var comments = await client.ListCommentsAsync(repository, number, since: null, etag: null, ct).ConfigureAwait(false);
+
+                if (!comments.Ok)
+                {
+                    return $"its comments could not be read: {comments.Describe()}";
+                }
+
+                if (botLogin is not null && comments.Value!
+                        .Where(c => c.Body.StartsWith(PlannerActivity.Marker, StringComparison.Ordinal) && string.Equals(c.Author.Login, botLogin, StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(c => c.CreatedAt)
+                        .LastOrDefault() is { } found)
+                {
+                    known = (found.Id, found.Body);
+                }
+            }
+
+            if (known.Id != 0)
+            {
+                var body = PlannerActivity.Append(known.Body, line);
+                var updated = await client.UpdateCommentAsync(repository, known.Id, body, ct).ConfigureAwait(false);
+
+                if (updated.Ok)
+                {
+                    activity[key] = (known.Id, body);
+                    await TouchAsync(repository, number, updated.Value?.UpdatedAt ?? clock.UtcNow, ct).ConfigureAwait(false);
+                    return null;
+                }
+
+                activity.TryRemove(key, out _);
+
+                // Somebody deleted it: the line starts a new one.
+                if (updated.Outcome != GitHubOutcome.NotFound)
+                {
+                    return updated.Describe();
+                }
+            }
+
+            var fresh = PlannerActivity.Append(null, line);
+            var created = await client.CreateCommentAsync(repository, number, fresh, ct).ConfigureAwait(false);
+
+            if (!created.Ok)
+            {
+                return created.Describe();
+            }
+
+            activity[key] = (created.Value!.Id, fresh);
+            await TouchAsync(repository, number, created.Value.UpdatedAt, ct).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "The activity line on {Issue} could not be written", key);
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Tells the weekly review (#312) that Hephaisto itself just wrote on the issue, so the
+    /// <c>updated_at</c> that write leaves is not taken for news about the issue. Nothing without
+    /// a review store.
+    /// </summary>
+    private async Task TouchAsync(string repository, int number, DateTimeOffset at, CancellationToken ct)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+
+        if (scope.ServiceProvider.GetService<Review.IReviewStore>() is { } store)
+        {
+            await store.TouchAsync(repository, number, at, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// A line on an issue's activity comment for what was decided elsewhere - the weekly review's
+    /// clicks (#312). On the board or not; the issue only has to be one the token may comment on.
+    /// </summary>
+    public async Task<string?> NoteAsync(string repository, int number, string actor, string what, CancellationToken ct)
+    {
+        if (!Enabled)
+        {
+            return null;
+        }
+
+        await using var scope = scopes.CreateAsyncScope();
+
+        return scope.ServiceProvider.GetService<IGitHubClient>() is { } client
+            ? await NoteAsync(client, repository, number, actor, what, ct).ConfigureAwait(false)
+            : null;
+    }
+
+    /// <summary>
+    /// Puts an issue the weekly review sorted as work (#312) where work is: on the board when it
+    /// is not, in <paramref name="to"/> when it stands earlier, and with <paramref name="priority"/>
+    /// when one is given and the board has it as an option. A line on the issue says it, under the
+    /// person's name. The words for what was done.
+    /// </summary>
+    /// <param name="issueId">The issue's node id: what an issue not on the board is added by.</param>
+    public async Task<(PlannerActionOutcome Outcome, string Message)> TrackAsync(
+        string repository, int number, string issueId, BoardStage to, string? priority, string actor, string decided, CancellationToken ct, AuditOrigin? origin = null)
+    {
+        var who = actor?.Trim() ?? string.Empty;
+        ArgumentException.ThrowIfNullOrWhiteSpace(who);
+
+        if (!Enabled)
+        {
+            return (PlannerActionOutcome.Off, "the planner is off");
+        }
+
+        if (IncidentStateMachine.IsForbiddenGranter(who))
+        {
+            return (PlannerActionOutcome.Forbidden, $"'{who}' may not decide here: what the planner does is a person's click.");
+        }
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            var snapshot = kept is { Board: not null } ? kept : await ReadLockedAsync(refresh: false, ct).ConfigureAwait(false);
+
+            if (snapshot.Board is not { } board)
+            {
+                return (PlannerActionOutcome.NotFound, snapshot.Problem ?? "the board could not be read");
+            }
+
+            await using var scope = scopes.CreateAsyncScope();
+
+            if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+            {
+                return (PlannerActionOutcome.Off, "the planner is off");
+            }
+
+            var reference = $"{repository}#{number}";
+            var item = OnBoard(repository, number);
+            var words = new List<string> { decided };
+
+            if (item is { Open: false })
+            {
+                return (PlannerActionOutcome.NotFound, $"{reference} is closed");
+            }
+
+            await AuditAsync(AuditField, who, $"{reference}: {decided}, to {Statuses.Name(to)}", repository, number, item?.Url, item?.ItemId,
+                new { to = Statuses.Name(to), priority, added = item is null }, ct, origin).ConfigureAwait(false);
+
+            if (item is null)
+            {
+                if (string.IsNullOrWhiteSpace(issueId))
+                {
+                    return (PlannerActionOutcome.NotFound, $"{reference} has no node id to put it on the board by");
+                }
+
+                var added = await client.AddProjectItemAsync(board.Id, issueId, ct).ConfigureAwait(false);
+
+                if (!added.Ok)
+                {
+                    return await TrackRefusedAsync(who, repository, number, $"GitHub would not put it on the board: {added.Describe()}", ct, origin).ConfigureAwait(false);
+                }
+
+                var now = clock.UtcNow;
+                item = new BoardItem(added.Value!, issueId, repository, number, reference, $"https://github.com/{repository}/issues/{number}", null, string.Empty,
+                    Open: true, now, now, ClosedAt: null, ParentUrl: null, SubIssues: 0, SubIssuesDone: 0,
+                    new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase), [], [], []);
+                words.Add("put on the board");
+            }
+
+            var (refused, staged, moved) = await StageAsync(client, board, item, to, forwardOnly: true, ct).ConfigureAwait(false);
+
+            if (refused is not null)
+            {
+                return await TrackRefusedAsync(who, repository, number, $"the Status was not set: {refused}", ct, origin).ConfigureAwait(false);
+            }
+
+            if (moved is not null)
+            {
+                words.Add(moved);
+            }
+
+            item = staged;
+
+            var priorityField = board.Field(PlannerQueue.PriorityField);
+            var priorityOption = priority is null ? null : priorityField?.Options.FirstOrDefault(o => string.Equals(o.Name, priority, StringComparison.OrdinalIgnoreCase));
+
+            if (priority is not null && priorityOption is null)
+            {
+                words.Add(priorityField is null ? "the board has no Priority to set" : $"Priority {priority} is not an option of the board, so none was set");
+            }
+            else if (priority is not null && string.Equals(item.Field(priorityField!.Name), priorityOption!.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                words.Add($"Priority is {priorityOption.Name} already");
+            }
+
+            if (priorityOption is { } option && priorityField is { } field && !string.Equals(item.Field(field.Name), option.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                var set = await client.SetProjectFieldAsync(board.Id, item.ItemId, field.Id, option.Id, ct).ConfigureAwait(false);
+
+                if (!set.Ok)
+                {
+                    return await TrackRefusedAsync(who, repository, number, $"Priority {option.Name} was not set: {set.Describe()}", ct, origin).ConfigureAwait(false);
+                }
+
+                words.Add($"Priority {option.Name}");
+                item = item with { Fields = new Dictionary<string, string>(item.Fields, StringComparer.OrdinalIgnoreCase) { [field.Name] = option.Name } };
+            }
+
+            var message = string.Join("; ", words);
+
+            if (await NoteAsync(client, repository, number, who, message, ct).ConfigureAwait(false) is { } notNoted)
+            {
+                message += $" (the line on the issue could not be written: {notNoted})";
+            }
+
+            var changed = item;
+            kept = Present(board with { Items = [.. board.Items.Where(i => i.ItemId != changed.ItemId), changed] }, snapshot.ReadAt ?? clock.UtcNow, snapshot.Problem);
+            patches++;
+            Changed?.Invoke();
+
+            return (PlannerActionOutcome.Done, message);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<(PlannerActionOutcome, string)> TrackRefusedAsync(string who, string repository, int number, string message, CancellationToken ct, AuditOrigin? origin)
+    {
+        logger.LogWarning("The review's click by {Actor} on {Repository}#{Number} was refused: {Detail}", who, repository, number, message);
+        await AuditAsync(AuditRefused, who, $"{repository}#{number}: GitHub refused, {message}", repository, number, null, null, new { detail = message }, ct, origin).ConfigureAwait(false);
+
+        return (PlannerActionOutcome.Refused, message);
+    }
+
+    /// <summary>
+    /// The board's rules, once (<see cref="BoardFlow"/>): every move GitHub's facts ask for on the
+    /// kept board, each with a line on the issue and an audit row under <see cref="RulesActor"/>.
+    /// Only with <c>github.planner.keepStatus</c>. How many items were moved.
+    /// </summary>
+    public async Task<int> KeepStatusAsync(CancellationToken ct)
+    {
+        var planner = options.CurrentValue.Planner;
+
+        if (!Enabled || !planner.KeepStatus)
+        {
+            return 0;
+        }
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (kept is not { Board: { } board } snapshot)
+            {
+                return 0;
+            }
+
+            var at = clock.UtcNow;
+
+            foreach (var stale in ruled.Where(r => at - r.Value.At > RuledFor).Select(r => r.Key).ToList())
+            {
+                ruled.Remove(stale);
+            }
+
+            var moves = BoardFlow.Moves(board, Statuses, planner.RequiredFields, botLogin, at)
+                .Where(m => !(ruled.TryGetValue(m.Item.ItemId, out var done) && done.To == m.To))
+                .ToList();
+
+            if (moves.Count == 0)
+            {
+                return 0;
+            }
+
+            await using var scope = scopes.CreateAsyncScope();
+
+            if (scope.ServiceProvider.GetService<IGitHubClient>() is not { } client)
+            {
+                return 0;
+            }
+
+            var changed = new Dictionary<string, BoardItem>();
+
+            foreach (var move in moves)
+            {
+                var (refused, item, moved) = await StageAsync(client, board, move.Item, move.To, forwardOnly: false, ct).ConfigureAwait(false);
+
+                if (refused is not null)
+                {
+                    logger.LogWarning("The board's rules could not move {Issue} to {Stage}: {Detail}", move.Item.Reference, move.To, refused);
+                    await AuditAsync(AuditRefused, RulesActor, $"{move.Item.Reference}: GitHub refused, {refused}", move.Item, new { detail = refused, to = move.To.ToString() }, ct).ConfigureAwait(false);
+
+                    // A token that may not write fails every one of them: once is enough.
+                    break;
+                }
+
+                if (moved is null)
+                {
+                    continue;
+                }
+
+                ruled[item.ItemId] = (move.To, at);
+                var what = $"{moved}: {move.Why}";
+                await AuditAsync(AuditStatus, RulesActor, $"{move.Item.Reference}: {what}", move.Item, new { from = move.From.ToString(), to = move.To.ToString(), why = move.Why }, ct).ConfigureAwait(false);
+
+                // A closed issue's move to Done is the close's echo: a line on it would only
+                // notify its watchers of what they were told when it closed.
+                if (item.Open)
+                {
+                    await NoteAsync(client, item.Repository, item.Number, RulesActor, what, ct).ConfigureAwait(false);
+                }
+
+                changed[item.ItemId] = item;
+            }
+
+            if (changed.Count > 0)
+            {
+                kept = Present(board with { Items = [.. board.Items.Select(i => changed.TryGetValue(i.ItemId, out var now) ? now : i)] }, snapshot.ReadAt ?? clock.UtcNow, snapshot.Problem);
+                patches++;
+                Changed?.Invoke();
+            }
+
+            return changed.Count;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private BoardItem? OnBoard(string repository, int number) =>
         kept?.Board?.Items.FirstOrDefault(i => string.Equals(i.Repository, repository?.Trim(), StringComparison.OrdinalIgnoreCase) && i.Number == number);
 
@@ -1175,6 +1641,11 @@ public sealed class PlannerService(
             }
 
             var (outcome, message, changed) = await act(client, board, entry).ConfigureAwait(false);
+
+            if (outcome == PlannerActionOutcome.Done && await NoteAsync(client, entry.Item.Repository, entry.Item.Number, who, message, ct).ConfigureAwait(false) is { } notNoted)
+            {
+                message += $" (the line on the issue could not be written: {notNoted})";
+            }
 
             if (changed.Count > 0)
             {

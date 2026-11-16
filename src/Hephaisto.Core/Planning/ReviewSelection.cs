@@ -23,7 +23,8 @@ public sealed record ReviewOpen(string Reference, string Repository, int Number,
 /// <summary>A verdict as it is kept.</summary>
 /// <param name="IssueUpdatedAt">The issue's <c>updated_at</c> when the verdict was given.</param>
 /// <param name="Gone">The issue was found closed, or no longer open, after the verdict.</param>
-public sealed record ReviewKnown(string Reference, DateTimeOffset IssueUpdatedAt, DateTimeOffset ReviewedAt, bool Gone);
+/// <param name="TouchedAt">When Hephaisto itself last wrote on the issue, as GitHub dated it: an <c>updated_at</c> that is only that write is no change.</param>
+public sealed record ReviewKnown(string Reference, DateTimeOffset IssueUpdatedAt, DateTimeOffset ReviewedAt, bool Gone, DateTimeOffset? TouchedAt = null);
 
 /// <summary>
 /// Which open issues a run asks about (#312). Pure: the open issues, the kept verdicts, the time.
@@ -48,7 +49,7 @@ public static class ReviewSelection
         // GitHub's times are whole seconds, and the stored one is GitHub's own. Different, not
         // later: on github.com it only moves on, but an issue that was deleted and made again, or
         // a stand-in that was seeded afresh, is not the issue the verdict was about either.
-        if (IsChanged(issue.UpdatedAt, known.IssueUpdatedAt))
+        if (IsChanged(issue.UpdatedAt, known.IssueUpdatedAt, known.TouchedAt))
         {
             return ReviewWhy.Changed;
         }
@@ -85,6 +86,17 @@ public static class ReviewSelection
 
     /// <summary>Whether an issue's <c>updated_at</c> is not the one a verdict was given for, to the second.</summary>
     public static bool IsChanged(DateTimeOffset now, DateTimeOffset given) => now.ToUnixTimeSeconds() != given.ToUnixTimeSeconds();
+
+    /// <summary>How near Hephaisto's own write an <c>updated_at</c> has to be to be that write: one click writes a label and a comment a second or two apart.</summary>
+    public static readonly TimeSpan TouchSlack = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Changed, unless the <c>updated_at</c> is Hephaisto's own write on the issue (<paramref name="touched"/>):
+    /// an activity line or a label a click put there says nothing new about the issue. Anybody
+    /// else's later change moves <c>updated_at</c> past it, and counts.
+    /// </summary>
+    public static bool IsChanged(DateTimeOffset now, DateTimeOffset given, DateTimeOffset? touched) =>
+        IsChanged(now, given) && !(touched is { } t && t > given && (now - t).Duration() <= TouchSlack);
 }
 
 /// <summary>

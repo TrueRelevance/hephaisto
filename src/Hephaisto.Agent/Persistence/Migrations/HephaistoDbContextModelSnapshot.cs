@@ -470,6 +470,10 @@ namespace Hephaisto.Agent.Persistence.Migrations
                         .HasColumnType("character varying(512)")
                         .HasColumnName("title");
 
+                    b.Property<DateTimeOffset?>("TouchedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("touched_at");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(512)

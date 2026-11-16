@@ -66,6 +66,7 @@ public sealed class PlannerRoutesTests
             "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/agree",
             "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/move",
             "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/unsure",
+            "/api/planner/review/verdicts/{owner}/{repo}/{number:int}/ready",
             "/api/planner/review/close",
         ]);
 

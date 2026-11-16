@@ -20,15 +20,15 @@ public sealed class ReviewActionsTests
     // --- agree ---------------------------------------------------------------------------------
 
     [Fact]
-    public async Task Agreeing_with_a_bug_of_the_board_sets_its_suggested_priority_there_and_writes_nothing_else()
+    public async Task Agreeing_with_a_bug_of_the_board_puts_it_in_the_backlog_with_its_suggested_priority()
     {
         var (actions, store, github, audit) = Build(Verdict("acme/web", 240, "bug", priority: "P1"));
 
         var result = await actions.AgreeAsync("acme/web", 240, "flo", Ct);
 
         result.Outcome.Should().Be(ReviewActionOutcome.Done, result.Message);
-        result.Message.Should().StartWith("acme/web#240:").And.Contain("Priority set to P1");
-        Writes(github).Should().Equal("field PVT_1 PVTI_240 F_prio p1");
+        result.Message.Should().StartWith("acme/web#240:").And.Contain("Status Inbox → Backlog").And.Contain("Priority P1");
+        Writes(github).Should().Equal("field PVT_1 PVTI_240 F_status s3", "field PVT_1 PVTI_240 F_prio p1");
 
         store.Verdict("acme/web#240").Should().BeEquivalentTo(new
         {
@@ -42,7 +42,7 @@ public sealed class ReviewActionsTests
     }
 
     [Fact]
-    public async Task Agreeing_with_a_bug_whose_priority_is_already_there_or_that_is_not_on_the_board_writes_nothing()
+    public async Task Agreeing_puts_work_that_is_not_on_the_board_on_it_and_leaves_a_priority_that_is_there()
     {
         var (actions, store, github, _) = Build(
             Verdict("acme/scraper", 57, "bug", priority: "P1"),
@@ -50,25 +50,82 @@ public sealed class ReviewActionsTests
             Verdict("acme/api", 205, "feature", priority: "P2", onBoard: false));
 
         (await actions.AgreeAsync("acme/scraper", 57, "flo", Ct)).Message.Should().Contain("Priority is P1 already");
-        (await actions.AgreeAsync("acme/web", 118, "flo", Ct)).Outcome.Should().Be(ReviewActionOutcome.Done);
-        (await actions.AgreeAsync("acme/api", 205, "flo", Ct)).Outcome.Should().Be(ReviewActionOutcome.Done);
+        (await actions.AgreeAsync("acme/web", 118, "flo", Ct)).Message.Should().Contain("put on the board");
+        (await actions.AgreeAsync("acme/api", 205, "flo", Ct)).Message.Should().Contain("put on the board").And.NotContain("Priority", "a feature's priority is a person's to set");
 
-        Writes(github).Should().BeEmpty();
+        // Off the Inbox, and onto the board by node id - the issue has no item yet - in the backlog.
+        Writes(github).Should().Equal(
+            "field PVT_1 PVTI_57 F_status s3",
+            "add PVT_1 I_118", "field PVT_1 PVTI_500 F_status s3", "field PVT_1 PVTI_500 F_prio p1",
+            "add PVT_1 I_205", "field PVT_1 PVTI_500 F_status s3");
         store.Rows.Should().OnlyContain(r => r.DecidedBy == "flo" && r.DecisionAgreed);
     }
 
     [Fact]
-    public async Task A_priority_the_board_refuses_leaves_the_verdict_undecided()
+    public async Task Ready_puts_work_on_the_board_as_next_up_and_refuses_what_is_no_work()
+    {
+        var (actions, store, github, _) = Build(
+            Verdict("acme/web", 240, "bug", priority: "P1"),
+            Verdict("acme/api", 431, "close", closeReason: "done"));
+
+        // The fake board has no Ready column: the click is recorded and the board says what it can.
+        (await actions.ReadyAsync("acme/web", 240, "flo", Ct)).Outcome.Should().Be(ReviewActionOutcome.Done);
+        store.Verdict("acme/web#240").Should().BeEquivalentTo(new { DecidedBy = "flo", DecisionGroup = "bug", DecisionAgreed = true });
+        Writes(github).Should().Equal("field PVT_1 PVTI_240 F_prio p1");
+
+        (await actions.ReadyAsync("acme/api", 431, "flo", Ct)).Outcome.Should().Be(ReviewActionOutcome.Conflict);
+        store.Verdict("acme/api#431").DecidedBy.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_priority_the_board_does_not_have_is_said_and_the_rest_is_done()
     {
         // The board's Priority knows P0 and P1, not P2.
         var (actions, store, github, _) = Build(Verdict("acme/web", 240, "bug", priority: "P2"));
 
         var result = await actions.AgreeAsync("acme/web", 240, "flo", Ct);
 
-        result.Outcome.Should().Be(ReviewActionOutcome.Conflict);
-        result.Message.Should().Contain("P2 was not set");
-        Writes(github).Should().BeEmpty();
+        result.Outcome.Should().Be(ReviewActionOutcome.Done);
+        result.Message.Should().Contain("Priority P2 is not an option of the board");
+        Writes(github).Should().Equal("field PVT_1 PVTI_240 F_status s3");
+        store.Verdict("acme/web#240").DecidedBy.Should().Be("flo");
+    }
+
+    [Fact]
+    public async Task A_write_github_refuses_leaves_the_verdict_undecided()
+    {
+        var (actions, store, github, _) = Build(Verdict("acme/web", 240, "bug", priority: "P1"));
+        github.FailWrite = new(GitHubOutcome.Unauthorized, false, "HTTP 403");
+
+        var result = await actions.AgreeAsync("acme/web", 240, "flo", Ct);
+
+        result.Outcome.Should().Be(ReviewActionOutcome.Refused);
+        result.Message.Should().Contain("the Status was not set");
         store.Verdict("acme/web#240").DecidedBy.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Every_decision_leaves_a_line_on_the_issue_under_the_persons_name()
+    {
+        var (planner, github, clock, audit) = PlannerServiceTests.Build(activity: true);
+        var store = new InMemoryReviewStore();
+        store.Rows.AddRange([Verdict("acme/web", 240, "bug", priority: "P1"), Verdict("acme/api", 431, "close", closeReason: "done"), Verdict("acme/api", 205, "feature", onBoard: false)]);
+        var actions = new ReviewActions(planner, store, clock, NullLogger<ReviewActions>.Instance);
+
+        await actions.AgreeAsync("acme/web", 240, "flo", Ct);
+        await actions.AgreeAsync("acme/api", 431, "flo", Ct);
+        await actions.UnsureAsync("acme/api", 205, "flo", Ct);
+        await actions.MoveAsync("acme/api", 205, "close", "stale", "flo", Ct);
+
+        string Activity(int number) => github.Comments.Single(c => c.Number == number && c.Comment.Body.StartsWith(PlannerActivity.Marker, StringComparison.Ordinal)).Comment.Body;
+
+        Activity(240).Should().Contain("**flo** · agreed with the weekly review: a real bug; Status Inbox → Backlog; Priority P1");
+        Activity(431).Should().Contain("**flo** · agreed with the weekly review: can be closed, as already done; it is closed with \"Close N issues\"");
+
+        // One comment per issue, a line per click.
+        PlannerActivity.Lines(Activity(205)).Should().HaveCount(2);
+        Activity(205).Should().Contain("marked unsure").And.Contain("moved to can be closed, as stale");
+        audit.Rows.Should().NotBeEmpty();
     }
 
     [Fact]
@@ -91,7 +148,7 @@ public sealed class ReviewActionsTests
 
         var moved = await actions.MoveAsync("acme/planning", 30, "bug", null, "flo", Ct);
         moved.Outcome.Should().Be(ReviewActionOutcome.Done);
-        moved.Message.Should().Be("acme/planning#30: moved to a real bug");
+        moved.Message.Should().StartWith("acme/planning#30: moved to a real bug; put on the board");
         ReviewVerdicts.Tab(store.Verdict("acme/planning#30")).Should().Be("bug");
         store.Verdict("acme/planning#30").DecisionAgreed.Should().BeFalse("a move is not agreeing with Claude, even to Claude's group");
 
@@ -102,8 +159,9 @@ public sealed class ReviewActionsTests
         (await actions.MoveAsync("acme/api", 205, "close", "stale", "flo", Ct)).Outcome.Should().Be(ReviewActionOutcome.Done);
         store.Verdict("acme/api#205").Should().BeEquivalentTo(new { DecisionGroup = "close", DecisionCloseReason = "stale", DecisionAgreed = false });
 
-        Writes(github).Should().BeEmpty("a move writes nothing to GitHub");
-        audit.Rows.Should().HaveCount(2).And.OnlyContain(r => r.Type == PlannerService.AuditReview);
+        // A move to the bugs is work, and goes on the board; a move to close waits for "Close N issues".
+        Writes(github).Should().Equal("add PVT_1 I_30", "field PVT_1 PVTI_500 F_status s3");
+        audit.Rows.Where(r => r.Type == PlannerService.AuditReview).Should().HaveCount(2);
     }
 
     [Fact]

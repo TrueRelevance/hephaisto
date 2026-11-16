@@ -70,7 +70,9 @@ public sealed record ReviewVerdictView(
     string Tab,
     ReviewDecisionView? Decision,
     DateTimeOffset ReviewedAt,
-    Guid RunId);
+    Guid RunId,
+    string? BoardStatus = null,
+    bool Scheduled = false);
 
 public sealed record ReviewEvidenceView(string Kind, string Text, bool? Ok);
 
@@ -115,9 +117,18 @@ public sealed class ReviewReader(ReviewRunner runner, IReviewStore store, IRevie
             .GroupBy(i => i.Reference, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Max(i => i.ClosedAt!.Value), StringComparer.OrdinalIgnoreCase);
 
+        // Where an issue stands on the board now: what a person put there since the run, too.
+        var statuses = github.CurrentValue.Planner.BoardStatuses();
+        var onBoard = (board.Kept?.Items ?? [])
+            .Where(i => i.Open)
+            .GroupBy(i => i.Reference, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Field(Hephaisto.Core.Planning.PlannerQueue.StatusField), StringComparer.OrdinalIgnoreCase);
+
         var verdicts = (await store.VerdictsAsync(includeGone: false, ct).ConfigureAwait(false))
             .Where(v => !(closedAt.TryGetValue(v.Reference, out var at) && at > v.ReviewedAt))
-            .Select(View)
+            .Select(v => onBoard.TryGetValue(v.Reference, out var status)
+                ? View(v) with { OnBoard = true, BoardStatus = status, Scheduled = statuses.Stage(status) is not (Hephaisto.Core.Planning.BoardStage.None or Hephaisto.Core.Planning.BoardStage.Inbox or Hephaisto.Core.Planning.BoardStage.Backlog) }
+                : View(v))
             .OrderBy(v => Array.IndexOf(Tabs, v.Tab))
             .ThenBy(v => v.Repository, StringComparer.OrdinalIgnoreCase)
             .ThenBy(v => v.Number)
@@ -204,6 +215,11 @@ public static class ReviewEndpoints
         verdict.MapPost("/unsure", (string owner, string repo, int number, ReviewDecideRequest? body, HttpContext http, ReviewActions actions, ReviewReader reader, CancellationToken ct) =>
                 DecideAsync(owner, repo, number, body?.DecidedBy, http, reader, ct, actor => actions.UnsureAsync($"{owner}/{repo}", number, actor, ct)))
             .WithName("MarkReviewVerdictUnsure")
+            .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
+
+        verdict.MapPost("/ready", (string owner, string repo, int number, ReviewDecideRequest? body, HttpContext http, ReviewActions actions, ReviewReader reader, CancellationToken ct) =>
+                DecideAsync(owner, repo, number, body?.DecidedBy, http, reader, ct, actor => actions.ReadyAsync($"{owner}/{repo}", number, actor, ct)))
+            .WithName("ReviewVerdictReady")
             .RequireAuthorization(AuthenticationExtensions.ApprovePolicy);
 
         app.MapPost("/api/planner/review/close", CloseAsync)

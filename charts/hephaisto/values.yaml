@@ -926,13 +926,6 @@ github:
     #   - example/shop
     repositories: []
 
-    # The board's date field "tomorrow" and "next week" plan an issue by. On that day the issue
-    # is planned for today; a day that passed with it open makes it left over. Create a field of
-    # type Date with this name on the project; without one, only today / not today work.
-    dayField: "Planned for"
-    # The Status option "backlog" sets.
-    backlogStatus: "Backlog"
-
   # Who may answer a plan ON THE ISSUE, by account NUMBER - a login can be renamed and taken by
   # somebody else. `gh api users/<login> --jq .id`.
   #
@@ -1021,6 +1014,38 @@ github:
     # repositories:
     #   - example/planning
     repositories: []
+
+    # The board's date field "tomorrow" and "next week" plan an issue by. On that day the issue
+    # is planned for today; a day that passed with it open makes it left over. Create a field of
+    # type Date with this name on the project; without one, only today / not today work.
+    dayField: "Planned for"
+    # The Status option "backlog" sets.
+    backlogStatus: "Backlog"
+
+    # The board is the source of truth. Every click moves the issue's Status where the click
+    # means it - today to Ready, working on it to In progress, closing to Done, a review's agree
+    # on a bug or a feature to the backlog - forward only, never back. The Status options by
+    # what they mean; a column the board does not have is skipped. The backlog is
+    # backlogStatus above.
+    statuses:
+      inbox: "Inbox"
+      ready: "Ready"
+      inProgress: "In progress"
+      inReview: "In review"
+      done: "Done"
+
+    # After every read of the board (every two minutes), move what GitHub's facts say has moved:
+    # a closed issue to Done, an open pull request's issue to In review, an issue assigned to the
+    # agent to In progress, a parent whose sub-issues began to In progress, an Inbox issue with a
+    # type and every requiredField to the backlog. A rule fires only on a fact newer than the
+    # last Status change, so a card a person put back stays where they put it; a column not
+    # named in statuses is never touched. At most 25 moves a read, each a line on the issue.
+    keepStatus: false
+
+    # Every click - and every move of the rules - leaves a line in ONE comment per issue, by the
+    # agent's account, that names the person: what happened is on GitHub, not only in the audit.
+    # The first line notifies the issue's watchers once; the rest are edits.
+    activityComment: true
 
     # Claude labels an issue and writes an analysis and a plan of it, when a person asks - a
     # button on the planner, or a tick when an issue is opened there. It runs as a coder Job

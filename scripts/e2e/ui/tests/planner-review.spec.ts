@@ -19,6 +19,9 @@ import { knownRed, open, settle } from './helpers';
 // landed yet. The tests are serial and build on each other: R01 runs the review, R07 runs it again.
 
 const STANDIN = process.env.GITHUB_STANDIN_URL?.replace(/\/$/, '');
+
+/** What begins the one comment per issue in which every click leaves a line. */
+const ACTIVITY = '<!-- hephaisto:activity -->';
 const NAME = 'planner-e2e';
 const ORG = 'acme';
 
@@ -333,9 +336,22 @@ test.describe('weekly review', () => {
     await expect.poll(async () => (await (await page.request.get(`${STANDIN}/github/control/project`)).json())
       .items.find((i: { repository: string; number: number }) => ref(i) === ISSUES.bugOnBoard).fields.Priority).toBe('P1');
 
-    // The click's write and nothing else: one field set on the board.
+    // The click's writes and nothing else: one field set on the board - it is in the backlog
+    // already - and the one line on the issue that says who agreed.
     const written = await writesSince(page.request, since);
-    expect(written.map(w => w.operation)).toEqual(['updateProjectV2ItemFieldValue']);
+    expect(written.filter(w => w.operation).map(w => w.operation)).toEqual(['updateProjectV2ItemFieldValue']);
+    // The line: a new comment on the issue - or, on a retry that finds the first one there, its
+    // edit. An edit of a comment the stand-in forgot at its reset is a 404, and a new one follows.
+    const line = written.filter(w => !w.operation && w.status < 400);
+    expect(line, 'one write for the line').toHaveLength(1);
+    expect(line[0].method === 'POST' ? line[0].issue : /\/issues\/comments\/\d+$/.test(line[0].path) ? 'edit' : line[0].path)
+      .toMatch(new RegExp(`^(${ISSUES.bugOnBoard.replace('#', '\\#')}|edit)$`));
+
+    const activity = (await commentsOn(page.request, ISSUES.bugOnBoard)).filter(c => c.body.startsWith(ACTIVITY));
+    expect(activity, 'one activity comment').toHaveLength(1);
+    expect(activity[0].body).toContain(`**${NAME}**`);
+    expect(activity[0].body).toContain('agreed with the weekly review: a real bug');
+    expect(activity[0].body).toContain('Priority P1');
 
     await expect(card(page, ISSUES.bugOnBoard).getByTestId('review-decided')).toContainText(NAME);
     expect(verdict(await review(page.request), ISSUES.bugOnBoard).decision).toMatchObject({ by: NAME, agreed: true, group: 'bug' });
@@ -356,6 +372,11 @@ test.describe('weekly review', () => {
 
     const moved = verdict(await review(page.request), ISSUES.unsure);
     expect(moved).toMatchObject({ tab: 'bug', decision: { by: NAME, group: 'bug', agreed: false } });
+
+    // A bug is work: it is on the board now, in the backlog at least, and the issue says who moved it.
+    await expect.poll(async () => (await (await page.request.get(`${STANDIN}/github/control/project`)).json())
+      .items.find((i: { repository: string; number: number }) => ref(i) === ISSUES.unsure)?.fields.Status).toMatch(/^(Backlog|Ready|In progress|In review)$/);
+    expect((await commentsOn(page.request, ISSUES.unsure)).find(c => c.body.startsWith(ACTIVITY))?.body).toContain('moved to a real bug');
     await expect(page.getByTestId('review-tab-unsure')).toHaveAttribute('data-count', String((await review(page.request)).verdicts.filter(v => v.tab === 'unsure').length));
   });
 
@@ -398,8 +419,10 @@ test.describe('weekly review', () => {
     for (const reference of [ISSUES.doneByPull, ISSUES.doneOffBoard]) {
       await expect.poll(async () => standInIssue(page.request, reference)).toMatchObject({ state: 'closed', state_reason: 'completed' });
 
-      const fromAgent = (await commentsOn(page.request, reference)).filter(c => c.user.login === 'hephaisto-bot');
-      expect(fromAgent, `${reference} got one comment from the agent's account`).toHaveLength(1);
+      // The close's own comment, and apart from it the activity line of the agree before.
+      const fromAgent = (await commentsOn(page.request, reference)).filter(c => c.user.login === 'hephaisto-bot' && !c.body.startsWith(ACTIVITY));
+      expect(fromAgent, `${reference} got one closing comment from the agent's account`).toHaveLength(1);
+      expect((await commentsOn(page.request, reference)).find(c => c.body.startsWith(ACTIVITY))?.body).toContain('can be closed');
       expect(fromAgent[0].body).toContain(scripted(reference).reason);
       expect(fromAgent[0].body).toContain(NAME);
     }
@@ -475,5 +498,35 @@ test.describe('weekly review', () => {
       expect(message.text).toMatch(new RegExp(`\\b${run.counts.feature} to build\\b`));
       expect(JSON.stringify(message.activity)).toContain('/planner/review');
     }
+  });
+
+  test('R09 → Ready puts a bug on the board as next up, with its priority, and the issue says who', async ({ page }) => {
+    const r = await ready(page.request);
+    const target = verdict(r, ISSUES.bug);
+    expect(target.tab).toBe('bug');
+
+    await openReview(page);
+    await showTab(page, 'bug');
+
+    const button = card(page, ISSUES.bug).getByTestId('review-ready');
+    await expect(button).toBeEnabled();
+    await button.click();
+    await said(page, ISSUES.bug);
+
+    const onBoard = async () => (await (await page.request.get(`${STANDIN}/github/control/project`)).json())
+      .items.find((i: { repository: string; number: number }) => ref(i) === ISSUES.bug);
+    await expect.poll(async () => (await onBoard())?.fields.Status).toBe('Ready');
+    if (target.priority) {
+      expect((await onBoard()).fields.Priority).toBe(target.priority);
+    }
+
+    const activity = (await commentsOn(page.request, ISSUES.bug)).filter(c => c.body.startsWith(ACTIVITY));
+    expect(activity).toHaveLength(1);
+    expect(activity[0].body).toContain(`**${NAME}**`);
+    expect(activity[0].body).toContain('ready to work on');
+
+    // The card says where it stands now, and offers Ready no more.
+    await expect(card(page, ISSUES.bug).getByTestId('review-card-status')).toHaveText('Ready');
+    await expect(card(page, ISSUES.bug).getByTestId('review-ready')).toHaveCount(0);
   });
 });

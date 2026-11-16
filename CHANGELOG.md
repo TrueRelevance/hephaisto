@@ -128,6 +128,29 @@ turn it on - the project, the token, the values - is one page:
   comment with the reason and the evidence, signed with the person's name, then the close, as
   completed. An issue in an archived repository can be agreed and is never closed. Each click is a
   `planner.review` audit row. The navigation shows how many verdicts wait for a person.
+- **The GitHub board is the source of truth** (rc13). Hephaisto is a faster way to work the
+  project, and everything it does is on GitHub for anybody who looks there:
+  - **Every click moves the Status** where the click means it, forward only: today, tomorrow and
+    next week to Ready, *work on it* and assigning the agent to In progress, *stop* back to
+    Ready, closing to Done, backlog to Backlog. Columns are named by `github.planner.statuses`;
+    one the board lacks is skipped, one nobody named is never touched.
+  - **Every click is a line on the issue**: one comment per issue by the agent's account, edited
+    for each click after the first, says who did what and when, with the Status move
+    (`github.planner.activityComment`, on by default). The weekly review's agree, move and
+    unsure leave their line too, so a decision to close is on the issue before it is closed.
+  - **The board's rules** (`github.planner.keepStatus`, off by default): on every read, a closed
+    issue goes to Done, one with an open pull request to In review, one in progress whose pull
+    requests are merged and quiet for a day to In review, one assigned to the agent to In
+    progress, a parent whose sub-issues began to In progress, a triaged Inbox issue to Backlog.
+    A rule fires only on a fact newer than the last Status change, so a card a person put back
+    stays; at most 25 moves a read, each a line on the issue and a `planner.status` audit row.
+  - **A board view** on `/planner`: the Status columns side by side with ← / → on every card,
+    the field filters of *all open*, and the last week's closed issues.
+  - **The weekly review puts work on the board**: agreeing with a bug or something to build adds
+    an issue that is not on the board, in the backlog, a bug with its suggested Priority; the new
+    **→ Ready** button (and `POST .../verdicts/{owner}/{repo}/{number}/ready`) makes it next up.
+    A card shows the issue's Status on the board. Hephaisto's own lines on an issue are not news
+    to the next run: its `updated_at` is no reason to ask Claude again, nor to clear a decision.
 - **A close is followed as it goes** (rc13). Twenty issues are a minute of GitHub writes: while
   they run, every open review page shows a bar with how many are done, which issue is being closed
   and how many GitHub refused, each card leaves the page as its issue closes, and the buttons wait
@@ -146,6 +169,10 @@ turn it on - the project, the token, the values - is one page:
   The token, the egress proxy, the rate-limit hold and "it retries nothing" are the REST calls'.
 
 ### Changed
+- **`github.planner.dayField` and `github.planner.backlogStatus` take effect** (rc13). The chart
+  had them under `github.issues` and rendered them from nowhere, so every install ran on the
+  defaults; they are under `github.planner` now, where the docs had them. The old keys are still
+  accepted and do nothing.
 - **The console wears True Relevance v3.** Hephaisto is now as much the place a team plans its
   work as an incident console, and every page was redesigned to be comfortable to read for an
   hour: ink on white and off-white, the brand face Gabarito for every word (JetBrains Mono stays
@@ -182,6 +209,11 @@ turn it on - the project, the token, the values - is one page:
   phase and answers every such Job with a failure. It runs on the coder's model credential; with
   a subscription token its cost is notional, and `maxCostUsd` (default $2) caps a run.
 
+- **The board's rules and the activity comment write as the agent's account** (rc13): the token
+  needs "Projects: read and write" (it has it for the planner) and to comment on every issue of
+  the board, also one in a repository outside `github.issues.repositories`. Turn the rules on with
+  `github.planner.keepStatus: true`; the first reads put a board that was not kept in order, 25
+  moves at a time. A migration adds `planner_review_verdicts.touched_at`.
 - **The weekly review needs `codeFix.enabled`**, `github.planner.enabled`, a coder image of this
   release (an older one does not know the `review` phase), and more of the agent's token: the
   organisation-wide issue search and read on **every** repository of the organisation - issues,

@@ -21,6 +21,35 @@ public sealed class ReviewRulesTests
 
     private static DateTimeOffset At(string iso) => DateTimeOffset.Parse(iso, System.Globalization.CultureInfo.InvariantCulture);
 
+    // --- Hephaisto's own writes ---------------------------------------------------------------
+
+    [Fact]
+    public void Hephaistos_own_line_on_an_issue_is_no_change_and_anybody_elses_later_one_is()
+    {
+        var given = At("2026-11-09T05:00:00Z");
+        var touched = At("2026-11-10T09:00:03Z");
+        var known = new ReviewKnown("acme/api#1", given, given, Gone: false, TouchedAt: touched);
+
+        ReviewWhy Why(string updated) =>
+            ReviewSelection.Why(new ReviewOpen("acme/api#1", "acme/api", 1, At(updated)), known, given.AddDays(2), TimeSpan.FromDays(28));
+
+        Why("2026-11-10T09:00:04Z").Should().Be(ReviewWhy.Kept, "the activity line is what moved updated_at");
+        Why("2026-11-10T11:00:00Z").Should().Be(ReviewWhy.Changed, "somebody commented two hours after it");
+        Why("2026-11-09T07:00:00Z").Should().Be(ReviewWhy.Changed, "a change before the touch is not the touch");
+        Why("2026-11-09T05:00:00Z").Should().Be(ReviewWhy.Kept);
+    }
+
+    [Fact]
+    public void A_fresh_verdict_after_only_hephaistos_own_write_keeps_the_persons_decision()
+    {
+        var kept = PlannerReviewTestData.Decided(At("2026-11-09T05:00:00Z"), touched: At("2026-11-10T09:00:00Z"));
+        var fresh = PlannerReviewTestData.Fresh(updatedAt: At("2026-11-10T09:00:01Z"));
+
+        ReviewVerdicts.Merge(kept, fresh);
+
+        kept.DecidedBy.Should().Be("flo");
+    }
+
     // --- the schedule ------------------------------------------------------------------------
 
     [Theory]
@@ -332,4 +361,33 @@ public sealed class ReviewRulesTests
             MaxTurns = 0,
         }.Problems().Should().HaveCount(8);
     }
+}
+
+/// <summary>Verdict rows for the rules above.</summary>
+internal static class PlannerReviewTestData
+{
+    public static PlannerReviewVerdict Decided(DateTimeOffset issueUpdatedAt, DateTimeOffset? touched) => new()
+    {
+        Repository = "acme/api",
+        Number = 1,
+        Group = ReviewVerdicts.Bug,
+        Confidence = "high",
+        IssueUpdatedAt = issueUpdatedAt,
+        ReviewedAt = issueUpdatedAt,
+        TouchedAt = touched,
+        DecidedBy = "flo",
+        DecidedAt = issueUpdatedAt,
+        DecisionGroup = ReviewVerdicts.Bug,
+        DecisionAgreed = true,
+    };
+
+    public static PlannerReviewVerdict Fresh(DateTimeOffset updatedAt) => new()
+    {
+        Repository = "acme/api",
+        Number = 1,
+        Group = ReviewVerdicts.Bug,
+        Confidence = "high",
+        IssueUpdatedAt = updatedAt,
+        ReviewedAt = updatedAt.AddDays(28),
+    };
 }

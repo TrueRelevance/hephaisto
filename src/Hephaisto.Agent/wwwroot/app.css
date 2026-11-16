@@ -2751,3 +2751,83 @@ button.hp-review-tab.tab-unsure[aria-selected="true"] { background: var(--wash-y
     color: var(--fg-faint);
     font-size: var(--text-md);
 }
+
+/* The planner's board view: the GitHub board's Status columns side by side, each a narrow
+   stack of cards. Wide boards scroll inside their own frame, never the page; on a phone the
+   columns stack. */
+.hp-kanban {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(15rem, 1fr);
+    gap: 0.8rem;
+    overflow-x: auto;
+    padding-bottom: 0.6rem;
+    align-items: start;
+}
+
+@media (max-width: 720px) {
+    .hp-kanban {
+        grid-auto-flow: row;
+        grid-auto-columns: auto;
+        overflow-x: visible;
+    }
+}
+
+.hp-kanban-col {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.6rem;
+    border-radius: var(--radius);
+    background: var(--bg-sunken);
+}
+
+.hp-kanban-col h2 {
+    font-size: var(--text-xl);
+    margin: 0;
+}
+
+.hp-kanban-col h2 small {
+    margin-left: 0.4rem;
+    color: var(--fg-faint);
+}
+
+.hp-kanban-note {
+    margin: 0;
+    font-size: var(--text-sm);
+}
+
+.hp-kanban-card {
+    display: grid;
+    gap: 0.35rem;
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+}
+
+.hp-kanban-card.is-active {
+    border-color: var(--accent);
+}
+
+.hp-kanban-head,
+.hp-kanban-meta,
+.hp-kanban-move {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.5rem;
+    align-items: baseline;
+}
+
+.hp-kanban-title {
+    overflow-wrap: anywhere;
+}
+
+.hp-kanban-meta {
+    font-size: var(--text-sm);
+}
+
+.hp-kanban-move button {
+    font-size: var(--text-sm);
+}

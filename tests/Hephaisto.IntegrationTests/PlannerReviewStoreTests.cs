@@ -75,6 +75,20 @@ public sealed class PlannerReviewStoreTests(PostgresFixture pg)
     }
 
     [Fact]
+    public async Task Hephaistos_own_write_is_kept_and_only_ever_moves_forward()
+    {
+        await pg.ResetAsync();
+        var store = Store();
+
+        await store.SaveVerdictsAsync([Verdict(1, Now, "bug")], Ct);
+        await store.TouchAsync("acme/api", 1, Now.AddHours(2), Ct);
+        await store.TouchAsync("acme/api", 1, Now.AddHours(1), Ct);
+        await store.TouchAsync("acme/api", 99, Now, Ct);
+
+        (await store.VerdictsAsync(includeGone: false, Ct)).Single().TouchedAt.Should().Be(Now.AddHours(2), "an older write never moves it back");
+    }
+
+    [Fact]
     public async Task A_run_ends_and_its_announcement_is_queued_in_one_save()
     {
         await pg.ResetAsync();

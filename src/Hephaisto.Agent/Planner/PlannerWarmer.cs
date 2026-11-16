@@ -6,7 +6,8 @@ namespace Hephaisto.Agent.Planner;
 /// instead of waiting for GitHub - a whole board was 13 seconds of paged GraphQL.
 /// </summary>
 /// <remarks>
-/// Reads only, and it asks nothing while the planner is off; turning the planner on is picked up
+/// It reads, and with <c>github.planner.keepStatus</c> it applies the board's rules to what it read
+/// (<see cref="PlannerService.KeepStatusAsync"/>) - the one write that is not a click. It asks nothing while the planner is off; turning the planner on is picked up
 /// at the next tick. Not gated by the agent's mode, for the reason the planner's clicks are not: the
 /// board is the person's, and reading it starts nothing. A read that fails keeps the last good
 /// board, which then says what went wrong, and the next tick is the retry.
@@ -23,6 +24,12 @@ public sealed class PlannerWarmer(PlannerService planner, ILogger<PlannerWarmer>
             try
             {
                 await planner.WarmAsync(stoppingToken).ConfigureAwait(false);
+
+                // The board's rules on what was just read: off unless github.planner.keepStatus.
+                if (await planner.KeepStatusAsync(stoppingToken).ConfigureAwait(false) is var moved and > 0)
+                {
+                    logger.LogInformation("The board's rules moved {Count} issues to the Status GitHub's facts ask for.", moved);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

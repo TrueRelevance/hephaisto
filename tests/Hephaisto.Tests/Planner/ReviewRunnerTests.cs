@@ -366,7 +366,7 @@ public sealed class ReviewRunnerTests
         var verdict = root.GetProperty("verdicts")[0];
         verdict.EnumerateObject().Select(p => p.Name).Should().Equal(
             "repository", "number", "title", "url", "onBoard", "archived", "group", "closeReason", "related", "confidence",
-            "summary", "reason", "evidence", "priority", "tab", "decision", "reviewedAt", "runId");
+            "summary", "reason", "evidence", "priority", "tab", "decision", "reviewedAt", "runId", "boardStatus", "scheduled");
         verdict.GetProperty("evidence")[0].EnumerateObject().Select(p => p.Name).Should().Equal("kind", "text", "ok");
         verdict.GetProperty("decision").ValueKind.Should().Be(JsonValueKind.Null);
 

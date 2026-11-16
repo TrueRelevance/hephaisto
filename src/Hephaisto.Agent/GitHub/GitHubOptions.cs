@@ -204,6 +204,31 @@ public sealed partial class GitHubPlannerOptions
     /// <summary>The option of the Status field that "backlog" sets.</summary>
     public string BacklogStatus { get; set; } = "Backlog";
 
+    /// <summary>
+    /// The board's other columns, by what they mean. Every click moves an issue along them -
+    /// today to Ready, working on it to In progress, closing to Done - and the board's rules do
+    /// the rest (<see cref="KeepStatus"/>). A column the board does not have is skipped.
+    /// </summary>
+    public GitHubPlannerStatusOptions Statuses { get; set; } = new();
+
+    /// <summary>
+    /// After every read of the board, move what GitHub's facts say has moved: a closed issue to
+    /// Done, one with an open pull request to In review, one assigned to the agent to In progress,
+    /// a triaged one out of the Inbox (<see cref="Hephaisto.Core.Planning.BoardFlow"/>). Each move
+    /// is a line on the issue. Off, the Status changes only by a click.
+    /// </summary>
+    public bool KeepStatus { get; set; }
+
+    /// <summary>
+    /// Every click leaves a line in one comment per issue, by the agent's account, naming the
+    /// person (<see cref="Planner.PlannerActivity"/>): what happened is on GitHub, not only in
+    /// Hephaisto's audit.
+    /// </summary>
+    public bool ActivityComment { get; set; } = true;
+
+    public Hephaisto.Core.Planning.BoardStatuses BoardStatuses() =>
+        new(Statuses.Inbox, BacklogStatus, Statuses.Ready, Statuses.InProgress, Statuses.InReview, Statuses.Done);
+
     /// <summary>Claude labels an issue and writes an analysis of it, when a person asks (v0.15.0).</summary>
     public GitHubPlannerTriageOptions Triage { get; set; } = new();
 
@@ -260,6 +285,20 @@ public sealed partial class GitHubPlannerOptions
 
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")]
     private static partial Regex Repository();
+}
+
+/// <summary>The Status options of the board's columns besides the backlog. Bound from <c>GitHub:Planner:Statuses:*</c>.</summary>
+public sealed class GitHubPlannerStatusOptions
+{
+    public string Inbox { get; set; } = "Inbox";
+
+    public string Ready { get; set; } = "Ready";
+
+    public string InProgress { get; set; } = "In progress";
+
+    public string InReview { get; set; } = "In review";
+
+    public string Done { get; set; } = "Done";
 }
 
 /// <summary>
